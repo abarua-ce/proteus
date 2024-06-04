@@ -45,16 +45,10 @@ namespace proteus
 	
     inline
 
-     void evaluateCoefficients(const int rowptr[nSpace],
+          void evaluateCoefficients(const int rowptr[nSpace],
 	 		      const int colind[nnz],
-	 		      const double rho,
-	 		      const double beta,
-	 		      const double gravity[nSpace],
-	 		      const double alpha,
-	 		      const double n_vg,
-	 		      const double thetaR,
-	 		      const double thetaSR,
-			      const double KWs[nnz],
+	 		      const double velocity[nSpace],//velocity
+			      const double Diffusion[nnz],//a
 	 		      const double& u,
 	 		      double& m,
 	 		      double& dm,
@@ -66,44 +60,21 @@ namespace proteus
 	 		      double& kr,
 	 		      double& dkr)
      {
-       const int nSpace2 = nSpace * nSpace;
-       double psiC;
-       double pcBar;
-       double pcBar_n;
-       double pcBar_nM1;
-       double pcBar_nM2;
-       double onePlus_pcBar_n;
-       double sBar;
-       double sqrt_sBar;
-       double DsBar_DpsiC;
-       double thetaW;
-       double DthetaW_DpsiC;
-       double vBar;
-       double vBar2;
-       double DvBar_DpsiC;
-       double KWr;
-       double DKWr_DpsiC;
-       double rho2 = rho * rho;
-       double thetaS;
-       double rhom;
-       double drhom;
-       double m_vg;
-       double pcBarStar;
-       double sqrt_sBarStar;
+   
        m = u; //rhom*thetaW; //u
        dm = 1.0; //-rhom*DthetaW_DpsiC+drhom*thetaW;// 1.0;//
        for (int I=0;I<nSpace;I++)
 	 {
-	   f[I] = 0.0;
-	   df[I] = 0.0;
+	   f[I] = 0.0; //velocity*u;
+	   df[I] = 0.0; //velocity;
 
 	   for (int ii=rowptr[I]; ii < rowptr[I+1]; ii++)
 	     {
-	 	  double velocity = 5.0;
+	 	  //double velocity = 5.0;
 	 	  double D= 0.02;	
-	       f[I]  = velocity*u; //rho2*KWr*KWs[ii]*gravity[colind[ii]];//velocity *u;//
-	       df[I] = velocity; //-rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]];//velocity
-	       a[ii]  = D ; //rho*KWs[ii]; //rho*KWr*KWs[ii];
+	       f[I]  += velocity[colind[ii]]*u; //rho2*KWr*KWs[ii]*gravity[colind[ii]];//velocity *u;//
+	       df[I] += velocity[colind[ii]]; //-rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]];//velocity
+	       a[ii]  = Diffusion[ii] ; //rho*KWs[ii]; //rho*KWr*KWs[ii];
 	       da[ii] = 0.0; //-rho*DKWr_DpsiC*KWs[ii]; //0.0;//
 	       //as[ii]  = 1.0; //rho*KWs[ii];//0.0;//rho*KWs[ii];
 	       //kr = 1.0;//KWr;// 0.0
@@ -111,6 +82,7 @@ namespace proteus
 	     }
 	 }
      }
+
     void calculateResidual(arguments_dict& args)
     {
       xt::pyarray<double>& mesh_trial_ref = args.array<double>("mesh_trial_ref");
@@ -316,13 +288,7 @@ namespace proteus
 	      double Kr,dKr;
 	      evaluateCoefficients(a_rowptr.data(),
 				   a_colind.data(),
-				   rho,
-				   beta,
 				   gravity.data(),
-				   alpha.data()[elementMaterialTypes.data()[eN]],
-				   n.data()[elementMaterialTypes.data()[eN]],
-				   thetaR.data()[elementMaterialTypes.data()[eN]],
-				   thetaSR.data()[elementMaterialTypes.data()[eN]],
 				   &KWs.data()[elementMaterialTypes.data()[eN]*nnz],
 				   u,
 				   m,
@@ -533,13 +499,7 @@ namespace proteus
 	      double Kr,dKr;
 	      evaluateCoefficients(a_rowptr.data(),
 				   a_colind.data(),
-				   rho,
-				   beta,
 				   gravity.data(),
-				   alpha.data()[elementMaterialTypes.data()[eN]],
-				   n.data()[elementMaterialTypes.data()[eN]],
-				   thetaR.data()[elementMaterialTypes.data()[eN]],
-				   thetaSR.data()[elementMaterialTypes.data()[eN]],
 				   &KWs.data()[elementMaterialTypes.data()[eN]*nnz],
 				   u,
 				   m,
