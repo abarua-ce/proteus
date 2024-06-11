@@ -328,6 +328,9 @@ class Coefficients(TC_base):
         entropy_types = {'POWER':0 , 
                          'LOG':1}
         try:
+            if isinstance(STABILIZATION_TYPE, int):
+                STABILIZATION_TYPE = [key for key, value in stabilization_types.items() if value == STABILIZATION_TYPE][0]
+            
             self.STABILIZATION_TYPE = stabilization_types[STABILIZATION_TYPE]
         except:
             raise ValueError("STABILIZATION_TYPE must be one of "+str(stabilization_types.keys())+" not "+STABILIZATION_TYPE)
