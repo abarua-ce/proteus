@@ -1107,7 +1107,7 @@ class LevelModel(OneLevelTransport):
         argsDict["min_u_bc"] = self.min_u_bc
         argsDict["max_u_bc"] = self.max_u_bc
         argsDict["quantDOFs"] = self.quantDOFs
-        argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion                 
+        argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion
         self.adr.calculateResidual(argsDict)
 
         if self.forceStrongConditions:
