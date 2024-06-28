@@ -60,6 +60,7 @@ class ShockCapturing(ShockCapturing_base):
         for ci in range(self.nc):
             self.numDiff.append(cq[('numDiff', ci, ci)])
             self.numDiff_last.append(cq[('numDiff', ci, ci)])
+            
 
     def updateShockCapturingHistory(self):
         self.nSteps += 1
@@ -264,8 +265,11 @@ class Coefficients(TC_base):
     from proteus.ctransportCoefficients import VOFCoefficientsEvaluate
     from proteus.ctransportCoefficients import VolumeAveragedVOFCoefficientsEvaluate
     from proteus.cfemIntegrals import copyExteriorElementBoundaryValuesFromElementBoundaryValues
+    
     def __init__(self,
+                 aOfX,
                  LS_model=None,
+                 nd=2,
                  V_model=0,
                  RD_model=None,
                  ME_model=1,
@@ -318,6 +322,29 @@ class Coefficients(TC_base):
         self.sc_beta = sc_beta
         self.movingDomain = movingDomain
         self.forceStrongConditions = forceStrongConditions
+        self.nd=nd
+        self.aOfX = aOfX
+
+
+        sdInfo = {(0, 0): (np.arange(start=0, stop=nd**2 + 1, step=nd, dtype='int32'),
+                   np.array([range(nd) for _ in range(nd)], dtype='int32'))}
+        
+        self.cE = cE
+        self.cMax = cMax
+        self.uL = uL
+        self.uR = uR
+        self.cK = cK
+        self.LUMPED_MASS_MATRIX = LUMPED_MASS_MATRIX
+        self.FCT = FCT
+        self.outputQuantDOFs = outputQuantDOFs
+        self.nullSpace = nullSpace
+        self.flowCoefficients = None
+        self.physicalDiffusion=physicalDiffusion
+        self.sparseDiffusionTensors = sdInfo
+        if initialize:
+            self.initialize()
+        
+
         #must keep synchronized with TADR.h enums
         stabilization_types = {"Galerkin":-1, 
                                "VMS":0, 
@@ -351,6 +378,7 @@ class Coefficients(TC_base):
         self.physicalDiffusion=physicalDiffusion
         if initialize:
             self.initialize()
+   
 
     def initialize(self):
         nc = 1
@@ -360,6 +388,11 @@ class Coefficients(TC_base):
         diffusion = {0: {0: {0: 'constant'}}}
         potential = {0: {0: 'u'} }
         reaction = {0: {0: 'linear'}}
+        sparseDiffusionTensors = {(0,0):(np.arange(self.nd+1,dtype='i'),
+                                         np.arange(self.nd,dtype='i'))}
+
+        
+
         TC_base.__init__(self,
                          nc,
                          mass,
@@ -369,10 +402,21 @@ class Coefficients(TC_base):
                          reaction,
                          hamiltonian,
                          self.variableNames,
-                         movingDomain=self.movingDomain)        
+                         movingDomain=self.movingDomain,
+                         sparseDiffusionTensors=sparseDiffusionTensors)
+                
 
     def initializeMesh(self, mesh):
         self.eps = self.epsFact * mesh.h
+    
+    # def initializeElementQuadrature(self, t, cq):
+    #     nd = self.nd
+    #     for ci in range(self.nc):
+    #         if ('a', ci, ci) in cq:
+    #             for i in range(len(cq[('r', ci)].flat)):
+    #                 cq[('a', ci, ci)].flat[nd*nd*i:nd*nd*(i+1)] = self.aOfX[ci](cq['x'].flat[3*i:3*(i+1)]).flat
+
+    
 
     def attachModels(self, modelList):
         # self
@@ -410,6 +454,7 @@ class Coefficients(TC_base):
             self.flowCoefficients = modelList[self.V_model].coefficients
         else:
             self.flowCoefficients = None
+        
 
     def preStep(self, t, firstStep=False):
         # SAVE OLD SOLUTION #
@@ -445,12 +490,16 @@ class Coefficients(TC_base):
         if c[('f', 0)].shape == self.q_v.shape:
             v = self.q_v
             phi = self.q_phi
+
+
         elif c[('f', 0)].shape == self.ebqe_v.shape:
             v = self.ebqe_v
             phi = self.ebqe_phi
+
         elif ((self.ebq_v is not None and self.ebq_phi is not None) and c[('f', 0)].shape == self.ebq_v.shape):
             v = self.ebq_v
             phi = self.ebq_phi
+
         else:
             v = None
             phi = None
@@ -459,7 +508,19 @@ class Coefficients(TC_base):
             c[('dm',0,0)] = np.ones_like(c[('u',0)])
             c[('f',0)][:] = v*c[('u',0)]
             c[('df',0,0)][:] = v
-            c[('a',0,0)][:] = self.physicalDiffusion 
+            #c[('a',0,0)][:] = self.physicalDiffusion 
+            nd = self.nd
+            for i in range(len(c[('r', 0)].flat)):
+                x_i = c['x'].flat[3*i:3*(i+1)]
+                c[('a', 0, 0)].flat[nd*nd*i:nd*nd*(i+1)] = self.aOfX[0](x_i).flat
+                print(c[('a', 0, 0)])
+            
+            # Compute diffusion coefficients at each quadrature point
+            #for i in range(len(c['x'])):
+            #    x_i = c['x'][i]
+            #    diffusion_matrix = self.aOfX[0](x_i)
+            #    c[('a', 0, 0)][i] = diffusion_matrix
+
 
 class LevelModel(OneLevelTransport):
     nCalls = 0
@@ -679,6 +740,20 @@ class LevelModel(OneLevelTransport):
         self.q[('m', 0)] = self.q[('m_tmp', 0)]
         self.q[('cfl', 0)] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element), 'd')
         self.q[('numDiff', 0, 0)] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element), 'd')
+        ###################################################
+        self.q[('a',0,0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
+        nd = self.coefficients.nd
+
+        #self.q[('a', 0, 0)] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element, sdInfo[(0, 0)][0][-1]), 'd')
+
+        
+        self.q[('r',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element),'d')
+
+        ###################################################
+        #self.calculateQuadrature()
+
+
+
         self.ebqe[('u', 0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global, self.nElementBoundaryQuadraturePoints_elementBoundary), 'd')
         self.ebqe[('grad(u)', 0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,
                                                  self.nElementBoundaryQuadraturePoints_elementBoundary, self.nSpace_global), 'd')
@@ -686,7 +761,11 @@ class LevelModel(OneLevelTransport):
             (self.mesh.nExteriorElementBoundaries_global, self.nElementBoundaryQuadraturePoints_elementBoundary), 'i')
         self.ebqe[('advectiveFlux_bc', 0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global, self.nElementBoundaryQuadraturePoints_elementBoundary), 'd')
         self.ebqe[('advectiveFlux', 0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global, self.nElementBoundaryQuadraturePoints_elementBoundary), 'd')
-
+        #######################################################
+        self.ebqe[('a',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
+        #self.ebqe[('df',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
+        self.ebqe[('r',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
+        #######################################################
         self.points_elementBoundaryQuadrature = set()
         self.scalars_elementBoundaryQuadrature = set([('u', ci) for ci in range(self.nc)])
         self.vectors_elementBoundaryQuadrature = set()
@@ -712,6 +791,127 @@ class LevelModel(OneLevelTransport):
         logEvent(memory("TimeIntegration", "OneLevelTransport"), level=4)
         logEvent("Calculating numerical quadrature formulas", 2)
         self.calculateQuadrature()
+        ############################################
+        # Populate q[('a', 0, 0)] directly
+        # Populate the diffusion tensor values in self.q[('a', 0, 0)]
+        #nd = self.coefficients.nd
+        #print("nd * nd:", nd * nd)
+        #print("Size expected from sdInfo:", self.coefficients.sdInfo[(0, 0)][0][-1])
+        nd = self.coefficients.nd
+        sd_rowptr = self.coefficients.sdInfo[(0, 0)][0]
+        sd_colind = self.coefficients.sdInfo[(0, 0)][1]
+
+        for eN in range(self.mesh.nElements_global):
+            for k in range(self.nQuadraturePoints_element):
+                x = self.q['x'][eN, k, :]
+                a_full = self.coefficients.aOfX[0](x)
+                a_val = np.array([a_full[row, col] for row, col in zip(sd_rowptr[:-1], sd_colind)])
+                
+                # Print statements to debug the values of q_a
+                #print(f"eN: {eN}, k: {k}")
+                #print(f"x: {x}")
+                #print(f"a_full: {a_full}")
+                #print(f"a_val: {a_val}")
+
+                if a_val.shape == (sd_rowptr[-1],):
+                    self.q[('a', 0, 0)][eN, k, :] = a_val
+                else:
+                    raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({sd_rowptr[-1]},)")
+
+                # nd = self.coefficients.nd
+        # indices = self.coefficients.sdInfo[(0, 0)][0]  # Extracting the relevant indices from sdInfo
+
+        # print(f"nd: {nd}")
+        # print(f"indices: {indices}")
+
+        # for eN in range(self.mesh.nElements_global):
+        #     for k in range(self.nQuadraturePoints_element):
+        #         x = self.q['x'][eN, k, :]
+        #         a_val = self.coefficients.aOfX[0](x)
+                
+        #         print(f"a_val: {a_val}")
+        #         print(f"eN: {eN}, k: {k}, a_val shape: {a_val.shape}, flattened: {a_val.flatten().shape}")
+        #         print(f"self.q[('a', 0, 0)][{eN}, {k}, :].shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
+                
+        #         if a_val.shape == (nd, nd):
+        #             flattened_a_val = a_val.flatten()
+        #             selected_values = flattened_a_val[indices]
+                    
+        #             print(f"flattened_a_val: {flattened_a_val}")
+        #             print(f"selected_values: {selected_values}")
+        #             print(f"selected_values shape: {selected_values.shape}")
+
+        #             if selected_values.shape == self.q[('a', 0, 0)][eN, k, :].shape:
+        #                 self.q[('a', 0, 0)][eN, k, :] = selected_values
+        #             else:
+        #                 raise ValueError(f"Shape mismatch: selected_values shape: {selected_values.shape}, target shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
+        #         else:
+        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
+
+
+        # nd = self.coefficients.nd
+        # for eN in range(self.mesh.nElements_global):
+        #     for k in range(self.nQuadraturePoints_element):
+        #         x = self.q['x'][eN, k, :]
+        #         a_val = self.coefficients.aOfX[0](x)
+        #         if a_val.shape == (nd, nd):
+        #             # Using sdInfo to map flattened values to the correct positions
+        #             indices = self.coefficients.sdInfo[(0, 0)][0]
+        #             self.q[('a', 0, 0)][eN, k, :] = a_val.flatten()[indices]
+        #         else:
+        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
+
+        # for eN in range(self.mesh.nElements_global):
+        #     for k in range(self.nQuadraturePoints_element):
+        #         x = self.q['x'][eN, k, :]
+        #         a_val = self.coefficients.aOfX[0](x)
+        #         #print("a_val:", a_val)
+        #         #print(f"eN: {eN}, k: {k}, a_val shape: {a_val.shape}, flattened: {a_val.flatten().shape}")
+        #         #print(f"self.q[('a', 0, 0)][{eN}, {k}, :].shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
+                
+        #         if a_val.shape == (nd, nd):
+        #             if nd == 2:
+        #                 # For 2D, we store the values based on the sparse structure defined by sdInfo
+        #                 self.q[('a', 0, 0)][eN, k, 0] = a_val[0, 0]  # a_xx
+        #                 self.q[('a', 0, 0)][eN, k, 1] = a_val[1, 1]  # a_yy
+        #                 print(a_val[0, 0])
+        #             elif nd == 3:
+        #                 # For 3D, adapt this as needed to store the correct components
+        #                 self.q[('a', 0, 0)][eN, k, 0] = a_val[0, 0]  # a_xx
+        #                 self.q[('a', 0, 0)][eN, k, 1] = a_val[1, 1]  # a_yy
+        #                 self.q[('a', 0, 0)][eN, k, 2] = a_val[2, 2]  # a_zz
+        #                 self.q[('a', 0, 0)][eN, k, 3] = a_val[0, 1]  # a_xy 
+        #                 self.q[('a', 0, 0)][eN, k, 4] = a_val[0, 2]  # a_xz 
+        #                 self.q[('a', 0, 0)][eN, k, 5] = a_val[1, 2]  # a_yz 
+        #             else:
+        #                 raise ValueError(f"Unsupported dimension: {nd}")
+        #         else:
+        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
+        # #print(self.q[('a', 0, 0)])
+
+
+        # for eN in range(self.mesh.nElements_global):
+        #     for k in range(self.nQuadraturePoints_element):
+        #         x = self.q['x'][eN, k, :]
+        #         a_val = self.coefficients.aOfX[0](x)
+        #         print("a_val:", a_val)
+        #         print(f"eN: {eN}, k: {k}, a_val shape: {a_val.shape}, flattened: {a_val.flatten().shape}")
+        #         print(f"self.q[('a', 0, 0)][{eN}, {k}, :].shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
+                
+        #         if a_val.shape == (nd, nd):
+        #             self.q[('a', 0, 0)][eN, k, :] = a_val.flatten()
+        #         else:
+        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
+
+
+
+        # nd = self.coefficients.nd
+        # for eN in range(self.mesh.nElements_global):
+        #     for k in range(self.nQuadraturePoints_element):
+        #         x = self.q['x'][eN, k, :]
+        #         a_val = self.coefficients.aOfX[0](x)
+        #         self.q[('a', 0, 0)][eN, k, :nd*nd] = a_val.flatten()
+
         self.setupFieldStrides()
 
         comm = Comm.get()
@@ -847,8 +1047,12 @@ class LevelModel(OneLevelTransport):
             self.degree_polynomial = self.u[0].femSpace.order
         except:
             pass
-            
+
+    # def calculateQuadrature(self):
+    #     self.coefficients.initializeElementQuadrature(self.timeIntegration.t, self.q)
+                
     def FCTStep(self):
+        rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         limited_solution = np.zeros(self.u[0].dof.shape)
 
@@ -1023,6 +1227,7 @@ class LevelModel(OneLevelTransport):
             self.uTilde_dof[:] = self.u[0].dof
             self.auxTaylorGalerkinFlag=0
 
+
         argsDict = cArgumentsDict.ArgumentsDict()
         argsDict["dt"] = self.timeIntegration.dt
         argsDict["mesh_trial_ref"] = self.u[0].femSpace.elementMaps.psi
@@ -1061,6 +1266,10 @@ class LevelModel(OneLevelTransport):
         argsDict["velocity"] = self.coefficients.q_v
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
         argsDict["q_u"] = self.q[('u', 0)]
+        ###########################################
+        argsDict["q_a"] = self.q[('a',0,0)]
+        argsDict["q_r"] = self.q[('r',0)]
+        ###########################################
         argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
         argsDict["q_dV"] = self.q['dV']
         argsDict["q_dV_last"] = self.q['dV_last']
@@ -1108,6 +1317,17 @@ class LevelModel(OneLevelTransport):
         argsDict["max_u_bc"] = self.max_u_bc
         argsDict["quantDOFs"] = self.quantDOFs
         argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion
+        #argsDict["D"] = self.coefficients.DTypes
+
+        sdInfo = self.coefficients.sdInfo
+    
+        argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
+        argsDict["a_colind"] = sdInfo[(0, 0)][1]
+    
+
+        #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
+        #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
+
         self.adr.calculateResidual(argsDict)
 
         if self.forceStrongConditions:
@@ -1178,7 +1398,18 @@ class LevelModel(OneLevelTransport):
         argsDict["ebqe_bc_flux_u_ext"] = self.ebqe[('advectiveFlux_bc', 0)]
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0, 0)]
         argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
-        argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion                 
+        argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion   
+        #argsDict["D"] = self.coefficients.DTypes
+
+        sdInfo = self.coefficients.sdInfo
+    
+        argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
+        argsDict["a_colind"] = sdInfo[(0, 0)][1]
+        argsDict["q_a"] = self.q[('a',0,0)]
+
+        #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
+        #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
+
         self.adr.calculateJacobian(argsDict)
 
         # Load the Dirichlet conditions directly into residual
@@ -1210,8 +1441,8 @@ class LevelModel(OneLevelTransport):
             self.elementQuadraturePoints)
         self.u[0].femSpace.getBasisValuesRef(self.elementQuadraturePoints)
         self.u[0].femSpace.getBasisGradientValuesRef(self.elementQuadraturePoints)
-        self.coefficients.initializeElementQuadrature(self.timeIntegration.t,
-                                                      self.q)
+        #self.coefficients.initializeElementQuadrature(self.timeIntegration.t,
+        #                                              self.q)
         if self.stabilization is not None:
             self.stabilization.initializeElementQuadrature(
                 self.mesh, self.timeIntegration.t, self.q)

@@ -7,6 +7,7 @@
 #include "ModelFactory.h"
 #include "ArgumentsDict.h"
 #include "xtensor-python/pyarray.hpp"
+#define nnz nSpace
 
 namespace py = pybind11;
 
@@ -95,12 +96,17 @@ namespace proteus
     }
 
     inline
-    void evaluateCoefficients(const double v[nSpace],
+void evaluateCoefficients(const int rowptr[nSpace],
+				                      const int colind[nnz],
+                              const double v[nSpace],
+                              const double* q_a,
                               const double& u,
                               double& m,
                               double& dm,
                               double f[nSpace],
-                              double df[nSpace])
+                              double df[nSpace], 
+                              double a[nSpace],
+                              double da[nSpace])
     {
       m = u;
       dm= 1.0;
@@ -108,9 +114,45 @@ namespace proteus
         {
           f[I] = v[I]*u;
           df[I] = v[I];
+           for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++)
+        {
+          //std::cout << "q_a: ";
+          //std::cout << q_a[ii] << " ";
+            //int J = colind[ii]; 
+            a[ii] = q_a[ii];
+            da[ii] = 0.0;
         }
+
+        }
+            // Print the size of a
+    // Print the values of a to ensure correctness
+    // std::cout << "Values of a in evaluateCoefficients: ";
+    // for (int i = 0; i < nnz; i++) {
+    //     std::cout << a[i] << " ";
+    // }
+    // std::cout << std::endl;
       //cek todo: add sparse diffusion
+      // Diffusion terms    
     }
+
+
+
+    // void evaluateCoefficients(const double v[nSpace],
+    //                           const double& u,
+    //                           double& m,
+    //                           double& dm,
+    //                           double f[nSpace],
+    //                           double df[nSpace])
+    // {
+    //   m = u;
+    //   dm= 1.0;
+    //   for (int I=0; I < nSpace; I++)
+    //     {
+    //       f[I] = v[I]*u;
+    //       df[I] = v[I];
+    //     }
+    //   //cek todo: add sparse diffusion
+    // }
 
     inline
     void calculateSubgridError_tau(const double& elementDiameter,
@@ -292,6 +334,10 @@ namespace proteus
       xt::pyarray<double>& velocity = args.array<double>("velocity");
       xt::pyarray<double>& q_m = args.array<double>("q_m");
       xt::pyarray<double>& q_u = args.array<double>("q_u");
+
+      xt::pyarray<double>& q_a = args.array<double>("q_a");
+      xt::pyarray<double>& q_r = args.array<double>("q_r");
+
       xt::pyarray<double>& q_m_betaBDF = args.array<double>("q_m_betaBDF");
       xt::pyarray<double>& q_dV = args.array<double>("q_dV");
       xt::pyarray<double>& q_dV_last = args.array<double>("q_dV_last");
@@ -338,6 +384,12 @@ namespace proteus
       xt::pyarray<double>& min_u_bc = args.array<double>("min_u_bc");
       xt::pyarray<double>& max_u_bc = args.array<double>("max_u_bc");
       xt::pyarray<double>& quantDOFs = args.array<double>("quantDOFs");
+      /////////////////////////////////////////////////////////////////////////
+      xt::pyarray<int>& a_rowptr = args.array<int>("a_rowptr");
+      xt::pyarray<int>& a_colind = args.array<int>("a_colind");
+      //xt::pyarray<double>& D = args.array<double>("D");
+      //initializeDToZero(D);
+      //////////////////////////////////////////////////////////////////////////
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
       double meanEntropy = 0., meanOmega = 0., maxEntropy = -1E10, minEntropy = 1E10;
       maxVel.resize(nElements_global, 0.0);
@@ -411,6 +463,7 @@ namespace proteus
               int eN_k = eN*nQuadraturePoints_element+k,
                 eN_k_nSpace = eN_k*nSpace,
                 eN_nDOF_trial_element = eN*nDOF_trial_element;
+                //int index_D = eN_k * a_rowptr.data()[nSpace];
               double
                 entVisc_minus_artComp,
                 u=0.0,un=0.0,
@@ -418,6 +471,8 @@ namespace proteus
                 m=0.0,dm=0.0,mn=0.0,dmn=0.0,
                 H=0.0,Hn=0.0,HTilde=0.0,
                 f[nSpace],fn[nSpace],df[nSpace],dfn[nSpace],
+                ////////////////////////////////////////////
+                a[nSpace], da[nSpace], an[nSpace], dan[nSpace],
                 m_t=0.0,dm_t=0.0,
                 pdeResidual_u=0.0,
                 Lstar_u[nDOF_test_element],
@@ -489,23 +544,86 @@ namespace proteus
                       u_grad_test_dV[j*nSpace+I] = u_grad_trial[j*nSpace+I]*dV;//cek warning won't work for Petrov-Galerkin
                     }
                 }
+
               //
               //
               //calculate pde coefficients at quadrature points
+
+
               //
-              evaluateCoefficients(&velocity.data()[eN_k_nSpace],
+              // Print the values going into q_a
+              int q_a_index = eN_k * a_rowptr.data()[nSpace];
+              // std::cout << "q_a values for eN: " << eN << ", k: " << k << ": ";
+              // for (int i = 0; i < a_rowptr.data()[nSpace]; ++i)
+              // {
+              //     std::cout << q_a.data()[q_a_index + i] << " ";
+              // }
+              // std::cout << std::endl;
+              const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
+              evaluateCoefficients(a_rowptr.data(),
+				                           a_colind.data(),
+                                   &velocity.data()[eN_k_nSpace],
+                                   q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    u,
                                    m,
                                    dm,
                                    f,
-                                   df);
+                                   df,
+                                   a,
+                                   da);
+              // std::cout << "q_a values for eN: " << eN << ", k: " << k << ": ";
+              // for (int i = 0; i < nnz; ++i) {
+              //     std::cout << q_a_ptr[i] << " ";
+              // }
+              // std::cout << std::endl;
+                            
+              // Print q_a values for debugging
+            // std::cout << "q_a values for eN: " << eN << ", k: " << k << ": ";
+            // for (int i = 0; i < a_rowptr[nSpace]; ++i)
+            // {
+            //     std::cout << q_a_ptr[i] << " ";
+            // }
+            // std::cout << std::endl;
+
+            //a = &q_a.data()[eN_k * a_rowptr.data()[nSpace]];
+
+
+            //D.data()[eN * nQuadraturePoints_element * nnz + k * nnz] calculates 
+            //the correct starting index for D for the current element eN and 
+            //quadrature point k, considering nnz as the number of non-zero entries for the sparse matrix. This ensures that the values for D are accessed correctly based on the element and quadrature point.
+
               //cek todo, this should be velocity_old
-              evaluateCoefficients(&velocity.data()[eN_k_nSpace],
+              evaluateCoefficients(a_rowptr.data(),
+				                           a_colind.data(),
+                                   &velocity.data()[eN_k_nSpace],
+                                   q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    un,
                                    mn,
                                    dmn,
                                    fn,
-                                   dfn);
+                                   dfn, 
+                                   an, 
+                                   dan);
+              //an= &q_a.data()[eN_k * sd_rowptr.data()[nSpace]];
+
+
+
+               
+
+
+              // evaluateCoefficients(&velocity.data()[eN_k_nSpace],
+              //                      u,
+              //                      m,
+              //                      dm,
+              //                      f,
+              //                      df);
+              // //cek todo, this should be velocity_old
+              // evaluateCoefficients(&velocity.data()[eN_k_nSpace],
+              //                      un,
+              //                      mn,
+              //                      dmn,
+              //                      fn,
+              //                      dfn);
               //
               //moving mesh
               //
@@ -632,7 +750,9 @@ namespace proteus
                       if (stage == 1)
                         elementResidual_u[i] +=
                           ck.Mass_weak(dt*m_t,u_test_dV[i]) +  // time derivative
-                          1./3*dt*(ck.Advection_weak(fn,&u_grad_test_dV[i_nSpace]) + ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
+                          1./3*dt*(ck.Advection_weak(fn,&u_grad_test_dV[i_nSpace]) +
+                                   ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),a,grad_u,&u_grad_test_dV[i_nSpace])+ 
+                                   ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
                           1./9*dt*dt*ck.NumericalDiffusion(Hn,dfn,&u_grad_test_dV[i_nSpace]) +
                           1./3*dt*entVisc_minus_artComp*ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k]+physicalDiffusion,
                                                                               grad_u_old,
@@ -641,7 +761,9 @@ namespace proteus
                       else //stage 2
                         elementResidual_u[i] +=
                           ck.Mass_weak(dt*m_t,u_test_dV[i]) +  // time derivative
-                          dt*(ck.Advection_weak(fn,&u_grad_test_dV[i_nSpace]) + ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
+                          dt*(ck.Advection_weak(fn,&u_grad_test_dV[i_nSpace]) + 
+                              ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),an,grad_u,&u_grad_test_dV[i_nSpace])+
+                              ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
                           0.5*dt*dt*ck.NumericalDiffusion(HTilde,dfn,&u_grad_test_dV[i_nSpace]) +
                           dt*entVisc_minus_artComp*ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k]+physicalDiffusion,
                                                                          grad_u_old,
@@ -652,6 +774,7 @@ namespace proteus
                       elementResidual_u[i] +=
                         ck.Mass_weak(m_t,u_test_dV[i]) +
                         ck.Advection_weak(f,&u_grad_test_dV[i_nSpace]) +
+                        ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),a,grad_u,&u_grad_test_dV[i_nSpace]) +    
                         ck.SubgridError(subgridError_u,Lstar_u[i]) +
                         ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k] + physicalDiffusion,//todo add full sparse diffusion terms
                                               grad_u,
@@ -683,23 +806,46 @@ namespace proteus
                           elementTransport[i][j] +=
                             ck.AdvectionJacobian_weak(dfn,
                                                       u_trial_ref.data()[k*nDOF_trial_element+j],
-                                                      &u_grad_test_dV[i_nSpace]);
-                          elementDiffusion[i][j] += ck.NumericalDiffusionJacobian(physicalDiffusion,
-                                                                                  &u_grad_trial[j_nSpace],
-                                                                                  &u_grad_test_dV[i_nSpace]);
+                                                      &u_grad_test_dV[i_nSpace])
+                                                      +
+                            ck.SimpleDiffusionJacobian_weak(a_rowptr.data(),
+										                                        a_colind.data(),
+                                                            a,
+                                                            &u_grad_trial[j_nSpace],
+                                                            &u_grad_test_dV[i_nSpace]);
+                                                      
+
+
+                                               
+                           elementDiffusion[i][j] += ck.NumericalDiffusionJacobian(physicalDiffusion,
+                                                                                   &u_grad_trial[j_nSpace],
+                                                                                   &u_grad_test_dV[i_nSpace]);
                           elementTransposeTransport[i][j] += ck.AdvectionJacobian_weak(dfn,
                                                                                        u_trial_ref.data()[k*nDOF_trial_element+i],
-                                                                                       &u_grad_test_dV[j_nSpace]);
-                        }
+                                                                                       &u_grad_test_dV[j_nSpace])+
+                                                             ck.SimpleDiffusionJacobian_weak(a_rowptr.data(),
+                                                                                              a_colind.data(),
+                                                                                              a,
+                                                                                              &u_grad_trial[j_nSpace],
+                                                                                              &u_grad_test_dV[i_nSpace]);                          
+                                                                                       
+                                                            
+                                                          }
                     }
                   else
                     {
                       elementResidual_u[i] +=
                         ck.Mass_weak(m_t,u_test_dV[i]) +
                         ck.Advection_weak(f,&u_grad_test_dV[i_nSpace])+
-                        ck.NumericalDiffusion(physicalDiffusion,//todo add full sparse diffusion terms
-                                              grad_u,
-                                              &u_grad_test_dV[i_nSpace]);
+                        ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),a,grad_u,&u_grad_test_dV[i_nSpace]);
+
+                        //std::cout << "elementResidual_u[" << i << "]: " << elementResidual_u[i] << std::endl;
+                        //  +
+                        
+
+                        // ck.NumericalDiffusion(physicalDiffusion,//todo add full sparse diffusion terms
+                        //                       grad_u,
+                        //                       &u_grad_test_dV[i_nSpace]);
                     }
                 }//i
               //
@@ -707,7 +853,7 @@ namespace proteus
               //
               q_u.data()[eN_k] = u;
               q_m.data()[eN_k] = m;
-            }//k
+              }//k
           //
           //load element into global residual and save element residual
           //
@@ -772,6 +918,13 @@ namespace proteus
                 dm_ext=0.0,
                 f_ext[nSpace],
                 df_ext[nSpace],
+                /////////////////////
+                a_ext[nnz],
+		            da_ext[nnz],
+
+                bc_a_ext[nnz],
+		            bc_da_ext[nnz],
+                /////////////////////////////
                 flux_ext=0.0,
                 dflux_u_u_ext=0.0,
                 bc_u_ext=0.0,
@@ -870,19 +1023,45 @@ namespace proteus
               //
               //calculate the pde coefficients using the solution and the boundary values for the solution
               //
-              evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+              // evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+              //                      u_ext,
+              //                      m_ext,
+              //                      dm_ext,
+              //                      f_ext,
+              //                      df_ext);
+              // evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+              //                      bc_u_ext,
+              //                      bc_m_ext,
+              //                      bc_dm_ext,
+              //                      bc_f_ext,
+              //                      bc_df_ext);
+              //
+              const double* qb_a_ptr = &q_a[ebNE_kb * a_rowptr[nSpace]];
+
+              evaluateCoefficients(a_rowptr.data(),
+				                           a_colind.data(),
+                                   &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                                   qb_a_ptr, //&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
                                    u_ext,
                                    m_ext,
                                    dm_ext,
                                    f_ext,
-                                   df_ext);
-              evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                                   df_ext,
+                                   a_ext,
+                                   da_ext);
+
+              
+              evaluateCoefficients(a_rowptr.data(),
+				                           a_colind.data(),
+                                   &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                                   qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
                                    bc_u_ext,
                                    bc_m_ext,
                                    bc_dm_ext,
                                    bc_f_ext,
-                                   bc_df_ext);
-              //
+                                   bc_df_ext,
+                                   bc_a_ext,
+                                   bc_da_ext);         
               //moving mesh
               //
               double mesh_velocity[3];
@@ -908,6 +1087,7 @@ namespace proteus
                                              u_ext,
                                              df_ext,
                                              flux_ext);
+
               if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity or 
                   STABILIZATION_TYPE == STABILIZATION::SmoothnessIndicator or 
                   STABILIZATION_TYPE == STABILIZATION::Kuzmin)
@@ -1055,6 +1235,7 @@ namespace proteus
               double alphai = alpha_numerator/(alpha_denominator+1E-15);
               quantDOFs[i] = alphai;
 
+
               if (POWER_SMOOTHNESS_INDICATOR==0)
                 psi[i] = 1.0;
               else
@@ -1079,7 +1260,9 @@ namespace proteus
                   double solnj = u_dof_old.data()[j]; // solution at time tn for the jth DOF
                   double dLowij, dLij, dEVij, dHij;
 
-                  ith_flux_term += (TransportMatrix[ij]+physicalDiffusion*DiffusionMatrix[i,j])*solnj;
+                  ith_flux_term += (TransportMatrix[ij]+physicalDiffusion*DiffusionMatrix[ij])*solnj;
+                 
+                  
                   if (i != j) //NOTE: there is really no need to check for i!=j (see formula for ith_dissipative_term)
                     {
                       // artificial compression
@@ -1087,9 +1270,11 @@ namespace proteus
                       double Compij = cK*fmax(solij*(1.0-solij),0.0)/(fabs(solni-solnj)+1E-14);
                       // first-order dissipative operator
                       dLowij = fmax(fabs(TransportMatrix[ij]),fabs(TransposeTransportMatrix[ij]));
+                      //std::cout << dLowij;
                       //dLij = fmax(0.,fmax(psi[i]*TransportMatrix[ij], // Approach by S. Badia
                       //              psi[j]*TransposeTransportMatrix[ij]));
                       dLij = dLowij*fmax(psi[i],psi[j]); // Approach by JLG & BP
+                      
                       if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity) //EV Stab
                         {
                           // high-order (entropy viscosity) dissipative operator
@@ -1105,8 +1290,11 @@ namespace proteus
                       ith_low_order_dissipative_term += dLowij*(solnj-solni);
                       //dHij - dLij. This matrix is needed during FCT step
                       dt_times_dH_minus_dL[ij] = dt*(dHij - dLowij);
+                      //std::cout << dLij;
+
                       dLii -= dLij;
                       dLow[ij] = dLowij;
+                      
                     }
                   else //i==j
                     {
@@ -1121,6 +1309,9 @@ namespace proteus
               double mi = ML.data()[i];
               // compute edge_based_cfl
               edge_based_cfl.data()[i] = 2.*fabs(dLii)/mi;
+              // Debugging output to check values
+              //std::cout << "Element: " << i << ", dLii: " << fabs(dLii) << ", mi: " << mi << std::endl;
+
               uLow[i] = u_dof_old.data()[i] - dt/mi*(ith_flux_term
                                                      + boundary_integral[i]
                                                      - ith_low_order_dissipative_term);
@@ -1187,7 +1378,18 @@ namespace proteus
       xt::pyarray<int>& csrColumnOffsets_eb_u_u = args.array<int>("csrColumnOffsets_eb_u_u");
       STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
+      xt::pyarray<double>& q_a = args.array<double>("q_a");
       double Ct_sge = 4.0;
+
+
+
+            /////////////////////////////////////////////////////////////////////////
+      xt::pyarray<int>& a_rowptr = args.array<int>("a_rowptr");
+      xt::pyarray<int>& a_colind = args.array<int>("a_colind");
+      //xt::pyarray<double>& D = args.array<double>("D");
+      //////////////////////////////////////////////////////////////////////////
+     
+
       //
       //loop over elements to compute volume integrals and load them into the element Jacobians and global Jacobian
       //
@@ -1210,6 +1412,8 @@ namespace proteus
                 grad_u[nSpace],
                 m=0.0,dm=0.0,
                 f[nSpace],df[nSpace],
+                a[nSpace],da[nSpace],
+                
                 m_t=0.0,dm_t=0.0,
                 dpdeResidual_u_u[nDOF_trial_element],
                 Lstar_u[nDOF_test_element],
@@ -1265,12 +1469,28 @@ namespace proteus
               //
               //calculate pde coefficients and derivatives at quadrature points
               //
-              evaluateCoefficients(&velocity.data()[eN_k_nSpace],
+              // evaluateCoefficients(&velocity.data()[eN_k_nSpace],
+              //                      u,
+              //                      m,
+              //                      dm,
+              //                      f,
+              //                      df);
+              
+              const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
+              evaluateCoefficients(a_rowptr.data(),
+				                           a_colind.data(),
+                                   &velocity.data()[eN_k_nSpace],
+                                   q_a_ptr, //&q_a.data()[eN * nQuadraturePoints_element * nnz + k * nnz],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    u,
                                    m,
                                    dm,
                                    f,
-                                   df);
+                                   df,
+                                   a,
+                                   da);
+
+
+
               //
               //moving mesh
               //
@@ -1344,6 +1564,10 @@ namespace proteus
                             ck.AdvectionJacobian_weak(df,
                                                       u_trial_ref.data()[k*nDOF_trial_element+j],
                                                       &u_grad_test_dV[i_nSpace]) +
+                            ck.DiffusionJacobian_weak(a_rowptr.data(),a_colind.data(),a,da,
+						                                          grad_u,&u_grad_test_dV[i_nSpace],1.0,
+						                                          u_trial_ref.data()[k*nDOF_trial_element+j],&u_grad_trial[j_nSpace])
+                                                      +
                             ck.NumericalDiffusionJacobian(physicalDiffusion,
                                                           &u_grad_trial[j_nSpace],
                                                           &u_grad_test_dV[i_nSpace]); //implicit
@@ -1357,6 +1581,10 @@ namespace proteus
                             ck.AdvectionJacobian_weak(df,
                                                       u_trial_ref.data()[k*nDOF_trial_element+j],
                                                       &u_grad_test_dV[i_nSpace]) +
+                            ck.DiffusionJacobian_weak(a_rowptr.data(),a_colind.data(),a,da,
+                                                      grad_u,&u_grad_test_dV[i_nSpace],1.0,
+                                                      u_trial_ref.data()[k*nDOF_trial_element+j],&u_grad_trial[j_nSpace])+
+
                             ck.SubgridErrorJacobian(dsubgridError_u_u[j],Lstar_u[i]) +
                             ck.NumericalDiffusionJacobian(q_numDiff_u_last.data()[eN_k] + physicalDiffusion,
                                                           &u_grad_trial[j_nSpace],
@@ -1417,6 +1645,12 @@ namespace proteus
                     dm_ext=0.0,
                     f_ext[nSpace],
                     df_ext[nSpace],
+
+                    a_ext[nSpace],
+                    da_ext[nSpace],
+                    bc_a_ext[nSpace],
+                    bc_da_ext[nSpace],
+
                     dflux_u_u_ext=0.0,
                     bc_u_ext=0.0,
                     //bc_grad_u_ext[nSpace],
@@ -1490,18 +1724,43 @@ namespace proteus
                   //
                   //calculate the internal and external trace of the pde coefficients
                   //
-                  evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                  // evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                  //                      u_ext,
+                  //                      m_ext,
+                  //                      dm_ext,
+                  //                      f_ext,
+                  //                      df_ext);
+                  // evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                  //                      bc_u_ext,
+                  //                      bc_m_ext,
+                  //                      bc_dm_ext,
+                  //                      bc_f_ext,
+                  //                      bc_df_ext);
+                  const double* qb_a_ptr = &q_a[ebNE_kb * a_rowptr[nSpace]];
+                  evaluateCoefficients(a_rowptr.data(),
+                                       a_colind.data(),
+                                       &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                                       qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
                                        u_ext,
                                        m_ext,
                                        dm_ext,
                                        f_ext,
-                                       df_ext);
-                  evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                                       df_ext,
+                                       a_ext,
+                                       da_ext
+                                       );
+
+                  evaluateCoefficients(a_rowptr.data(),
+                                       a_colind.data(),
+                                       &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
+                                       qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
                                        bc_u_ext,
                                        bc_m_ext,
                                        bc_dm_ext,
                                        bc_f_ext,
-                                       bc_df_ext);
+                                       bc_df_ext,
+                                       bc_a_ext,
+                                       bc_da_ext);
                   //
                   //moving domain
                   //
