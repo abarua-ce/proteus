@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 from builtins import object
+import numpy as np
 from proteus import *
 from proteus.default_p import *
 from proteus.ctransportCoefficients import smoothedHeaviside
@@ -12,10 +13,17 @@ except:
 LevelModelType = TADR.LevelModel
 logEvent = Profiling.logEvent
 name=soname
+a0= 0.02
+def a(x):
+    return numpy.array([[a0,0.0],[0.0,a0]])
+aOfX = {0:a}
 
 nd=ct.nd
 
+
+
 coefficients = MyCoefficients(
+    aOfX,
     checkMass=checkMass,
     FCT=ct.FCT,
     LUMPED_MASS_MATRIX=ct.LUMPED_MASS_MATRIX, 
@@ -23,6 +31,9 @@ coefficients = MyCoefficients(
     ENTROPY_TYPE=ct.ENTROPY_TYPE, 
     cE=ct.cE, cK=ct.cK, physicalDiffusion=ct.physicalDiffusion) 
 coefficients.variableNames=['u']
+
+
+
 
 ##################
 # VELOCITY FIELD #
