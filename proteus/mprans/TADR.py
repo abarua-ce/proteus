@@ -283,6 +283,7 @@ class Coefficients(TC_base):
                  forceStrongConditions=False,
                  STABILIZATION_TYPE='VMS',        
                  ENTROPY_TYPE='POWER',
+                 diagonal_conductivity=True,
                  # 0: quadratic
                  # 1: logarithmic
                  # FOR ENTROPY VISCOSITY
@@ -324,9 +325,13 @@ class Coefficients(TC_base):
         self.forceStrongConditions = forceStrongConditions
         self.nd=nd
         self.aOfX = aOfX
+        self.diagonal_conductivity = diagonal_conductivity
 
-
-        sdInfo = {(0, 0): (np.arange(start=0, stop=nd**2 + 1, step=nd, dtype='int32'),
+        if self.diagonal_conductivity:
+            sdInfo= {(0,0):(np.arange(self.nd+1,dtype='i'),
+                            np.arange(self.nd,dtype='i'))}
+        else:
+            sdInfo = {(0, 0): (np.arange(start=0, stop=nd**2 + 1, step=nd, dtype='int32'),
                    np.array([range(nd) for _ in range(nd)], dtype='int32'))}
         
         self.cE = cE
@@ -744,8 +749,7 @@ class LevelModel(OneLevelTransport):
         self.q[('a',0,0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
         nd = self.coefficients.nd
 
-        #self.q[('a', 0, 0)] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element, sdInfo[(0, 0)][0][-1]), 'd')
-
+        
         
         self.q[('r',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element),'d')
 
@@ -765,7 +769,11 @@ class LevelModel(OneLevelTransport):
         self.ebqe[('a',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
         #self.ebqe[('df',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
         self.ebqe[('r',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
+        self.ebqe[('diffusiveFlux_bc_flag',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'i')
+        self.ebqe['penalty'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
+        
         #######################################################
+
         self.points_elementBoundaryQuadrature = set()
         self.scalars_elementBoundaryQuadrature = set([('u', ci) for ci in range(self.nc)])
         self.vectors_elementBoundaryQuadrature = set()
@@ -792,125 +800,38 @@ class LevelModel(OneLevelTransport):
         logEvent("Calculating numerical quadrature formulas", 2)
         self.calculateQuadrature()
         ############################################
-        # Populate q[('a', 0, 0)] directly
-        # Populate the diffusion tensor values in self.q[('a', 0, 0)]
-        #nd = self.coefficients.nd
-        #print("nd * nd:", nd * nd)
-        #print("Size expected from sdInfo:", self.coefficients.sdInfo[(0, 0)][0][-1])
-        nd = self.coefficients.nd
-        sd_rowptr = self.coefficients.sdInfo[(0, 0)][0]
-        sd_colind = self.coefficients.sdInfo[(0, 0)][1]
 
+        nd = self.coefficients.nd
+        a_rowptr = self.coefficients.sdInfo[(0, 0)][0]
+        a_colind = self.coefficients.sdInfo[(0, 0)][1]
+
+         #########Dealing with element diffusion coefficient
         for eN in range(self.mesh.nElements_global):
             for k in range(self.nQuadraturePoints_element):
                 x = self.q['x'][eN, k, :]
                 a_full = self.coefficients.aOfX[0](x)
-                a_val = np.array([a_full[row, col] for row, col in zip(sd_rowptr[:-1], sd_colind)])
-                
-                # Print statements to debug the values of q_a
-                #print(f"eN: {eN}, k: {k}")
-                #print(f"x: {x}")
-                #print(f"a_full: {a_full}")
-                #print(f"a_val: {a_val}")
+                a_val = np.array([a_full[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
 
-                if a_val.shape == (sd_rowptr[-1],):
+                if a_val.shape == (a_rowptr[-1],):
                     self.q[('a', 0, 0)][eN, k, :] = a_val
                 else:
-                    raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({sd_rowptr[-1]},)")
-
-                # nd = self.coefficients.nd
-        # indices = self.coefficients.sdInfo[(0, 0)][0]  # Extracting the relevant indices from sdInfo
-
-        # print(f"nd: {nd}")
-        # print(f"indices: {indices}")
-
-        # for eN in range(self.mesh.nElements_global):
-        #     for k in range(self.nQuadraturePoints_element):
-        #         x = self.q['x'][eN, k, :]
-        #         a_val = self.coefficients.aOfX[0](x)
-                
-        #         print(f"a_val: {a_val}")
-        #         print(f"eN: {eN}, k: {k}, a_val shape: {a_val.shape}, flattened: {a_val.flatten().shape}")
-        #         print(f"self.q[('a', 0, 0)][{eN}, {k}, :].shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
-                
-        #         if a_val.shape == (nd, nd):
-        #             flattened_a_val = a_val.flatten()
-        #             selected_values = flattened_a_val[indices]
-                    
-        #             print(f"flattened_a_val: {flattened_a_val}")
-        #             print(f"selected_values: {selected_values}")
-        #             print(f"selected_values shape: {selected_values.shape}")
-
-        #             if selected_values.shape == self.q[('a', 0, 0)][eN, k, :].shape:
-        #                 self.q[('a', 0, 0)][eN, k, :] = selected_values
-        #             else:
-        #                 raise ValueError(f"Shape mismatch: selected_values shape: {selected_values.shape}, target shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
-        #         else:
-        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
-
-
-        # nd = self.coefficients.nd
-        # for eN in range(self.mesh.nElements_global):
-        #     for k in range(self.nQuadraturePoints_element):
-        #         x = self.q['x'][eN, k, :]
-        #         a_val = self.coefficients.aOfX[0](x)
-        #         if a_val.shape == (nd, nd):
-        #             # Using sdInfo to map flattened values to the correct positions
-        #             indices = self.coefficients.sdInfo[(0, 0)][0]
-        #             self.q[('a', 0, 0)][eN, k, :] = a_val.flatten()[indices]
-        #         else:
-        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
-
-        # for eN in range(self.mesh.nElements_global):
-        #     for k in range(self.nQuadraturePoints_element):
-        #         x = self.q['x'][eN, k, :]
-        #         a_val = self.coefficients.aOfX[0](x)
-        #         #print("a_val:", a_val)
-        #         #print(f"eN: {eN}, k: {k}, a_val shape: {a_val.shape}, flattened: {a_val.flatten().shape}")
-        #         #print(f"self.q[('a', 0, 0)][{eN}, {k}, :].shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
-                
-        #         if a_val.shape == (nd, nd):
-        #             if nd == 2:
-        #                 # For 2D, we store the values based on the sparse structure defined by sdInfo
-        #                 self.q[('a', 0, 0)][eN, k, 0] = a_val[0, 0]  # a_xx
-        #                 self.q[('a', 0, 0)][eN, k, 1] = a_val[1, 1]  # a_yy
-        #                 print(a_val[0, 0])
-        #             elif nd == 3:
-        #                 # For 3D, adapt this as needed to store the correct components
-        #                 self.q[('a', 0, 0)][eN, k, 0] = a_val[0, 0]  # a_xx
-        #                 self.q[('a', 0, 0)][eN, k, 1] = a_val[1, 1]  # a_yy
-        #                 self.q[('a', 0, 0)][eN, k, 2] = a_val[2, 2]  # a_zz
-        #                 self.q[('a', 0, 0)][eN, k, 3] = a_val[0, 1]  # a_xy 
-        #                 self.q[('a', 0, 0)][eN, k, 4] = a_val[0, 2]  # a_xz 
-        #                 self.q[('a', 0, 0)][eN, k, 5] = a_val[1, 2]  # a_yz 
-        #             else:
-        #                 raise ValueError(f"Unsupported dimension: {nd}")
-        #         else:
-        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
-        # #print(self.q[('a', 0, 0)])
-
-
-        # for eN in range(self.mesh.nElements_global):
-        #     for k in range(self.nQuadraturePoints_element):
-        #         x = self.q['x'][eN, k, :]
-        #         a_val = self.coefficients.aOfX[0](x)
-        #         print("a_val:", a_val)
-        #         print(f"eN: {eN}, k: {k}, a_val shape: {a_val.shape}, flattened: {a_val.flatten().shape}")
-        #         print(f"self.q[('a', 0, 0)][{eN}, {k}, :].shape: {self.q[('a', 0, 0)][eN, k, :].shape}")
-                
-        #         if a_val.shape == (nd, nd):
-        #             self.q[('a', 0, 0)][eN, k, :] = a_val.flatten()
-        #         else:
-        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({nd}, {nd})")
+                    raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({a_rowptr[-1]},)")
+        #self.ebqe[('a',0,0)] = np.zeros((,,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
+        
+        #########Dealing with boundary diffusion coefficient       
+        
+        for ebNE in range(self.mesh.nExteriorElementBoundaries_global):
+            for kb in range(self.nElementBoundaryQuadraturePoints_elementBoundary):
+                x = self.ebqe['x'][ebNE, kb, :]
+                a_full = self.coefficients.aOfX[0](x)
+                a_val = np.array([a_full[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
+                if a_val.shape == (a_rowptr[-1],):
+                    self.ebqe[('a', 0, 0)][ebNE, kb, :] = a_val
+                else:
+                    raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({a_rowptr[-1]},)")
 
 
 
-        # nd = self.coefficients.nd
-        # for eN in range(self.mesh.nElements_global):
-        #     for k in range(self.nQuadraturePoints_element):
-        #         x = self.q['x'][eN, k, :]
-        #         a_val = self.coefficients.aOfX[0](x)
-        #         self.q[('a', 0, 0)][eN, k, :nd*nd] = a_val.flatten()
 
         self.setupFieldStrides()
 
@@ -947,8 +868,7 @@ class LevelModel(OneLevelTransport):
             for ebNE in range(self.mesh.nExteriorElementBoundaries_global):
                 ebN = self.mesh.exteriorElementBoundariesArray[ebNE]
                 for k in range(self.nElementBoundaryQuadraturePoints_elementBoundary):
-                    self.ebqe['penalty'][ebNE, k] = \
-                        self.numericalFlux.penalty_constant/self.mesh.elementBoundaryDiametersArray[ebN]**self.numericalFlux.penalty_power
+                    self.ebqe['penalty'][ebNE, k] = self.numericalFlux.penalty_constant/self.mesh.elementBoundaryDiametersArray[ebN]**self.numericalFlux.penalty_power
         logEvent(memory("numericalFlux", "OneLevelTransport"), level=4)
         self.elementEffectiveDiametersArray = self.mesh.elementInnerDiametersArray
         # use post processing tools to get conservative fluxes, None by default
@@ -1269,6 +1189,11 @@ class LevelModel(OneLevelTransport):
         ###########################################
         argsDict["q_a"] = self.q[('a',0,0)]
         argsDict["q_r"] = self.q[('r',0)]
+
+        argsDict["ebq_a"] = self.ebqe[('a',0,0)]
+        argsDict["ebq_r"] = self.ebqe[('r',0)]
+
+
         ###########################################
         argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
         argsDict["q_dV"] = self.q['dV']
@@ -1318,6 +1243,12 @@ class LevelModel(OneLevelTransport):
         argsDict["quantDOFs"] = self.quantDOFs
         argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion
         #argsDict["D"] = self.coefficients.DTypes
+        argsDict["isDiffusiveFluxBoundary_u"] = self.ebqe[('diffusiveFlux_bc_flag',0,0)]
+        argsDict["isAdvectiveFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]
+        argsDict["ebqe_bc_advectiveFlux_u_ext"] = self.ebqe[('advectiveFlux_bc',0)]
+        argsDict["ebqe_penalty_ext"] = self.ebqe['penalty']
+        argsDict["eb_adjoint_sigma"] = self.numericalFlux.boundaryAdjoint_sigma
+        
 
         sdInfo = self.coefficients.sdInfo
     

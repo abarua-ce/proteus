@@ -135,24 +135,82 @@ void evaluateCoefficients(const int rowptr[nSpace],
       // Diffusion terms    
     }
 
+inline
+    void exteriorNumericalDiffusiveFlux(int* rowptr,
+					int* colind,
+					const int& isDOFBoundary,
+					const int& isDiffusiveFluxBoundary,
+					const double n[nSpace],
+					double* bc_a,
+					const double& bc_u,
+					const double& bc_flux,
+					double* a,
+					const double grad_potential[nSpace],
+					const double& u,
+					const double& penalty,
+					double& flux)
+    {
+      double diffusiveVelocityComponent_I;
+      double penaltyFlux;
+      double max_a;
+      if (isDiffusiveFluxBoundary == 1)
+	{
+	  flux = bc_flux;
+	}
+      else if (isDOFBoundary == 1)
+	{
+	  flux = 0.0;
+	  max_a = 0.0;
+	  for (int I = 0; I < nSpace; I++)
+	    {
+	      diffusiveVelocityComponent_I = 0.0;
+	      for (int m = rowptr[I]; m < rowptr[I+1]; m++)
+		{
+		  diffusiveVelocityComponent_I -= a[m] * grad_potential[colind[m]];
+		  max_a = fmax(max_a, a[m]);
+		}
+	      flux += diffusiveVelocityComponent_I * n[I];
+	    }
+	  penaltyFlux = max_a * penalty * (u - bc_u);
+	  flux += penaltyFlux;
+	}
+      else
+	{
+	  std::cerr << "warning, diffusion term with no boundary condition set, setting diffusive flux to 0.0" << std::endl;
+	  flux = 0.0;
+	}
+    }
 
-
-    // void evaluateCoefficients(const double v[nSpace],
-    //                           const double& u,
-    //                           double& m,
-    //                           double& dm,
-    //                           double f[nSpace],
-    //                           double df[nSpace])
-    // {
-    //   m = u;
-    //   dm= 1.0;
-    //   for (int I=0; I < nSpace; I++)
-    //     {
-    //       f[I] = v[I]*u;
-    //       df[I] = v[I];
-    //     }
-    //   //cek todo: add sparse diffusion
-    // }
+    inline
+    double ExteriorNumericalDiffusiveFluxJacobian(int* rowptr,
+						  int* colind,
+						  const int& isDOFBoundary,
+						  const int& isDiffusiveFluxBoundary,
+						  const double n[nSpace],
+						  double* a,
+						  const double& v,
+						  const double grad_v[nSpace],
+						  const double& penalty)
+    {
+      double dvel_I;
+      double tmp = 0.0;
+      double max_a = 0.0;
+      if ((isDiffusiveFluxBoundary == 0) && (isDOFBoundary == 1))
+	{
+	  for (int I = 0; I < nSpace; I++)
+	    {
+	      dvel_I = 0.0;
+	      for (int m = rowptr[I]; m < rowptr[I + 1]; m++)
+		{
+		  dvel_I -= a[m] * grad_v[colind[m]];
+		  max_a = fmax(max_a, a[m]);
+		}
+	      tmp += dvel_I * n[I];
+	    }
+	  tmp += max_a * penalty * v;
+	}
+      return tmp;
+    }
 
     inline
     void calculateSubgridError_tau(const double& elementDiameter,
@@ -337,6 +395,8 @@ void evaluateCoefficients(const int rowptr[nSpace],
 
       xt::pyarray<double>& q_a = args.array<double>("q_a");
       xt::pyarray<double>& q_r = args.array<double>("q_r");
+      xt::pyarray<double>& ebqe_a = args.array<double>("ebq_a");
+      
 
       xt::pyarray<double>& q_m_betaBDF = args.array<double>("q_m_betaBDF");
       xt::pyarray<double>& q_dV = args.array<double>("q_dV");
@@ -389,8 +449,15 @@ void evaluateCoefficients(const int rowptr[nSpace],
       xt::pyarray<int>& a_colind = args.array<int>("a_colind");
       //xt::pyarray<double>& D = args.array<double>("D");
       //initializeDToZero(D);
+      ///////////////////////////////////////////
+      xt::pyarray<int>& isDiffusiveFluxBoundary_u = args.array<int>("isDiffusiveFluxBoundary_u");
+      xt::pyarray<int>& isAdvectiveFluxBoundary_u = args.array<int>("isAdvectiveFluxBoundary_u");
+      xt::pyarray<double>& ebqe_bc_advectiveFlux_u_ext = args.array<double>("ebqe_bc_advectiveFlux_u_ext");
+      xt::pyarray<double>& ebqe_penalty_ext = args.array<double>("ebqe_penalty_ext");
       //////////////////////////////////////////////////////////////////////////
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
+      const double eb_adjoint_sigma = args.scalar<double>("eb_adjoint_sigma");
+      
       double meanEntropy = 0., meanOmega = 0., maxEntropy = -1E10, minEntropy = 1E10;
       maxVel.resize(nElements_global, 0.0);
       maxEntRes.resize(nElements_global, 0.0);
@@ -549,16 +616,6 @@ void evaluateCoefficients(const int rowptr[nSpace],
               //
               //calculate pde coefficients at quadrature points
 
-
-              //
-              // Print the values going into q_a
-              int q_a_index = eN_k * a_rowptr.data()[nSpace];
-              // std::cout << "q_a values for eN: " << eN << ", k: " << k << ": ";
-              // for (int i = 0; i < a_rowptr.data()[nSpace]; ++i)
-              // {
-              //     std::cout << q_a.data()[q_a_index + i] << " ";
-              // }
-              // std::cout << std::endl;
               const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
@@ -571,22 +628,6 @@ void evaluateCoefficients(const int rowptr[nSpace],
                                    df,
                                    a,
                                    da);
-              // std::cout << "q_a values for eN: " << eN << ", k: " << k << ": ";
-              // for (int i = 0; i < nnz; ++i) {
-              //     std::cout << q_a_ptr[i] << " ";
-              // }
-              // std::cout << std::endl;
-                            
-              // Print q_a values for debugging
-            // std::cout << "q_a values for eN: " << eN << ", k: " << k << ": ";
-            // for (int i = 0; i < a_rowptr[nSpace]; ++i)
-            // {
-            //     std::cout << q_a_ptr[i] << " ";
-            // }
-            // std::cout << std::endl;
-
-            //a = &q_a.data()[eN_k * a_rowptr.data()[nSpace]];
-
 
             //D.data()[eN * nQuadraturePoints_element * nnz + k * nnz] calculates 
             //the correct starting index for D for the current element eN and 
@@ -606,24 +647,6 @@ void evaluateCoefficients(const int rowptr[nSpace],
                                    dan);
               //an= &q_a.data()[eN_k * sd_rowptr.data()[nSpace]];
 
-
-
-               
-
-
-              // evaluateCoefficients(&velocity.data()[eN_k_nSpace],
-              //                      u,
-              //                      m,
-              //                      dm,
-              //                      f,
-              //                      df);
-              // //cek todo, this should be velocity_old
-              // evaluateCoefficients(&velocity.data()[eN_k_nSpace],
-              //                      un,
-              //                      mn,
-              //                      dmn,
-              //                      fn,
-              //                      dfn);
               //
               //moving mesh
               //
@@ -930,6 +953,8 @@ void evaluateCoefficients(const int rowptr[nSpace],
                 bc_u_ext=0.0,
                 bc_m_ext=0.0,
                 bc_dm_ext=0.0,
+
+                flux_diff_ext=0.0,
                 bc_f_ext[nSpace],
                 bc_df_ext[nSpace],
                 jac_ext[nSpace*nSpace],
@@ -941,6 +966,7 @@ void evaluateCoefficients(const int rowptr[nSpace],
                 dS,
                 u_test_dS[nDOF_test_element],
                 u_grad_trial_trace[nDOF_trial_element*nSpace],
+                u_grad_test_dS[nDOF_trial_element*nSpace],
                 normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
                 //
                 G[nSpace*nSpace],G_dd_G,tr_G;
@@ -1014,6 +1040,9 @@ void evaluateCoefficients(const int rowptr[nSpace],
               for (int j=0;j<nDOF_trial_element;j++)
                 {
                   u_test_dS[j] = u_test_trace_ref.data()[ebN_local_kb*nDOF_test_element+j]*dS;
+                  for (int I=0;I<nSpace;I++)
+		                u_grad_test_dS[j*nSpace+I] = u_grad_trial_trace[j*nSpace+I]*dS;//cek hack, using trial
+	
                 }
               //
               //load the boundary values
@@ -1023,20 +1052,7 @@ void evaluateCoefficients(const int rowptr[nSpace],
               //
               //calculate the pde coefficients using the solution and the boundary values for the solution
               //
-              // evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-              //                      u_ext,
-              //                      m_ext,
-              //                      dm_ext,
-              //                      f_ext,
-              //                      df_ext);
-              // evaluateCoefficients(&ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-              //                      bc_u_ext,
-              //                      bc_m_ext,
-              //                      bc_dm_ext,
-              //                      bc_f_ext,
-              //                      bc_df_ext);
-              //
-              const double* qb_a_ptr = &q_a[ebNE_kb * a_rowptr[nSpace]];
+           const double* qb_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
 
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
@@ -1079,6 +1095,20 @@ void evaluateCoefficients(const int rowptr[nSpace],
               //
               //calculate the numerical fluxes
               //
+              exteriorNumericalDiffusiveFlux(a_rowptr.data(),
+                                             a_colind.data(),
+                                             isDOFBoundary_u.data()[ebNE_kb],
+                                             isDiffusiveFluxBoundary_u.data()[ebNE_kb],
+                                             normal,
+                                             a_ext,
+                                             bc_u_ext,
+                                             ebqe_bc_flux_u_ext.data()[ebNE_kb],
+                                             a_ext,
+                                             grad_u_ext,
+                                             u_ext,
+                                             ebqe_penalty_ext.data()[ebNE_kb],
+                                             flux_diff_ext);
+
               exteriorNumericalAdvectiveFlux(isDOFBoundary_u.data()[ebNE_kb],
                                              isFluxBoundary_u.data()[ebNE_kb],
                                              normal,
@@ -1137,7 +1167,17 @@ void evaluateCoefficients(const int rowptr[nSpace],
                             u_test_dS[j];
                       }
                       else
-                        elementResidual_u[i] += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i]);
+                        elementResidual_u[i] += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i])+
+                                                ck.ExteriorElementBoundaryDiffusionAdjoint(isDOFBoundary_u.data()[ebNE_kb],
+                                                                                            isDiffusiveFluxBoundary_u.data()[ebNE_kb],
+                                                                                            eb_adjoint_sigma,
+                                                                                            u_ext,
+                                                                                            bc_u_ext,
+                                                                                            normal,
+                                                                                            a_rowptr.data(),
+                                                                                            a_colind.data(),
+                                                                                            a_ext,
+                                                                                            &u_grad_test_dS[i*nSpace]);
 
                     }
                 }//i
@@ -1260,7 +1300,7 @@ void evaluateCoefficients(const int rowptr[nSpace],
                   double solnj = u_dof_old.data()[j]; // solution at time tn for the jth DOF
                   double dLowij, dLij, dEVij, dHij;
 
-                  ith_flux_term += (TransportMatrix[ij]+physicalDiffusion*DiffusionMatrix[ij])*solnj;
+                  ith_flux_term += (TransportMatrix[ij]+ DiffusionMatrix[ij])*solnj;
                  
                   
                   if (i != j) //NOTE: there is really no need to check for i!=j (see formula for ith_dissipative_term)
@@ -1379,6 +1419,9 @@ void evaluateCoefficients(const int rowptr[nSpace],
       STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
       xt::pyarray<double>& q_a = args.array<double>("q_a");
+      xt::pyarray<double>& ebqe_a = args.array<double>("ebq_a");
+
+
       double Ct_sge = 4.0;
 
 
@@ -1469,12 +1512,6 @@ void evaluateCoefficients(const int rowptr[nSpace],
               //
               //calculate pde coefficients and derivatives at quadrature points
               //
-              // evaluateCoefficients(&velocity.data()[eN_k_nSpace],
-              //                      u,
-              //                      m,
-              //                      dm,
-              //                      f,
-              //                      df);
               
               const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               evaluateCoefficients(a_rowptr.data(),
@@ -1488,9 +1525,6 @@ void evaluateCoefficients(const int rowptr[nSpace],
                                    df,
                                    a,
                                    da);
-
-
-
               //
               //moving mesh
               //
@@ -1736,7 +1770,7 @@ void evaluateCoefficients(const int rowptr[nSpace],
                   //                      bc_dm_ext,
                   //                      bc_f_ext,
                   //                      bc_df_ext);
-                  const double* qb_a_ptr = &q_a[ebNE_kb * a_rowptr[nSpace]];
+                  const double* qb_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
                   evaluateCoefficients(a_rowptr.data(),
                                        a_colind.data(),
                                        &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
