@@ -703,11 +703,6 @@ class LevelModel(OneLevelTransport):
         #
         # Repeat the same thing for the element boundary quadrature
         #
-
-
-
-
-
         (self.elementBoundaryQuadraturePoints,
          self.elementBoundaryQuadratureWeights,
          self.elementBoundaryQuadratureRuleIndeces) = Quadrature.buildUnion(elementBoundaryQuadratureDict)
@@ -765,16 +760,10 @@ class LevelModel(OneLevelTransport):
         self.ebqe[('a',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
         self.ebqe[('df',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
         self.ebqe[('r',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
-        self.ebqe[('diffusiveFlux_bc_flag',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'i')
         self.ebqe['penalty'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
-        self.ebqe[('u',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
         self.ebqe[('diffusiveFlux_bc_flag',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'i')
         self.ebqe[('diffusiveFlux_bc',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
-        self.ebqe[('advectiveFlux_bc_flag',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'i')
-        self.ebqe[('advectiveFlux_bc',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
         
-        #######################################################
-
         self.points_elementBoundaryQuadrature = set()
         self.scalars_elementBoundaryQuadrature = set([('u', ci) for ci in range(self.nc)])
         self.vectors_elementBoundaryQuadrature = set()
@@ -908,6 +897,7 @@ class LevelModel(OneLevelTransport):
                 if ci in self.coefficients.advection:
                     self.ebqe[('advectiveFlux_bc', ci)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
                     self.ebqe[('advectiveFlux_bc_flag', ci)][t[0], t[1]] = 1
+
             # Initialize the diffusive flux boundary condition flags
             #self.ebqe[('diffusiveFlux_bc_flag', ci)] = np.zeros(self.ebqe[('diffusiveFlux_bc', ci)].shape, 'i')
     
@@ -917,14 +907,7 @@ class LevelModel(OneLevelTransport):
                 self.ebqe[('diffusiveFlux_bc',ck,ci)][t[0],t[1]] = g(self.ebqe[('x')][t[0],t[1]],self.timeIntegration.t)
                 self.ebqe[('diffusiveFlux_bc_flag',ck,ci)][t[0],t[1]] = 1
 
-
-        #  # Insert the debug statements here
-        # for ebNE in range(self.mesh.nExteriorElementBoundaries_global):
-        #     for kb in range(self.nElementBoundaryQuadraturePoints_elementBoundary):
-        #         isDOFBoundary = self.numericalFlux.isDOFBoundary[0][ebNE, kb]
-        #         isFluxBoundary = self.ebqe[('advectiveFlux_bc_flag', 0)][ebNE, kb]
-        #         print(f"Boundary {ebNE}, point {kb}: isDOFBoundary={isDOFBoundary}, isFluxBoundary={isFluxBoundary}")
-
+        
         
         if hasattr(self.numericalFlux, 'setDirichletValues'):
             self.numericalFlux.setDirichletValues(self.ebqe)
@@ -1180,24 +1163,12 @@ class LevelModel(OneLevelTransport):
             self.ebqe[('advectiveFlux_bc', 0)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
             self.ebqe[('advectiveFlux_bc_flag', 0)][t[0], t[1]] = 1
 
-        # for ck, diffusiveFluxBoundaryConditionsDict in self.fluxBoundaryConditionsObjectsDict[0].diffusiveFluxBoundaryConditionsDictDict.items():
-        #     self.ebqe[('diffusiveFlux_bc_flag', ck, 0)] = np.zeros(self.ebqe[('diffusiveFlux_bc', ck, 0)].shape, 'i')
-        #     for t, g in diffusiveFluxBoundaryConditionsDict.items():
-        #         self.ebqe[('diffusiveFlux_bc', ck, 0)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
-        #         self.ebqe[('diffusiveFlux_bc_flag', ck, 0)][t[0], t[1]] = 1
-
         # Flux boundary conditions for diffusive terms
         for ck, diffusiveFluxBoundaryConditionsDict in self.fluxBoundaryConditionsObjectsDict[0].diffusiveFluxBoundaryConditionsDictDict.items():
-            self.ebqe[('diffusiveFlux_bc_flag', ck, 0)] = np.zeros(self.ebqe[('diffusiveFlux_bc', ck, 0)].shape, 'i')
+            #self.ebqe[('diffusiveFlux_bc_flag', ck, 0)] = np.zeros(self.ebqe[('diffusiveFlux_bc', ck, 0)].shape, 'i')
             for t, g in diffusiveFluxBoundaryConditionsDict.items():
                 self.ebqe[('diffusiveFlux_bc', ck, 0)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
                 self.ebqe[('diffusiveFlux_bc_flag', ck, 0)][t[0], t[1]] = 1
-
-        #     # Debugging: Print boundary condition flags and other variables
-        # print("isDOFBoundary_u:", self.numericalFlux.isDOFBoundary[0])
-        #print("isDiffusiveFluxBoundary_u:", self.ebqe[('diffusiveFlux_bc_flag', 0, 0)])
-        #print("ebqe_bc_flux_u_ext:", self.ebqe[('diffusiveFlux_bc', 0, 0)])
-
 
         if self.forceStrongConditions:
             for dofN, g in list(self.dirichletConditionsForceDOF.DOFBoundaryConditionsDict.items()):
@@ -1267,14 +1238,20 @@ class LevelModel(OneLevelTransport):
         argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
+        argsDict["elementBoundariesArray"] = self.mesh.elementBoundariesArray
         argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
         argsDict["ebqe_velocity_ext"] = self.coefficients.ebqe_v
         argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
         argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u', 0)]
         argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag', 0)]
         argsDict["ebqe_bc_advectiveFlux_u_ext"] = self.ebqe[('advectiveFlux_bc',0)]
-        #argsDict["ebqe_bc_flux_u_ext"] = self.ebqe[('advectiveFlux_bc', 0)]
-        argsDict["ebqe_bc_flux_u_ext"] = self.ebqe[('diffusiveFlux_bc',0,0)]
+        argsDict["ebqe_bc_flux_u_ext"] = self.ebqe[('advectiveFlux_bc', 0)]
+        argsDict["isDiffusiveFluxBoundary_u"] = self.ebqe[('diffusiveFlux_bc_flag', 0, 0)]
+        argsDict["ebqe_bc_diffusiveFlux_u_ext"] = self.ebqe[('diffusiveFlux_bc', 0, 0)]
+        
+
+
+        #argsDict["ebqe_bc_flux_u_ext"] = self.ebqe[('diffusiveFlux_bc',0,0)]
         argsDict["epsFact"] = self.coefficients.epsFact
         argsDict["ebqe_u"] = self.ebqe[('u', 0)]
         argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux', 0)]
@@ -1315,6 +1292,7 @@ class LevelModel(OneLevelTransport):
     
         argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
         argsDict["a_colind"] = sdInfo[(0, 0)][1]
+
         #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
         self.adr.calculateResidual(argsDict)
@@ -1337,6 +1315,25 @@ class LevelModel(OneLevelTransport):
         logEvent("Global residual", level=9, data=r)
         if self.globalResidualDummy is None:
             self.globalResidualDummy = np.zeros(r.shape, 'd')
+
+        #Debugging statements
+        # print("Mesh details:")
+        # print(f"Number of elements: {self.mesh.nElements_global}")
+        # print(f"Number of exterior element boundaries: {self.mesh.nExteriorElementBoundaries_global}")
+
+        # #For each boundary condition setting
+        # for ebNE in range(self.mesh.nExteriorElementBoundaries_global):
+        #     for kb in range(self.nElementBoundaryQuadraturePoints_elementBoundary):
+        #         if self.ebqe['x'][ebNE, kb, 0] == 0:
+        #             #self.ebqe[('advectiveFlux_bc_flag', 0)][ebNE, kb] = 4.0
+        #             #self.ebqe[('u', 0)][ebNE, kb] += 1.0
+        #             print(f"Boundary {ebNE}, point {kb}:")
+        #             print(f"  Coordinates: {self.ebqe['x'][ebNE, kb, :]}")
+        #             print(f"  u: {self.ebqe[('u', 0)][ebNE, kb]}")
+        #             print(f"  grad(u): {self.ebqe[('grad(u)', 0)][ebNE, kb, :]}")
+        #             print(f"  advective flux bc flag: {self.ebqe[('advectiveFlux_bc_flag', 0)][ebNE, kb]}")
+        #             print(f"  advective flux bc: {self.ebqe[('advectiveFlux_bc', 0)][ebNE, kb]}")
+
 
     def getJacobian(self, jacobian):
         cfemIntegrals.zeroJacobian_CSR(self.nNonzerosInJacobian,
@@ -1387,6 +1384,11 @@ class LevelModel(OneLevelTransport):
         argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u', 0)]
         argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag', 0)]
         argsDict["ebqe_bc_flux_u_ext"] = self.ebqe[('advectiveFlux_bc', 0)]
+
+        argsDict["isDiffusiveFluxBoundary_u"] = self.ebqe[('diffusiveFlux_bc_flag', 0, 0)]
+        argsDict["ebqe_bc_diffusiveFlux_u_ext"] = self.ebqe[('diffusiveFlux_bc', 0, 0)]
+        
+
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0, 0)]
         argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
         argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion   
