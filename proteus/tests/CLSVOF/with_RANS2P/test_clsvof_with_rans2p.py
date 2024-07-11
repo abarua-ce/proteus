@@ -12,7 +12,6 @@ Profiling.verbose=True
 import os
 import numpy as np
 import h5py
-#import tables
 import pytest
 from proteus import default_so
 from . import (multiphase_so, multiphase,
@@ -89,4 +88,3 @@ class TestCLSVOFWithRans2p(object):
         assert np.allclose(expected['phi_t2'],actual['phi_t2'],atol=1e-10)       
         expected.close()
         actual.close()
-
