@@ -1222,6 +1222,7 @@ class LevelModel(OneLevelTransport):
 
         argsDict["ebq_a"] = self.ebqe[('a',0,0)]
         argsDict["ebq_r"] = self.ebqe[('r',0)]
+        
 
 
         ###########################################
@@ -1392,6 +1393,7 @@ class LevelModel(OneLevelTransport):
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0, 0)]
         argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
         argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion   
+        argsDict["ebq_a"] = self.ebqe[('a',0,0)]
         #argsDict["D"] = self.coefficients.DTypes
 
         sdInfo = self.coefficients.sdInfo
@@ -1400,6 +1402,7 @@ class LevelModel(OneLevelTransport):
         argsDict["a_colind"] = sdInfo[(0, 0)][1]
         argsDict["q_a"] = self.q[('a',0,0)]
         argsDict["eb_adjoint_sigma"] = self.numericalFlux.boundaryAdjoint_sigma
+        argsDict["ebqe_penalty_ext"] = self.ebqe['penalty']
 
         #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
