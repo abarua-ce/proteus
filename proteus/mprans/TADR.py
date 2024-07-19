@@ -280,7 +280,7 @@ class Coefficients(TC_base):
                  sc_uref=1.0,
                  sc_beta=1.0,
                  movingDomain=False,
-                 forceStrongConditions=False,
+                 forceStrongConditions=True,
                  STABILIZATION_TYPE='VMS',        
                  ENTROPY_TYPE='POWER',
                  diagonal_conductivity=True,
