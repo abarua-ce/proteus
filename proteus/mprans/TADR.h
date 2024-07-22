@@ -381,9 +381,7 @@ inline
     }
 }
 
-
-
-    void calculateResidual(arguments_dict& args)
+ void calculateResidual(arguments_dict& args)
     {
       double dt = args.scalar<double>("dt");
       xt::pyarray<double>& mesh_trial_ref = args.array<double>("mesh_trial_ref");
@@ -1157,40 +1155,18 @@ inline
             
                   
     
-              if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity or 
-                  STABILIZATION_TYPE == STABILIZATION::SmoothnessIndicator or 
-                  STABILIZATION_TYPE == STABILIZATION::Kuzmin)
-                {
-                  
-                  exteriorNumericalAdvectiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
-                                                           isFluxBoundary_u.data()[ebNE_kb],
-                                                           normal,
-                                                           df_ext,
-                                                           dflux_u_u_ext);
-
-                  exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
-                                                           isDiffusiveFluxBoundary_u.data()[ebNE_kb],
-                                                           a_rowptr.data(),
-                                                           a_colind.data(),
-                                                           normal,
-                                                           a_ext,
-                                                           da_ext,
-                                                           grad_u_ext,
-                                                           &u_grad_trial_trace[nSpace],
-                                                           &u_trial_trace_ref.data()[ebN_local_kb*nSpace],
-                                                           ebqe_penalty_ext.data()[ebNE_kb],
-                                                           difffluxjacobian_ext);                        
-                }
+              
+               //std::cout<<"Advection EXT"<<flux_ext<<std::endl;
+               //std::cout<<"Diffusion  Ext"<<flux_diff_ext<<std::endl;
+                    
               flux_ext += flux_diff_ext;  
+              //std::cout<<"Combine EXT"<<flux_ext<<std::endl;
               ebqe_flux.data()[ebNE_kb] = flux_ext;
               //save for other models? cek need to be consistent with numerical flux
               if(flux_ext >= 0.0)
                 ebqe_u.data()[ebNE_kb] = u_ext;
               else
-                ebqe_u.data()[ebNE_kb] = bc_u_ext;
-              
-              
-
+                ebqe_u.data()[ebNE_kb] = bc_u_ext;              
               if (STABILIZATION_TYPE==STABILIZATION::TaylorGalerkinEV)
                 {
                   if (stage == 1)
@@ -1198,6 +1174,7 @@ inline
                   else
                     flux_ext *= dt;
                 }
+
               //
               //update residuals
               //
@@ -1209,23 +1186,49 @@ inline
                   if (STABILIZATION_TYPE == STABILIZATION::Galerkin or 
                       STABILIZATION_TYPE == STABILIZATION::VMS or 
                       STABILIZATION_TYPE == STABILIZATION::TaylorGalerkinEV) 
-                    elementResidual_u[i] += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i]);
+                      {
+                    elementResidual_u[i] += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i])+
+                                            ck.ExteriorElementBoundaryDiffusionAdjoint(isDOFBoundary_u.data()[ebNE_kb],
+                                                                                            isDiffusiveFluxBoundary_u.data()[ebNE_kb],
+                                                                                            eb_adjoint_sigma,
+                                                                                            u_ext,
+                                                                                            bc_u_ext,
+                                                                                            normal,
+                                                                                            a_rowptr.data(),
+                                                                                            a_colind.data(),
+                                                                                            a_ext,
+                                                                                            &u_grad_test_dS[i*nSpace]);
+                      }
                   else if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity or 
                       STABILIZATION_TYPE == STABILIZATION::SmoothnessIndicator or 
                       STABILIZATION_TYPE == STABILIZATION::Kuzmin)
-                    { //dflux_u_u_ext += difffluxjacobian_ext;
+                    {                 
+                      exteriorNumericalAdvectiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
+                                                           isFluxBoundary_u.data()[ebNE_kb],
+                                                           normal,
+                                                           df_ext,
+                                                           dflux_u_u_ext);  
+                      exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
+                                                           isDiffusiveFluxBoundary_u.data()[ebNE_kb],
+                                                           a_rowptr.data(),
+                                                           a_colind.data(),
+                                                           normal,
+                                                           a_ext,
+                                                           da_ext,
+                                                           grad_u_ext,
+                                                           &u_grad_trial_trace[nSpace],
+                                                           &u_trial_trace_ref.data()[ebN_local_kb*nSpace],
+                                                           ebqe_penalty_ext.data()[ebNE_kb],
+                                                           difffluxjacobian_ext);                 
+                      
                       if (dflux_u_u_ext> 0.0)
                       { 
                         int ebN_local_kb_i = ebN_local_kb*nDOF_test_element+i;
                         for (int j=0;j<nDOF_trial_element;j++)
-                          fluxTransport[j][i] += dflux_u_u_ext*
-                            u_trial_trace_ref.data()[ebN_local_kb_i]*
-                            u_test_dS[j]
-                            + 
-                            difffluxjacobian_ext*
+                          fluxTransport[j][i] += (dflux_u_u_ext + difffluxjacobian_ext)*
                             u_trial_trace_ref.data()[ebN_local_kb_i]*
                             u_test_dS[j];
-
+                           
                       }
                       else
                         elementResidual_u[i] += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i])+
@@ -1238,10 +1241,8 @@ inline
                                                                                             a_rowptr.data(),
                                                                                             a_colind.data(),
                                                                                             a_ext,
-                                                                                            &u_grad_test_dS[i*nSpace]);
-                                                                                          
-
-                    }
+                                                                                            &u_grad_test_dS[i*nSpace]);                                                                                        
+                    }                   
                 }//i
               // local min/max at boundary
               min_u_bc_local = fmin(ebqe_u.data()[ebNE_kb], min_u_bc_local);
@@ -1750,6 +1751,7 @@ inline
                     bc_da_ext[nnz],
 
                     dflux_u_u_ext=0.0,
+                    difffluxjacobian_ext=0.0,
                     bc_u_ext=0.0,
                     //bc_grad_u_ext[nSpace],
                     bc_m_ext=0.0,
@@ -1768,9 +1770,11 @@ inline
                     dS,
                     u_test_dS[nDOF_test_element],
                     u_grad_trial_trace[nDOF_trial_element*nSpace],
+                    u_grad_test_dS[nDOF_trial_element*nSpace],
                     normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
                     //
                     G[nSpace*nSpace],G_dd_G,tr_G;
+
                   //
                   //calculate the solution and gradients at quadrature points
                   //
@@ -1816,6 +1820,10 @@ inline
                   for (int j=0;j<nDOF_trial_element;j++)
                     {
                       u_test_dS[j] = u_test_trace_ref.data()[ebN_local_kb*nDOF_test_element+j]*dS;
+                      for (int I=0;I<nSpace;I++)
+                      {
+                        u_grad_test_dS[j*nSpace+I]= u_grad_trial_trace[j*nSpace+I]*dS;
+                      }
                     }
                   //
                   //load the boundary values
@@ -1873,6 +1881,19 @@ inline
                                                            normal,
                                                            df_ext,
                                                            dflux_u_u_ext);
+                  exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
+                                                           isDiffusiveFluxBoundary_u.data()[ebNE_kb],
+                                                           a_rowptr.data(),
+                                                           a_colind.data(),
+                                                           normal,
+                                                           a_ext,
+                                                           da_ext,
+                                                           grad_u_ext,
+                                                           &u_grad_trial_trace[nSpace],
+                                                           &u_trial_trace_ref.data()[ebN_local_kb*nSpace],
+                                                           ebqe_penalty_ext.data()[ebNE_kb],
+                                                           difffluxjacobian_ext);
+                  
                   
                   //
                   //calculate the flux jacobian
@@ -1881,20 +1902,29 @@ inline
                     for (int j=0;j<nDOF_trial_element;j++)
                       {
                         int ebN_local_kb_j=ebN_local_kb*nDOF_trial_element+j;
-                        exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
-                                                           isDiffusiveFluxBoundary_u.data()[ebNE_kb],
-                                                           a_rowptr.data(),
-                                                           a_colind.data(),
-                                                           normal,
-                                                           a_ext,
-                                                           da_ext,
-                                                           grad_u_ext,
-                                                           &u_grad_trial_trace[j*nSpace],
-                                                           &u_trial_trace_ref.data()[ebN_local_kb_j*nSpace],
-                                                           ebqe_penalty_ext.data()[ebNE_kb],
-                                                           diffusiveFluxJacobian_u_u[j]);                        
+                        // exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
+                        //                                    isDiffusiveFluxBoundary_u.data()[ebNE_kb],
+                        //                                    a_rowptr.data(),
+                        //                                    a_colind.data(),
+                        //                                    normal,
+                        //                                    a_ext,
+                        //                                    da_ext,
+                        //                                    grad_u_ext,
+                        //                                    &u_grad_trial_trace[j*nSpace],
+                        //                                    &u_trial_trace_ref.data()[ebN_local_kb_j*nSpace],
+                        //                                    ebqe_penalty_ext.data()[ebNE_kb],
+                        //                                    diffusiveFluxJacobian_u_u[j]);                        
 
-                        fluxJacobian_u_u[i][j]+=ck.ExteriorNumericalAdvectiveFluxJacobian(dflux_u_u_ext,u_trial_trace_ref.data()[ebN_local_kb_j])*u_test_dS[i];
+                        fluxJacobian_u_u[i][j]+=ck.ExteriorNumericalAdvectiveFluxJacobian(dflux_u_u_ext,u_trial_trace_ref.data()[ebN_local_kb_j])*u_test_dS[i]+
+                                                ExteriorNumericalDiffusiveFluxJacobian(a_rowptr.data(),
+                                                                                       a_colind.data(),
+                                                                                       isDOFBoundary_u.data()[ebNE_kb],
+                                                                                       isDiffusiveFluxBoundary_u.data()[ebNE_kb],
+                                                                                       normal,
+                                                                                       a_ext,
+                                                                                       u_trial_trace_ref.data()[ebN_local_kb_j],
+                                                                                       &u_grad_trial_trace[j*nSpace],
+                                                                                       ebqe_penalty_ext.data()[ebNE_kb])*u_test_dS[i];
                       }//j
 
               //
@@ -1906,8 +1936,8 @@ inline
                   for (int j=0;j<nDOF_trial_element;j++)
                     {
                       int ebN_i_j = ebN*4*nDOF_test_X_trial_element + i*nDOF_trial_element + j;
-                      globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_eb_u_u.data()[ebN_i_j]] += fluxJacobian_u_u[i][j]
-                                                                                                                         + diffusiveFluxJacobian_u_u[j]*u_test_dS[i];
+                      globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_eb_u_u.data()[ebN_i_j]] += fluxJacobian_u_u[i][j];
+//                                                                                                                         
                     }//j
                 }//i
               }//kb

@@ -908,7 +908,7 @@ class LevelModel(OneLevelTransport):
                 self.ebqe[('diffusiveFlux_bc_flag',ck,ci)][t[0],t[1]] = 1
 
         
-        
+        self.numericalFlux.setDirichletValues(self.ebqe)
         if hasattr(self.numericalFlux, 'setDirichletValues'):
             self.numericalFlux.setDirichletValues(self.ebqe)
         if not hasattr(self.numericalFlux, 'isDOFBoundary'):
@@ -927,7 +927,7 @@ class LevelModel(OneLevelTransport):
                              self.nElementBoundaryQuadraturePoints_elementBoundary,
                              compKernelFlag)
 
-        self.forceStrongConditions = False
+        self.forceStrongConditions = True #False
         if self.forceStrongConditions:
             self.dirichletConditionsForceDOF = DOFBoundaryConditions(self.u[0].femSpace, dofBoundaryConditionsSetterDict[0], weakDirichletConditions=False)
 
@@ -1160,15 +1160,21 @@ class LevelModel(OneLevelTransport):
             self.numericalFlux.setDirichletValues(self.ebqe)
         # flux boundary conditions
         for t, g in list(self.fluxBoundaryConditionsObjectsDict[0].advectiveFluxBoundaryConditionsDict.items()):
+            print(f"Setting advective flux bc at boundary {t[0]}, point {t[1]}")
             self.ebqe[('advectiveFlux_bc', 0)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
             self.ebqe[('advectiveFlux_bc_flag', 0)][t[0], t[1]] = 1
+            print(f"  advective flux bc value: {self.ebqe[('advectiveFlux_bc', 0)][t[0], t[1]]}")
+
 
         # Flux boundary conditions for diffusive terms
         for ck, diffusiveFluxBoundaryConditionsDict in self.fluxBoundaryConditionsObjectsDict[0].diffusiveFluxBoundaryConditionsDictDict.items():
             #self.ebqe[('diffusiveFlux_bc_flag', ck, 0)] = np.zeros(self.ebqe[('diffusiveFlux_bc', ck, 0)].shape, 'i')
             for t, g in diffusiveFluxBoundaryConditionsDict.items():
+                logEvent(f"Setting diffusive flux bc at boundary {t[0]}, point {t[1]}")
                 self.ebqe[('diffusiveFlux_bc', ck, 0)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
                 self.ebqe[('diffusiveFlux_bc_flag', ck, 0)][t[0], t[1]] = 1
+                logEvent(f"  diffusive flux bc value: {self.ebqe[('diffusiveFlux_bc', ck, 0)][t[0], t[1]]}")
+
 
         if self.forceStrongConditions:
             for dofN, g in list(self.dirichletConditionsForceDOF.DOFBoundaryConditionsDict.items()):
@@ -1221,8 +1227,7 @@ class LevelModel(OneLevelTransport):
         argsDict["q_r"] = self.q[('r',0)]
 
         argsDict["ebq_a"] = self.ebqe[('a',0,0)]
-        argsDict["ebq_r"] = self.ebqe[('r',0)]
-
+        argsDict["ebq_r"] = self.ebqe[('r',0)]     
 
         ###########################################
         argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
@@ -1296,6 +1301,9 @@ class LevelModel(OneLevelTransport):
         #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
         self.adr.calculateResidual(argsDict)
+
+        
+
 
         
 
@@ -1392,6 +1400,7 @@ class LevelModel(OneLevelTransport):
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0, 0)]
         argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
         argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion   
+        argsDict["ebq_a"] = self.ebqe[('a',0,0)]
         #argsDict["D"] = self.coefficients.DTypes
 
         sdInfo = self.coefficients.sdInfo
@@ -1400,6 +1409,7 @@ class LevelModel(OneLevelTransport):
         argsDict["a_colind"] = sdInfo[(0, 0)][1]
         argsDict["q_a"] = self.q[('a',0,0)]
         argsDict["eb_adjoint_sigma"] = self.numericalFlux.boundaryAdjoint_sigma
+        argsDict["ebqe_penalty_ext"] = self.ebqe['penalty']
 
         #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
