@@ -1902,19 +1902,7 @@ inline
                     for (int j=0;j<nDOF_trial_element;j++)
                       {
                         int ebN_local_kb_j=ebN_local_kb*nDOF_trial_element+j;
-                        // exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
-                        //                                    isDiffusiveFluxBoundary_u.data()[ebNE_kb],
-                        //                                    a_rowptr.data(),
-                        //                                    a_colind.data(),
-                        //                                    normal,
-                        //                                    a_ext,
-                        //                                    da_ext,
-                        //                                    grad_u_ext,
-                        //                                    &u_grad_trial_trace[j*nSpace],
-                        //                                    &u_trial_trace_ref.data()[ebN_local_kb_j*nSpace],
-                        //                                    ebqe_penalty_ext.data()[ebNE_kb],
-                        //                                    diffusiveFluxJacobian_u_u[j]);                        
-
+  
                         fluxJacobian_u_u[i][j]+=ck.ExteriorNumericalAdvectiveFluxJacobian(dflux_u_u_ext,u_trial_trace_ref.data()[ebN_local_kb_j])*u_test_dS[i]+
                                                 ExteriorNumericalDiffusiveFluxJacobian(a_rowptr.data(),
                                                                                        a_colind.data(),
