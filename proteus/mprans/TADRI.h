@@ -59,8 +59,8 @@ namespace proteus
     //The base class defining the interface
   public:
     std::valarray<double> Rpos, Rneg;
-    std::valarray<double> FluxCorrectionMatrix;
-    xt::xarray<double> TransportMatrix, DiffusionMatrix, TransposeTransportMatrix;
+    //std::valarray<double> FluxCorrectionMatrix;
+    xt::xarray<double> TransportMatrix, DiffusionMatrix, TransposeTransportMatrix, FluxCorrectionMatrix;
     std::valarray<double> psi, eta;
     xt::xarray<double>global_entropy_residual, boundary_integral;
     std::valarray<double> maxVel,maxEntRes;
@@ -1990,7 +1990,8 @@ for (int i = 0; i < numDOFs; i++)
     STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
     Rpos.resize(numDOFs,0.0);
     Rneg.resize(numDOFs,0.0);
-    FluxCorrectionMatrix.resize(NNZ,0.0);
+    FluxCorrectionMatrix = xt::zeros<double>({NNZ});
+    //FluxCorrectionMatrix.resize(NNZ,0.0);
     int ij=0;
     //loop over nodes (i)
     for (int i=0; i<numDOFs; i++)
@@ -2019,18 +2020,18 @@ for (int i = 0; i < numDOFs; i++)
             // i-th row of flux correction matrix
             if (STABILIZATION_TYPE == STABILIZATION::Kuzmin)
               {
-                FluxCorrectionMatrix[ij] = dt*(MassMatrix.data()[ij]*(uDotLowi-uDotLowj)
+                FluxCorrectionMatrix(ij) = dt*(MassMatrix.data()[ij]*(uDotLowi-uDotLowj)
                                                + dLow.data()[ij]*(uLowi-uLowj));
               }
             else
               {
                 double ML_minus_MC =
                   (LUMPED_MASS_MATRIX == 1 ? 0. : (i==j ? 1. : 0.)*mi - MassMatrix.data()[ij]);
-                FluxCorrectionMatrix[ij] = ML_minus_MC * (solH.data()[j]-solnj - (solHi-solni))
+                FluxCorrectionMatrix(ij) = ML_minus_MC * (solH.data()[j]-solnj - (solHi-solni))
                   + dt_times_dH_minus_dL.data()[ij]*(solnj-solni);
               }
-            Pposi += FluxCorrectionMatrix[ij]*((FluxCorrectionMatrix[ij] > 0) ? 1. : 0.);
-            Pnegi += FluxCorrectionMatrix[ij]*((FluxCorrectionMatrix[ij] < 0) ? 1. : 0.);
+            Pposi += FluxCorrectionMatrix(ij)*((FluxCorrectionMatrix(ij) > 0) ? 1. : 0.);
+            Pnegi += FluxCorrectionMatrix(ij)*((FluxCorrectionMatrix(ij) < 0) ? 1. : 0.);
             ij+=1;
           }//j
         double Qposi = mi*(maxi-uLow.data()[i]);
@@ -2048,8 +2049,8 @@ for (int i = 0; i < numDOFs; i++)
             assert(offset == ij); // (CSR matrix consistency
             int j = csrColumnOffsets_DofLoops.data()[offset];
             double Lij = 1;
-            Lij = ((FluxCorrectionMatrix[ij]>0) ? fmin(Rposi,Rneg[j]) : fmin(Rnegi,Rpos[j]));
-            ith_Limiter_times_FluxCorrectionMatrix += Lij * FluxCorrectionMatrix[ij];
+            Lij = ((FluxCorrectionMatrix(ij)>0) ? fmin(Rposi,Rneg[j]) : fmin(Rnegi,Rpos[j]));
+            ith_Limiter_times_FluxCorrectionMatrix += Lij * FluxCorrectionMatrix(ij);
             ij+=1;
           }
         limited_solution.data()[i] = uLow.data()[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix;
