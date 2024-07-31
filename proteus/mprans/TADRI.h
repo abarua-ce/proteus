@@ -1528,12 +1528,8 @@ for (int i = 0; i < numDOFs; i++)
       //
       for(int eN=0;eN<nElements_global;eN++)
         {
-          double  elementJacobian_u_u[nDOF_test_element][nDOF_trial_element];
-          for (int i=0;i<nDOF_test_element;i++)
-            for (int j=0;j<nDOF_trial_element;j++)
-              {
-                elementJacobian_u_u[i][j]=0.0;
-              }
+          xt::xarray<double> elementJacobian_u_u = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+        
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
               int eN_k = eN*nQuadraturePoints_element+k, //index to a scalar at a quadrature point
@@ -1693,7 +1689,7 @@ for (int i = 0; i < numDOFs; i++)
                       int i_nSpace = i*nSpace;
                       if (STABILIZATION_TYPE==STABILIZATION::Galerkin)
                         {
-                          elementJacobian_u_u[i][j] +=
+                          elementJacobian_u_u(i,j) +=
                             ck.MassJacobian_weak(dm_t,
                                                  u_trial_ref.data()[k*nDOF_trial_element+j],
                                                  u_test_dV[i]) +
@@ -1710,7 +1706,7 @@ for (int i = 0; i < numDOFs; i++)
                         }
                       else if (STABILIZATION_TYPE==STABILIZATION::VMS)
                         {
-                          elementJacobian_u_u[i][j] +=
+                          elementJacobian_u_u(i,j) +=
                             ck.MassJacobian_weak(dm_t,
                                                  u_trial_ref.data()[k*nDOF_trial_element+j],
                                                  u_test_dV[i]) +
@@ -1731,7 +1727,7 @@ for (int i = 0; i < numDOFs; i++)
                                STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
                                STABILIZATION_TYPE==STABILIZATION::Kuzmin)
                         {
-                          elementJacobian_u_u[i][j] +=
+                          elementJacobian_u_u(i,j) +=
                             ck.MassJacobian_weak(1.0,
                                                  u_trial_ref.data()[k*nDOF_trial_element+j],
                                                  u_test_dV[i]);
@@ -1748,7 +1744,7 @@ for (int i = 0; i < numDOFs; i++)
               for (int j=0;j<nDOF_trial_element;j++)
                 {
                   int eN_i_j = eN_i*nDOF_trial_element+j;
-                  globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]] += elementJacobian_u_u[i][j];
+                  globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]] += elementJacobian_u_u(i,j);
                 }//j
             }//i
         }//elements
@@ -1763,12 +1759,8 @@ for (int i = 0; i < numDOFs; i++)
               int eN  = elementBoundaryElementsArray.data()[ebN*2+0],
                 ebN_local = elementBoundaryLocalElementBoundariesArray.data()[ebN*2+0],
                 eN_nDOF_trial_element = eN*nDOF_trial_element;
-              double fluxJacobian_u_u[nDOF_test_element][nDOF_trial_element];
-              for (int i=0;i<nDOF_test_element;i++)
-                for (int j=0;j<nDOF_trial_element;j++)
-                  {
-                    fluxJacobian_u_u[i][j]=0.0;
-                  }
+              //double fluxJacobian_u_u[nDOF_test_element][nDOF_trial_element];
+              xt::xarray<double> fluxJacobian_u_u = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});              
               for  (int kb=0;kb<nQuadraturePoints_elementBoundary;kb++)
                 {
                   int ebNE_kb = ebNE*nQuadraturePoints_elementBoundary+kb,
@@ -1947,7 +1939,7 @@ for (int i = 0; i < numDOFs; i++)
                       {
                         int ebN_local_kb_j=ebN_local_kb*nDOF_trial_element+j;
   
-                        fluxJacobian_u_u[i][j]+=ck.ExteriorNumericalAdvectiveFluxJacobian(dflux_u_u_ext,u_trial_trace_ref.data()[ebN_local_kb_j])*u_test_dS[i]+
+                        fluxJacobian_u_u(i,j)+=ck.ExteriorNumericalAdvectiveFluxJacobian(dflux_u_u_ext,u_trial_trace_ref.data()[ebN_local_kb_j])*u_test_dS[i]+
                                                 ExteriorNumericalDiffusiveFluxJacobian(a_rowptr.data(),
                                                                                        a_colind.data(),
                                                                                        isDOFBoundary_u.data()[ebNE_kb],
@@ -1968,7 +1960,7 @@ for (int i = 0; i < numDOFs; i++)
                   for (int j=0;j<nDOF_trial_element;j++)
                     {
                       int ebN_i_j = ebN*4*nDOF_test_X_trial_element + i*nDOF_trial_element + j;
-                      globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_eb_u_u.data()[ebN_i_j]] += fluxJacobian_u_u[i][j];
+                      globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_eb_u_u.data()[ebN_i_j]] += fluxJacobian_u_u(i,j);
 //                                                                                                                         
                     }//j
                 }//i
