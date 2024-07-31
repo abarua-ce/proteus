@@ -143,12 +143,24 @@ void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
 {
     m = u;
     dm = 1.0;
+    // Create xtensor arrays from the raw C arrays
+    xt::xarray<double> v_array = xt::xarray<double>::from_shape({f.size()});
+    for (size_t i = 0; i < f.size(); ++i) {
+        v_array(i) = v[i];
+    }
+
+    // Vectorized operations
+    f = v_array * u;
+    df = v_array;
     
-    for (int I=0; I < nSpace; I++)
-        {
-          f(I) = v[I] * u;
-          df(I)= v[I];
-        }
+    // f = xt::adapt(v, {f.size()}) * u;
+    // df = xt::adapt(v, {df.size()});
+    
+    // for (int I=0; I < nSpace; I++)
+    //     {
+    //       f(I) = v[I] * u;
+    //       df(I)= v[I];
+    //     }
     a = q_a;
 }
 
@@ -706,14 +718,18 @@ inline
               //
               //moving mesh
               //
+
               xt::xarray<double> mesh_velocity = {xt, yt, zt};
-              for (int I = 0; I < nSpace; I++)
-              {
-                  f(I) -= MOVING_DOMAIN * m * mesh_velocity(I);
-                  df(I) -= MOVING_DOMAIN * dm * mesh_velocity(I);
-                  fn(I) -= MOVING_DOMAIN * mn * mesh_velocity(I);
-                  dfn(I) -= MOVING_DOMAIN * dmn * mesh_velocity(I);
-              }
+
+              // Create a view based on nSpace
+              auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
+
+              // Perform vectorized operations using the view
+              f -= MOVING_DOMAIN * m * mesh_velocity_view;
+              df -= MOVING_DOMAIN * dm * mesh_velocity_view;
+              fn -= MOVING_DOMAIN * mn * mesh_velocity_view;
+              dfn -= MOVING_DOMAIN * dmn * mesh_velocity_view;
+
               //
               //calculate time derivative at quadrature points
               //
@@ -1148,13 +1164,13 @@ inline
               //
               // Initialize mesh_velocity using xtensor
               xt::xarray<double> mesh_velocity = {xt_ext, yt_ext, zt_ext};
-              mesh_velocity.resize({nSpace}); // Ensure mesh_velocity has size nSpace
+              auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
 
               // Update f_ext, df_ext, bc_f_ext, and bc_df_ext using xtensor operations
-              f_ext -= MOVING_DOMAIN * m_ext * mesh_velocity;
-              df_ext -= MOVING_DOMAIN * dm_ext * mesh_velocity;
-              bc_f_ext -= MOVING_DOMAIN * bc_m_ext * mesh_velocity;
-              bc_df_ext -= MOVING_DOMAIN * bc_dm_ext * mesh_velocity;
+              f_ext -= MOVING_DOMAIN * m_ext * mesh_velocity_view;
+              df_ext -= MOVING_DOMAIN * dm_ext * mesh_velocity_view;
+              bc_f_ext -= MOVING_DOMAIN * bc_m_ext * mesh_velocity_view;
+              bc_df_ext -= MOVING_DOMAIN * bc_dm_ext * mesh_velocity_view;
               //
               //calculate the numerical fluxes
               //
@@ -1620,12 +1636,12 @@ for (int i = 0; i < numDOFs; i++)
               //
               //moving mesh
               //
+              
               xt::xarray<double> mesh_velocity = {xt, yt, zt};
-              for (int I = 0; I < nSpace; I++)
-              {
-                  f(I) -= MOVING_DOMAIN * m * mesh_velocity(I);
-                  df(I) -= MOVING_DOMAIN * dm * mesh_velocity(I);
-              }
+              auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
+              f -= MOVING_DOMAIN * m * mesh_velocity_view;
+              df-= MOVING_DOMAIN * dm * mesh_velocity_view;
+
               // double mesh_velocity[3];
               // mesh_velocity[0] = xt;
               // mesh_velocity[1] = yt;
@@ -1900,15 +1916,14 @@ for (int i = 0; i < numDOFs; i++)
                   //moving domain
                   //
                   xt::xarray<double> mesh_velocity = {xt_ext, yt_ext, zt_ext};
+                  auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
 
-                  // Loop over nSpace and perform operations
-                  for (int I = 0; I < nSpace; ++I)
-                  {
-                      f_ext(I) -= MOVING_DOMAIN * m_ext * mesh_velocity(I);
-                      df_ext(I) -= MOVING_DOMAIN * dm_ext * mesh_velocity(I);
-                      bc_f_ext(I) -= MOVING_DOMAIN * bc_m_ext * mesh_velocity(I);
-                      bc_df_ext(I) -= MOVING_DOMAIN * bc_dm_ext * mesh_velocity(I);
-                  }
+                  // Update f_ext, df_ext, bc_f_ext, and bc_df_ext using xtensor operations
+                  f_ext -= MOVING_DOMAIN * m_ext * mesh_velocity_view;
+                  df_ext -= MOVING_DOMAIN * dm_ext * mesh_velocity_view;
+                  bc_f_ext -= MOVING_DOMAIN * bc_m_ext * mesh_velocity_view;
+                  bc_df_ext -= MOVING_DOMAIN * bc_dm_ext * mesh_velocity_view;
+                  
                   //
                   //calculate the numerical fluxes
                   //
