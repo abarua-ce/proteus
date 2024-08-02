@@ -539,24 +539,30 @@ inline
           STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
           STABILIZATION_TYPE==STABILIZATION::Kuzmin)
         {
-          TransportMatrix = xt::zeros<double>({NNZ});
-          DiffusionMatrix = xt::zeros<double>({NNZ});
-          TransposeTransportMatrix = xt::zeros<double>({NNZ});
-          // // compute entropy and init global_entropy_residual and boundary_integral
-          // psi = xt::xarray<double>({numDOFs});
-          // eta = xt::xarray<double>({numDOFs});
-          // compute entropy and init global_entropy_residual and boundary_integral
+          TransportMatrix.resize({NNZ,0.0});
+          DiffusionMatrix.resize({NNZ, 0.0});
+          TransposeTransportMatrix.resize({NNZ, 0.0});
+
+          TransportMatrix= 0.0;
+          DiffusionMatrix = 0.0;
+          TransposeTransportMatrix =0.0;
+
           psi.resize(numDOFs,0.0);
           eta.resize(numDOFs,0.0);
 
-          global_entropy_residual = xt::zeros<double>({numDOFs});
-          boundary_integral = xt::zeros<double>({numDOFs});
+          global_entropy_residual.resize({numDOFs, 0.0});
+          boundary_integral.resize({numDOFs, 0.0});
+
+          boundary_integral =0.0;
+
+          //global_entropy_residual = xt::zeros<double>({numDOFs});
+          //boundary_integral = xt::zeros<double>({numDOFs});
 
           if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity)
-          {
+          { global_entropy_residual=0.0;
               for (int i = 0; i < numDOFs; i++)
               {
-                  eta[i] = ENTROPY_TYPE == ENTROPY::POWER ? EPOWER(u_dof_old(i), uL, uR) : ELOG(u_dof_old(i), uL, uR);
+                  eta[i] = ENTROPY_TYPE == ENTROPY::POWER ? EPOWER(u_dof_old.data()[i], uL, uR) : ELOG(u_dof_old.data()[i], uL, uR);
               }
           }
         }
@@ -603,6 +609,7 @@ inline
             xt::xarray<double> da({nnz});
             xt::xarray<double> an({nnz});
             xt::xarray<double> dan({nnz});
+            
             double    m_t=0.0,dm_t=0.0,
             pdeResidual_u=0.0,
             Lstar_u[nDOF_test_element];    
