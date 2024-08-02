@@ -12,6 +12,7 @@
 #include "xtensor/xadapt.hpp"
 #include "xtensor/xio.hpp"
 #include <xtensor/xmath.hpp>
+#include <xtensor/xtensor.hpp>
 #define nnz nSpace
 
 namespace py = pybind11;
@@ -152,15 +153,7 @@ void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
     // Vectorized operations
     f = v_array * u;
     df = v_array;
-    
-    // f = xt::adapt(v, {f.size()}) * u;
-    // df = xt::adapt(v, {df.size()});
-    
-    // for (int I=0; I < nSpace; I++)
-    //     {
-    //       f(I) = v[I] * u;
-    //       df(I)= v[I];
-    //     }
+
     a = q_a;
 }
 
@@ -314,13 +307,7 @@ inline
                                         const double velocity[nSpace],
                                         double& flux)
     {
-    //   // Debug: Print input values
-    // std:: cout << "Exterior Numerical Advective Flux Function"<< std::endl;
-    // std::cout << "isDOFBoundary_u: " << isDOFBoundary_u << ", isFluxBoundary_u: " << isFluxBoundary_u << std::endl;
-    // std::cout << "bc_u: " << bc_u << ", bc_flux_u: " << bc_flux_u << ", u: " << u << std::endl;
-    // std::cout << "velocity: [" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << "]" << std::endl;
-    // std::cout << "Normal: [" << n[0] << ", " << n[1] << ", " << n[2] << "]\n";
-    // std ::cout <<"End Line"<< "\n";
+
 
       double flow=0.0;
       for (int I=0; I < nSpace; I++)
@@ -552,11 +539,7 @@ inline
 
           global_entropy_residual.resize({numDOFs, 0.0});
           boundary_integral.resize({numDOFs, 0.0});
-
           boundary_integral =0.0;
-
-          //global_entropy_residual = xt::zeros<double>({numDOFs});
-          //boundary_integral = xt::zeros<double>({numDOFs});
 
           if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity)
           { global_entropy_residual=0.0;
@@ -579,11 +562,11 @@ inline
       for(int eN=0;eN<nElements_global;eN++)
         {
           //declare local storage for element residual and initialize
-          xt::xarray<double> elementResidual_u = xt::zeros<double>({nDOF_test_element});
-          xt::xarray<double> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
-          xt::xarray<double> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xarray<double> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xarray<double> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor<double, 1> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor<double, 1> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor<double, 2> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor<double, 2> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor<double, 2> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
             //loop over quadrature points and compute integrands
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
@@ -1117,22 +1100,7 @@ inline
                         u_grad_test_dS[j*nSpace+I]= u_grad_trial_trace[j*nSpace+I]*dS;
                       }
                     }
-
-
-
-
-
-
-              // for (int j = 0; j < nDOF_trial_element; j++)
-              // {
-              //     // Update u_test_dS
-              //     u_test_dS(j) = u_test_trace_ref(ebN_local_kb * nDOF_test_element + j) * dS;
-
-              //     // Update u_grad_test_dS
-              //     //auto u_grad_trial_trace_section = xt::view(u_grad_trial_trace, xt::range(j * nSpace, (j + 1) * nSpace));
-              //     //xt::view(u_grad_test_dS, xt::range(j * nSpace, (j + 1) * nSpace)) = u_grad_trial_trace_section * dS;
-              // }
-                            //
+              //
               //load the boundary values
               //
               bc_u_ext = isDOFBoundary_u.data()[ebNE_kb]*ebqe_bc_u_ext.data()[ebNE_kb]+
