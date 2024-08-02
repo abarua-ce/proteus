@@ -137,10 +137,10 @@ void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
                           const double& u,
                           double& m,
                           double& dm,
-                          xt::xarray<double>& f, // nSpace size
-                          xt::xarray<double>& df, // nSpace size
-                          xt::xarray<double>& a, // nnz size
-                          xt::xarray<double>& da) // nnz size
+                          xt::xtensor<double, 1>& f,  // nSpace size
+                          xt::xtensor<double, 1>& df, // nSpace size
+                          xt::xtensor<double, 1>& a,  // nnz size
+                          xt::xtensor<double, 1>& da) // nnz size
 {
     m = u;
     dm = 1.0;
@@ -155,6 +155,7 @@ void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
     df = v_array;
 
     a = q_a;
+    //da= 0.0;
 }
 
 
@@ -539,7 +540,7 @@ inline
 
           global_entropy_residual.resize({numDOFs, 0.0});
           boundary_integral.resize({numDOFs, 0.0});
-          boundary_integral =0.0;
+          boundary_integral = 0.0;
 
           if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity)
           { global_entropy_residual=0.0;
@@ -584,14 +585,15 @@ inline
             // xt::xarray<double> grad_uTilde({nSpace});
             double m = 0.0, dm = 0.0, mn = 0.0, dmn = 0.0;
             double H = 0.0, Hn = 0.0, HTilde = 0.0;
-            xt::xarray<double> f({nSpace});
-            xt::xarray<double> fn({nSpace});
-            xt::xarray<double> df({nSpace});
-            xt::xarray<double> dfn({nSpace});
-            xt::xarray<double> a({nnz});
-            xt::xarray<double> da({nnz});
-            xt::xarray<double> an({nnz});
-            xt::xarray<double> dan({nnz});
+
+            xt::xtensor<double, 1> f({nSpace});
+            xt::xtensor<double, 1> fn({nSpace});
+            xt::xtensor<double, 1> df({nSpace});
+            xt::xtensor<double, 1> dfn({nSpace});
+            xt::xtensor<double, 1> a({nnz});
+            xt::xtensor<double, 1> da({nnz});
+            xt::xtensor<double, 1> an({nnz});
+            xt::xtensor<double, 1> dan({nnz});
             
             double    m_t=0.0,dm_t=0.0,
             pdeResidual_u=0.0,
@@ -997,17 +999,18 @@ inline
         double u_ext = 0.0,
         grad_u_ext[nSpace],
        m_ext = 0.0, dm_ext = 0.0;
-        xt::xarray<double> f_ext({nSpace});
-        xt::xarray<double> df_ext({nSpace});
-        xt::xarray<double> a_ext({nnz});
-        xt::xarray<double> da_ext({nnz});
-        xt::xarray<double> bc_a_ext({nnz});
-        xt::xarray<double> bc_da_ext({nnz});
+        xt::xtensor<double, 1> f_ext({nSpace});
+        xt::xtensor<double, 1> df_ext({nSpace});
+        xt::xtensor<double, 1> a_ext({nnz});
+        xt::xtensor<double, 1> da_ext({nnz});
+        xt::xtensor<double, 1> bc_a_ext({nnz});
+        xt::xtensor<double, 1> bc_da_ext({nnz});
+        xt::xtensor<double, 1> bc_f_ext({nSpace});
+        xt::xtensor<double, 1> bc_df_ext({nSpace});
+        
         double flux_ext = 0.0, dflux_u_u_ext = 0.0, bc_u_ext = 0.0;
         double bc_m_ext = 0.0, bc_dm_ext = 0.0, flux_diff_ext = 0.0;
         double difffluxjacobian_ext = 0.0;
-        xt::xarray<double> bc_f_ext({nSpace});
-        xt::xarray<double> bc_df_ext({nSpace});
         double 
         jac_ext[nSpace*nSpace],
                 jacDet_ext,
@@ -1550,10 +1553,10 @@ for (int i = 0; i < numDOFs; i++)
                 u_grad_test_dV[nDOF_test_element*nSpace],
                 x,y,z,xt,yt,zt,
                 G[nSpace*nSpace],G_dd_G,tr_G;
-                xt::xarray<double> f({nSpace});
-                xt::xarray<double> df({nSpace});
-                xt::xarray<double> a({nnz});
-                xt::xarray<double> da({nnz});
+                xt::xtensor<double, 1> f({nSpace});
+                xt::xtensor<double, 1> df({nSpace});
+                xt::xtensor<double, 1> a({nnz});
+                xt::xtensor<double, 1> da({nnz});
                   //
               //calculate solution and gradients at quadrature points
               //
@@ -1795,14 +1798,14 @@ for (int i = 0; i < numDOFs; i++)
                     normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
                     //
                     G[nSpace*nSpace],G_dd_G,tr_G;
-                    xt::xarray<double> f_ext({nSpace});
-                    xt::xarray<double> df_ext({nSpace});
-                    xt::xarray<double> a_ext({nnz});
-                    xt::xarray<double> da_ext({nnz});
-                    xt::xarray<double> bc_a_ext({nnz});
-                    xt::xarray<double> bc_da_ext({nnz});
-                    xt::xarray<double> bc_f_ext({nnz});
-                    xt::xarray<double> bc_df_ext({nnz});
+                    xt::xtensor<double, 1> f_ext({nSpace});
+                    xt::xtensor<double, 1> df_ext({nSpace});
+                    xt::xtensor<double, 1> a_ext({nnz});
+                    xt::xtensor<double, 1> da_ext({nnz});
+                    xt::xtensor<double, 1> bc_a_ext({nnz});
+                    xt::xtensor<double, 1> bc_da_ext({nnz});
+                    xt::xtensor<double, 1> bc_f_ext({nnz});
+                    xt::xtensor<double, 1> bc_df_ext({nnz});
 
                   //
                   //calculate the solution and gradients at quadrature points
@@ -1980,8 +1983,8 @@ for (int i = 0; i < numDOFs; i++)
     STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
     Rpos.resize(numDOFs,0.0);
     Rneg.resize(numDOFs,0.0);
-    FluxCorrectionMatrix = xt::zeros<double>({NNZ});
-    //FluxCorrectionMatrix.resize(NNZ,0.0);
+    //FluxCorrectionMatrix = xt::zeros<double>({NNZ});
+    FluxCorrectionMatrix.resize({NNZ,0.0});
     int ij=0;
     //loop over nodes (i)
     for (int i=0; i<numDOFs; i++)
