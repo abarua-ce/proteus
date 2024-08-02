@@ -12,7 +12,6 @@
 #include "xtensor/xadapt.hpp"
 #include "xtensor/xio.hpp"
 #include <xtensor/xmath.hpp>
-#include <xtensor/xtensor.hpp>
 #define nnz nSpace
 
 namespace py = pybind11;
@@ -133,29 +132,28 @@ inline
 void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
                           const int colind[nnz], // nnz size
                           const double v[nSpace],   // nSpace size
-                          const xt::pyarray<double>& q_a,
+                          const double* q_a,
                           const double& u,
                           double& m,
                           double& dm,
-                          xt::xtensor<double, 1>& f,  // nSpace size
-                          xt::xtensor<double, 1>& df, // nSpace size
-                          xt::xtensor<double, 1>& a,  // nnz size
-                          xt::xtensor<double, 1>& da) // nnz size
+                          xt::xarray<double>& f,  // nSpace size
+                          xt::xarray<double>& df, // nSpace size
+                          xt::xarray<double>& a,  // nnz size
+                          xt::xarray<double>& da) // nnz size
 {
     m = u;
     dm = 1.0;
-    // Create xtensor arrays from the raw C arrays
-    xt::xarray<double> v_array = xt::xarray<double>::from_shape({f.size()});
-    for (size_t i = 0; i < f.size(); ++i) {
-        v_array(i) = v[i];
+
+    for (int I = 0; I < nSpace; I++)
+    {
+        f(I) = v[I] * u;
+        df(I) = v[I];
+        for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++)
+        {
+            a(ii) = q_a[ii];
+            da(ii) = 0.0;
+        }
     }
-
-    // Vectorized operations
-    f = v_array * u;
-    df = v_array;
-
-    a = q_a;
-    //da= 0.0;
 }
 
 
@@ -308,7 +306,13 @@ inline
                                         const double velocity[nSpace],
                                         double& flux)
     {
-
+    //   // Debug: Print input values
+    // std:: cout << "Exterior Numerical Advective Flux Function"<< std::endl;
+    // std::cout << "isDOFBoundary_u: " << isDOFBoundary_u << ", isFluxBoundary_u: " << isFluxBoundary_u << std::endl;
+    // std::cout << "bc_u: " << bc_u << ", bc_flux_u: " << bc_flux_u << ", u: " << u << std::endl;
+    // std::cout << "velocity: [" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << "]" << std::endl;
+    // std::cout << "Normal: [" << n[0] << ", " << n[1] << ", " << n[2] << "]\n";
+    // std ::cout <<"End Line"<< "\n";
 
       double flow=0.0;
       for (int I=0; I < nSpace; I++)
@@ -527,26 +531,24 @@ inline
           STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
           STABILIZATION_TYPE==STABILIZATION::Kuzmin)
         {
-          TransportMatrix.resize({NNZ,0.0});
-          DiffusionMatrix.resize({NNZ, 0.0});
-          TransposeTransportMatrix.resize({NNZ, 0.0});
-
-          TransportMatrix= 0.0;
-          DiffusionMatrix = 0.0;
-          TransposeTransportMatrix =0.0;
-
+          TransportMatrix = xt::zeros<double>({NNZ});
+          DiffusionMatrix = xt::zeros<double>({NNZ});
+          TransposeTransportMatrix = xt::zeros<double>({NNZ});
+          // // compute entropy and init global_entropy_residual and boundary_integral
+          // psi = xt::xarray<double>({numDOFs});
+          // eta = xt::xarray<double>({numDOFs});
+          // compute entropy and init global_entropy_residual and boundary_integral
           psi.resize(numDOFs,0.0);
           eta.resize(numDOFs,0.0);
 
-          global_entropy_residual.resize({numDOFs, 0.0});
-          boundary_integral.resize({numDOFs, 0.0});
-          boundary_integral = 0.0;
+          global_entropy_residual = xt::zeros<double>({numDOFs});
+          boundary_integral = xt::zeros<double>({numDOFs});
 
           if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity)
-          { global_entropy_residual=0.0;
+          {
               for (int i = 0; i < numDOFs; i++)
               {
-                  eta[i] = ENTROPY_TYPE == ENTROPY::POWER ? EPOWER(u_dof_old.data()[i], uL, uR) : ELOG(u_dof_old.data()[i], uL, uR);
+                  eta[i] = ENTROPY_TYPE == ENTROPY::POWER ? EPOWER(u_dof_old(i), uL, uR) : ELOG(u_dof_old(i), uL, uR);
               }
           }
         }
@@ -563,11 +565,11 @@ inline
       for(int eN=0;eN<nElements_global;eN++)
         {
           //declare local storage for element residual and initialize
-          xt::xtensor<double, 1> elementResidual_u = xt::zeros<double>({nDOF_test_element});
-          xt::xtensor<double, 1> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
-          xt::xtensor<double, 2> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xtensor<double, 2> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xtensor<double, 2> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xarray<double> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+          xt::xarray<double> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
+          xt::xarray<double> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xarray<double> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xarray<double> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
             //loop over quadrature points and compute integrands
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
@@ -585,16 +587,14 @@ inline
             // xt::xarray<double> grad_uTilde({nSpace});
             double m = 0.0, dm = 0.0, mn = 0.0, dmn = 0.0;
             double H = 0.0, Hn = 0.0, HTilde = 0.0;
-
-            xt::xtensor<double, 1> f({nSpace});
-            xt::xtensor<double, 1> fn({nSpace});
-            xt::xtensor<double, 1> df({nSpace});
-            xt::xtensor<double, 1> dfn({nSpace});
-            xt::xtensor<double, 1> a({nnz});
-            xt::xtensor<double, 1> da({nnz});
-            xt::xtensor<double, 1> an({nnz});
-            xt::xtensor<double, 1> dan({nnz});
-            
+            xt::xarray<double> f({nSpace});
+            xt::xarray<double> fn({nSpace});
+            xt::xarray<double> df({nSpace});
+            xt::xarray<double> dfn({nSpace});
+            xt::xarray<double> a({nnz});
+            xt::xarray<double> da({nnz});
+            xt::xarray<double> an({nnz});
+            xt::xarray<double> dan({nnz});
             double    m_t=0.0,dm_t=0.0,
             pdeResidual_u=0.0,
             Lstar_u[nDOF_test_element];    
@@ -682,12 +682,14 @@ inline
               //
               //calculate pde coefficients at quadrature points
               //
-              //const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
+              const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               // Call the updated evaluateCoefficients function
+
+
               evaluateCoefficients(a_rowptr.data(), 
                                    a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a, 
+                                   q_a_ptr, 
                                    u, 
                                    m, 
                                    dm, 
@@ -698,7 +700,7 @@ inline
               evaluateCoefficients(a_rowptr.data(), 
                                    a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a, 
+                                   q_a_ptr, 
                                    u, 
                                    m, 
                                    dm, 
@@ -999,18 +1001,17 @@ inline
         double u_ext = 0.0,
         grad_u_ext[nSpace],
        m_ext = 0.0, dm_ext = 0.0;
-        xt::xtensor<double, 1> f_ext({nSpace});
-        xt::xtensor<double, 1> df_ext({nSpace});
-        xt::xtensor<double, 1> a_ext({nnz});
-        xt::xtensor<double, 1> da_ext({nnz});
-        xt::xtensor<double, 1> bc_a_ext({nnz});
-        xt::xtensor<double, 1> bc_da_ext({nnz});
-        xt::xtensor<double, 1> bc_f_ext({nSpace});
-        xt::xtensor<double, 1> bc_df_ext({nSpace});
-        
+        xt::xarray<double> f_ext({nSpace});
+        xt::xarray<double> df_ext({nSpace});
+        xt::xarray<double> a_ext({nnz});
+        xt::xarray<double> da_ext({nnz});
+        xt::xarray<double> bc_a_ext({nnz});
+        xt::xarray<double> bc_da_ext({nnz});
         double flux_ext = 0.0, dflux_u_u_ext = 0.0, bc_u_ext = 0.0;
         double bc_m_ext = 0.0, bc_dm_ext = 0.0, flux_diff_ext = 0.0;
         double difffluxjacobian_ext = 0.0;
+        xt::xarray<double> bc_f_ext({nSpace});
+        xt::xarray<double> bc_df_ext({nSpace});
         double 
         jac_ext[nSpace*nSpace],
                 jacDet_ext,
@@ -1103,7 +1104,22 @@ inline
                         u_grad_test_dS[j*nSpace+I]= u_grad_trial_trace[j*nSpace+I]*dS;
                       }
                     }
-              //
+
+
+
+
+
+
+              // for (int j = 0; j < nDOF_trial_element; j++)
+              // {
+              //     // Update u_test_dS
+              //     u_test_dS(j) = u_test_trace_ref(ebN_local_kb * nDOF_test_element + j) * dS;
+
+              //     // Update u_grad_test_dS
+              //     //auto u_grad_trial_trace_section = xt::view(u_grad_trial_trace, xt::range(j * nSpace, (j + 1) * nSpace));
+              //     //xt::view(u_grad_test_dS, xt::range(j * nSpace, (j + 1) * nSpace)) = u_grad_trial_trace_section * dS;
+              // }
+                            //
               //load the boundary values
               //
               bc_u_ext = isDOFBoundary_u.data()[ebNE_kb]*ebqe_bc_u_ext.data()[ebNE_kb]+
@@ -1113,12 +1129,12 @@ inline
               //
               //calculate the pde coefficients using the solution and the boundary values for the solution
               //
-              
+              const double* ebqe_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];              
               // Call the updated evaluateCoefficients function for both cases
               evaluateCoefficients(a_rowptr.data(), 
                                    a_colind.data(),
                                    &velocity.data()[ebNE_kb_nSpace],
-                                   ebqe_a, 
+                                   ebqe_a_ptr, 
                                    u_ext, 
                                    m_ext, 
                                    dm_ext, 
@@ -1130,7 +1146,7 @@ inline
               evaluateCoefficients(a_rowptr.data(), 
                                    a_colind.data(),
                                    &velocity.data()[ebNE_kb_nSpace],
-                                   ebqe_a, 
+                                   ebqe_a_ptr, 
                                    u_ext, 
                                    m_ext, 
                                    dm_ext, 
@@ -1553,10 +1569,10 @@ for (int i = 0; i < numDOFs; i++)
                 u_grad_test_dV[nDOF_test_element*nSpace],
                 x,y,z,xt,yt,zt,
                 G[nSpace*nSpace],G_dd_G,tr_G;
-                xt::xtensor<double, 1> f({nSpace});
-                xt::xtensor<double, 1> df({nSpace});
-                xt::xtensor<double, 1> a({nnz});
-                xt::xtensor<double, 1> da({nnz});
+                xt::xarray<double> f({nSpace});
+                xt::xarray<double> df({nSpace});
+                xt::xarray<double> a({nnz});
+                xt::xarray<double> da({nnz});
                   //
               //calculate solution and gradients at quadrature points
               //
@@ -1599,11 +1615,11 @@ for (int i = 0; i < numDOFs; i++)
               //calculate pde coefficients and derivatives at quadrature points
               //
               
-
+              const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               evaluateCoefficients(a_rowptr.data(), 
                                    a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a, 
+                                   q_a_ptr, 
                                    u, 
                                    m, 
                                    dm, 
@@ -1798,14 +1814,14 @@ for (int i = 0; i < numDOFs; i++)
                     normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
                     //
                     G[nSpace*nSpace],G_dd_G,tr_G;
-                    xt::xtensor<double, 1> f_ext({nSpace});
-                    xt::xtensor<double, 1> df_ext({nSpace});
-                    xt::xtensor<double, 1> a_ext({nnz});
-                    xt::xtensor<double, 1> da_ext({nnz});
-                    xt::xtensor<double, 1> bc_a_ext({nnz});
-                    xt::xtensor<double, 1> bc_da_ext({nnz});
-                    xt::xtensor<double, 1> bc_f_ext({nnz});
-                    xt::xtensor<double, 1> bc_df_ext({nnz});
+                    xt::xarray<double> f_ext({nSpace});
+                    xt::xarray<double> df_ext({nSpace});
+                    xt::xarray<double> a_ext({nnz});
+                    xt::xarray<double> da_ext({nnz});
+                    xt::xarray<double> bc_a_ext({nnz});
+                    xt::xarray<double> bc_da_ext({nnz});
+                    xt::xarray<double> bc_f_ext({nnz});
+                    xt::xarray<double> bc_df_ext({nnz});
 
                   //
                   //calculate the solution and gradients at quadrature points
@@ -1865,12 +1881,11 @@ for (int i = 0; i < numDOFs; i++)
                   //
                   //calculate the internal and external trace of the pde coefficients
                   //
-
-
+                  const double* ebqe_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
                   evaluateCoefficients(a_rowptr.data(), 
                                    a_colind.data(),
                                    &velocity.data()[ebNE_kb_nSpace],
-                                   ebqe_a, 
+                                   ebqe_a_ptr, 
                                    u_ext, 
                                    m_ext, 
                                    dm_ext, 
@@ -1879,10 +1894,10 @@ for (int i = 0; i < numDOFs; i++)
                                    a_ext, 
                                    da_ext);
               
-              evaluateCoefficients(a_rowptr.data(), 
+                  evaluateCoefficients(a_rowptr.data(), 
                                    a_colind.data(),
                                    &velocity.data()[ebNE_kb_nSpace],
-                                   ebqe_a, 
+                                   ebqe_a_ptr, 
                                    u_ext, 
                                    m_ext, 
                                    dm_ext, 
@@ -1983,8 +1998,8 @@ for (int i = 0; i < numDOFs; i++)
     STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
     Rpos.resize(numDOFs,0.0);
     Rneg.resize(numDOFs,0.0);
-    //FluxCorrectionMatrix = xt::zeros<double>({NNZ});
-    FluxCorrectionMatrix.resize({NNZ,0.0});
+    FluxCorrectionMatrix = xt::zeros<double>({NNZ});
+    //FluxCorrectionMatrix.resize(NNZ,0.0);
     int ij=0;
     //loop over nodes (i)
     for (int i=0; i<numDOFs; i++)
