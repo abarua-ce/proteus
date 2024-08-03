@@ -12,6 +12,7 @@
 #include "xtensor/xadapt.hpp"
 #include "xtensor/xio.hpp"
 #include <xtensor/xmath.hpp>
+#include <xtensor/xfixed.hpp>
 #define nnz nSpace
 
 namespace py = pybind11;
@@ -102,32 +103,6 @@ namespace proteus
       cfl = nrm_v/h;
     }
 
-// void evaluateCoefficients(const int rowptr[nSpace],
-// 				                      const int colind[nnz],
-//                               const double v[nSpace],
-//                               const double* q_a,
-//                               const double& u,
-//                               double& m,
-//                               double& dm,
-//                               double f[nSpace],
-//                               double df[nSpace], 
-//                               double a[nnz],
-//                               double da[nnz])
-//     {
-//       m = u;
-//       dm= 1.0;
-//       for (int I=0; I < nSpace; I++)
-//         {
-//           f[I] = v[I]*u;
-//           df[I] = v[I];
-//            for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++)
-//         {
-//             a[ii] = q_a[ii];
-//             da[ii] = 0.0;
-//         }
-
-//         } 
-//     }
 inline
 void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
                           const int colind[nnz], // nnz size
@@ -136,10 +111,10 @@ void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
                           const double& u,
                           double& m,
                           double& dm,
-                          xt::xarray<double>& f,  // nSpace size
-                          xt::xarray<double>& df, // nSpace size
-                          xt::xarray<double>& a,  // nnz size
-                          xt::xarray<double>& da) // nnz size
+                          xt::xtensor<double, 1>& f,  // nSpace size
+                          xt::xtensor<double, 1>& df, // nSpace size
+                          xt::xtensor<double, 1>& a,  // nnz size
+                          xt::xtensor<double, 1>& da) // nnz size
 {
     m = u;
     dm = 1.0;
@@ -306,13 +281,7 @@ inline
                                         const double velocity[nSpace],
                                         double& flux)
     {
-    //   // Debug: Print input values
-    // std:: cout << "Exterior Numerical Advective Flux Function"<< std::endl;
-    // std::cout << "isDOFBoundary_u: " << isDOFBoundary_u << ", isFluxBoundary_u: " << isFluxBoundary_u << std::endl;
-    // std::cout << "bc_u: " << bc_u << ", bc_flux_u: " << bc_flux_u << ", u: " << u << std::endl;
-    // std::cout << "velocity: [" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << "]" << std::endl;
-    // std::cout << "Normal: [" << n[0] << ", " << n[1] << ", " << n[2] << "]\n";
-    // std ::cout <<"End Line"<< "\n";
+
 
       double flow=0.0;
       for (int I=0; I < nSpace; I++)
@@ -534,6 +503,7 @@ inline
           TransportMatrix = xt::zeros<double>({NNZ});
           DiffusionMatrix = xt::zeros<double>({NNZ});
           TransposeTransportMatrix = xt::zeros<double>({NNZ});
+
           // // compute entropy and init global_entropy_residual and boundary_integral
           // psi = xt::xarray<double>({numDOFs});
           // eta = xt::xarray<double>({numDOFs});
@@ -565,11 +535,11 @@ inline
       for(int eN=0;eN<nElements_global;eN++)
         {
           //declare local storage for element residual and initialize
-          xt::xarray<double> elementResidual_u = xt::zeros<double>({nDOF_test_element});
-          xt::xarray<double> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
-          xt::xarray<double> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xarray<double> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xarray<double> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor<double , 1> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor<double , 1> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor<double , 2> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor<double , 2> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor<double , 2> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
             //loop over quadrature points and compute integrands
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
@@ -582,19 +552,16 @@ inline
                 u=0.0,un=0.0,
                 grad_u[nSpace],grad_u_old[nSpace],grad_uTilde[nSpace];
                 
-            // xt::xarray<double> grad_u({nSpace});
-            // xt::xarray<double> grad_u_old({nSpace});
-            // xt::xarray<double> grad_uTilde({nSpace});
             double m = 0.0, dm = 0.0, mn = 0.0, dmn = 0.0;
             double H = 0.0, Hn = 0.0, HTilde = 0.0;
-            xt::xarray<double> f({nSpace});
-            xt::xarray<double> fn({nSpace});
-            xt::xarray<double> df({nSpace});
-            xt::xarray<double> dfn({nSpace});
-            xt::xarray<double> a({nnz});
-            xt::xarray<double> da({nnz});
-            xt::xarray<double> an({nnz});
-            xt::xarray<double> dan({nnz});
+            xt::xtensor<double, 1> f({nSpace});
+            xt::xtensor<double, 1> fn({nSpace});
+            xt::xtensor<double, 1> df({nSpace});
+            xt::xtensor<double, 1> dfn({nSpace});
+            xt::xtensor<double, 1> a({nnz});
+            xt::xtensor<double, 1> da({nnz});
+            xt::xtensor<double, 1> an({nnz});
+            xt::xtensor<double, 1> dan({nnz});
             double    m_t=0.0,dm_t=0.0,
             pdeResidual_u=0.0,
             Lstar_u[nDOF_test_element];    
@@ -610,17 +577,6 @@ inline
                 u_grad_test_dV[nDOF_test_element*nSpace],
                 dV,x,y,z,xt,yt,zt,
                 G[nSpace*nSpace],G_dd_G,tr_G;
-
-            // xt::xarray<double> jac({nSpace * nSpace});
-            // double    jacDet;
-            // xt::xarray<double> jacInv({nSpace* nSpace});
-            // xt::xarray<double> u_grad_trial({nDOF_trial_element * nSpace});
-            // xt::xarray<double> u_test_dV({nDOF_trial_element});
-            // xt::xarray<double> u_grad_test_dV({nDOF_test_element * nSpace});
-            // //xt::xarray<double> q_a;  // Ensure this is the type of q_a
-            // double dV, x, y, z, xt, yt, zt;
-            // xt::xarray<double> G({nSpace * nSpace});
-            // double G_dd_G, tr_G;
               // for entropy residual
             double  aux_entropy_residual=0.0, DENTROPY_un, DENTROPY_uni;//norm_Rv;
             ck.calculateMapping_element(eN,
@@ -713,8 +669,7 @@ inline
               //moving mesh
               //
 
-              xt::xarray<double> mesh_velocity = {xt, yt, zt};
-
+              xt::xtensor<double, 1> mesh_velocity = {xt, yt, zt};
               // Create a view based on nSpace
               auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
 
@@ -1001,17 +956,17 @@ inline
         double u_ext = 0.0,
         grad_u_ext[nSpace],
        m_ext = 0.0, dm_ext = 0.0;
-        xt::xarray<double> f_ext({nSpace});
-        xt::xarray<double> df_ext({nSpace});
-        xt::xarray<double> a_ext({nnz});
-        xt::xarray<double> da_ext({nnz});
-        xt::xarray<double> bc_a_ext({nnz});
-        xt::xarray<double> bc_da_ext({nnz});
+        xt::xtensor<double, 1> f_ext({nSpace});
+        xt::xtensor<double, 1> df_ext({nSpace});
+        xt::xtensor<double, 1> a_ext({nnz});
+        xt::xtensor<double, 1> da_ext({nnz});
+        xt::xtensor<double, 1> bc_a_ext({nnz});
+        xt::xtensor<double, 1> bc_da_ext({nnz});
         double flux_ext = 0.0, dflux_u_u_ext = 0.0, bc_u_ext = 0.0;
         double bc_m_ext = 0.0, bc_dm_ext = 0.0, flux_diff_ext = 0.0;
         double difffluxjacobian_ext = 0.0;
-        xt::xarray<double> bc_f_ext({nSpace});
-        xt::xarray<double> bc_df_ext({nSpace});
+        xt::xtensor<double, 1> bc_f_ext({nSpace});
+        xt::xtensor<double, 1> bc_df_ext({nSpace});
         double 
         jac_ext[nSpace*nSpace],
                 jacDet_ext,
@@ -1157,7 +1112,7 @@ inline
               //moving mesh
               //
               // Initialize mesh_velocity using xtensor
-              xt::xarray<double> mesh_velocity = {xt_ext, yt_ext, zt_ext};
+              xt::xtensor<double, 1> mesh_velocity = {xt_ext, yt_ext, zt_ext};
               auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
 
               // Update f_ext, df_ext, bc_f_ext, and bc_df_ext using xtensor operations
@@ -1569,10 +1524,10 @@ for (int i = 0; i < numDOFs; i++)
                 u_grad_test_dV[nDOF_test_element*nSpace],
                 x,y,z,xt,yt,zt,
                 G[nSpace*nSpace],G_dd_G,tr_G;
-                xt::xarray<double> f({nSpace});
-                xt::xarray<double> df({nSpace});
-                xt::xarray<double> a({nnz});
-                xt::xarray<double> da({nnz});
+                xt::xtensor<double, 1> f({nSpace});
+                xt::xtensor<double, 1> df({nSpace});
+                xt::xtensor<double, 1> a({nnz});
+                xt::xtensor<double, 1> da({nnz});
                   //
               //calculate solution and gradients at quadrature points
               //
@@ -1631,7 +1586,7 @@ for (int i = 0; i < numDOFs; i++)
               //moving mesh
               //
               
-              xt::xarray<double> mesh_velocity = {xt, yt, zt};
+              xt::xtensor<double, 1> mesh_velocity = {xt, yt, zt};
               auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
               f -= MOVING_DOMAIN * m * mesh_velocity_view;
               df-= MOVING_DOMAIN * dm * mesh_velocity_view;
@@ -1814,14 +1769,14 @@ for (int i = 0; i < numDOFs; i++)
                     normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
                     //
                     G[nSpace*nSpace],G_dd_G,tr_G;
-                    xt::xarray<double> f_ext({nSpace});
-                    xt::xarray<double> df_ext({nSpace});
-                    xt::xarray<double> a_ext({nnz});
-                    xt::xarray<double> da_ext({nnz});
-                    xt::xarray<double> bc_a_ext({nnz});
-                    xt::xarray<double> bc_da_ext({nnz});
-                    xt::xarray<double> bc_f_ext({nnz});
-                    xt::xarray<double> bc_df_ext({nnz});
+                    xt::xtensor<double, 1> f_ext({nSpace});
+                    xt::xtensor<double, 1> df_ext({nSpace});
+                    xt::xtensor<double, 1> a_ext({nnz});
+                    xt::xtensor<double, 1> da_ext({nnz});
+                    xt::xtensor<double, 1> bc_a_ext({nnz});
+                    xt::xtensor<double, 1> bc_da_ext({nnz});
+                    xt::xtensor<double, 1> bc_f_ext({nnz});
+                    xt::xtensor<double, 1> bc_df_ext({nnz});
 
                   //
                   //calculate the solution and gradients at quadrature points
@@ -1908,7 +1863,7 @@ for (int i = 0; i < numDOFs; i++)
                   //
                   //moving domain
                   //
-                  xt::xarray<double> mesh_velocity = {xt_ext, yt_ext, zt_ext};
+                  xt::xtensor<double, 1> mesh_velocity = {xt_ext, yt_ext, zt_ext};
                   auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
 
                   // Update f_ext, df_ext, bc_f_ext, and bc_df_ext using xtensor operations
