@@ -9,11 +9,9 @@
 #include "xtensor-python/pyarray.hpp"
 #include "xtensor/xarray.hpp"
 #include "xtensor/xview.hpp"
-//#include "xtensor/xadapt.hpp"
-//#include "xtensor/xio.hpp"
-//#include <xtensor/xmath.hpp>
 #include <xtensor/xfixed.hpp>
-#include <xtensor/xnoalias.hpp>
+
+//#include <xtensor/xnoalias.hpp>
 
 #define nnz nSpace
 
@@ -62,10 +60,10 @@ namespace proteus
     //The base class defining the interface
   public:
     std::valarray<double> Rpos, Rneg;
-    //xt::xarray<double> FluxCorrectionMatrix;
-    xt::xarray<double> TransportMatrix, DiffusionMatrix, TransposeTransportMatrix, FluxCorrectionMatrix;
+    xt::xtensor<double, 2> FluxCorrectionMatrix;
+    xt::xtensor<double, 1> TransportMatrix, DiffusionMatrix, TransposeTransportMatrix;
     std::valarray<double> psi, eta;
-    xt::xarray<double>global_entropy_residual, boundary_integral;
+    xt::xtensor<double, 1>global_entropy_residual, boundary_integral;
     std::valarray<double> maxVel,maxEntRes;
 
     virtual ~TADRI_base(){}
@@ -123,7 +121,6 @@ void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
 {
     m = u;
     dm = 1.0;
-
     for (int I = 0; I < nSpace; I++)
     {
         f(I) = v[I] * u;
@@ -505,20 +502,22 @@ inline
           STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
           STABILIZATION_TYPE==STABILIZATION::Kuzmin)
         {
-          //resetMatrices(NNZ);
-          TransportMatrix = xt::zeros<double>({NNZ});
-          DiffusionMatrix = xt::zeros<double>({NNZ});
-          TransposeTransportMatrix = xt::zeros<double>({NNZ});
+          TransportMatrix.resize({NNZ});
+          DiffusionMatrix.resize({NNZ});
+          TransposeTransportMatrix.resize({NNZ});
 
-          // // compute entropy and init global_entropy_residual and boundary_integral
-          // psi = xt::xarray<double>({numDOFs});
-          // eta = xt::xarray<double>({numDOFs});
+          // Set the elements to 0.0
+          TransportMatrix.fill(0.0);
+          DiffusionMatrix.fill(0.0);
+          TransposeTransportMatrix.fill(0.0);
+
           // compute entropy and init global_entropy_residual and boundary_integral
           psi.resize(numDOFs,0.0);
           eta.resize(numDOFs,0.0);
 
           global_entropy_residual = xt::zeros<double>({numDOFs});
           boundary_integral = xt::zeros<double>({numDOFs});
+
 
           if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity)
           {
@@ -541,11 +540,6 @@ inline
       for(int eN=0;eN<nElements_global;eN++)
         {
           //declare local storage for element residual and initialize
-          // xt::xtensor<double , 1> elementResidual_u = xt::zeros<double>({nDOF_test_element});
-          // xt::xtensor<double , 1> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
-          // xt::xtensor<double , 2> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          // xt::xtensor<double , 2> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          // xt::xtensor<double , 2> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
           xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> elementResidual_u = xt::zeros<double>({nDOF_test_element});
           xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
           xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
@@ -565,14 +559,11 @@ inline
                 
             double m = 0.0, dm = 0.0, mn = 0.0, dmn = 0.0;
             double H = 0.0, Hn = 0.0, HTilde = 0.0;
-            // xt::xtensor<double, 1> f({nSpace});
-            // xt::xtensor<double, 1> fn({nSpace});
-            // xt::xtensor<double, 1> df({nSpace});
-            // xt::xtensor<double, 1> dfn({nSpace});
             xt::xtensor_fixed<double, xt::xshape<nSpace>> f;
             xt::xtensor_fixed<double, xt::xshape<nSpace>> fn;
             xt::xtensor_fixed<double, xt::xshape<nSpace>> df;
             xt::xtensor_fixed<double, xt::xshape<nSpace>> dfn;
+            
             xt::xtensor<double, 1> a({nnz});
             xt::xtensor<double, 1> da({nnz});
             xt::xtensor<double, 1> an({nnz});
@@ -958,9 +949,12 @@ inline
         eN_nDOF_trial_element = eN*nDOF_trial_element;
     
     // Initialize the arrays directly to zero using xt::zeros
-    xt::xarray<double> elementResidual_u = xt::zeros<double>({nDOF_test_element});
-    xt::xarray<double> fluxTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+    // xt::xarray<double> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+    // xt::xarray<double> fluxTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
 
+    xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+    xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> fluxTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          
     for (int kb = 0; kb < nQuadraturePoints_elementBoundary; kb++)
     {
         int ebNE_kb = ebNE * nQuadraturePoints_elementBoundary + kb,
@@ -1512,8 +1506,9 @@ for (int i = 0; i < numDOFs; i++)
       //
       for(int eN=0;eN<nElements_global;eN++)
         {
-          xt::xarray<double> elementJacobian_u_u = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-        
+                  
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementJacobian_u_u = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+    
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
               int eN_k = eN*nQuadraturePoints_element+k, //index to a scalar at a quadrature point
@@ -1524,11 +1519,6 @@ for (int i = 0; i < numDOFs; i++)
               double u=0.0,
                 grad_u[nSpace],
                 m=0.0,dm=0.0,
-                // f[nSpace],df[nSpace],
-                // a[nnz],da[nnz],
-
-                
-                
                 m_t=0.0,dm_t=0.0,
                 dpdeResidual_u_u[nDOF_trial_element],
                 Lstar_u[nDOF_test_element],
@@ -1545,8 +1535,6 @@ for (int i = 0; i < numDOFs; i++)
                 G[nSpace*nSpace],G_dd_G,tr_G;
                 xt::xtensor_fixed<double, xt::xshape<nSpace>> f;
                 xt::xtensor_fixed<double, xt::xshape<nSpace>> df;
-                // xt::xtensor<double, 1> f({nSpace});
-                // xt::xtensor<double, 1> df({nSpace});
                 xt::xtensor<double, 1> a({nnz});
                 xt::xtensor<double, 1> da({nnz});
                   //
@@ -1612,17 +1600,6 @@ for (int i = 0; i < numDOFs; i++)
               f -= MOVING_DOMAIN * m * mesh_velocity_view;
               df-= MOVING_DOMAIN * dm * mesh_velocity_view;
 
-              // double mesh_velocity[3];
-              // mesh_velocity[0] = xt;
-              // mesh_velocity[1] = yt;
-              // mesh_velocity[2] = zt;
-            
-              // for(int I=0;I<nSpace;I++)
-              //   {
-              //     f[I] -= MOVING_DOMAIN*m*mesh_velocity[I];
-              //     df[I] -= MOVING_DOMAIN*dm*mesh_velocity[I];
-              //   }
-              //
               //calculate time derivatives
               //
               ck.bdf(alphaBDF,
@@ -1757,26 +1734,12 @@ for (int i = 0; i < numDOFs; i++)
                     grad_u_ext[nSpace],
                     m_ext=0.0,
                     dm_ext=0.0,
-                    // f_ext[nSpace],
-                    // df_ext[nSpace],
-
-                    // a_ext[nnz],
-                    // da_ext[nnz],
-                    // bc_a_ext[nnz],
-                    // bc_da_ext[nnz],
-
-
                     dflux_u_u_ext=0.0,
                     difffluxjacobian_ext=0.0,
                     bc_u_ext=0.0,
-                    //bc_grad_u_ext[nSpace],
                     bc_m_ext=0.0,
                     bc_dm_ext=0.0,
-                    // bc_f_ext[nSpace],
-                    // bc_df_ext[nSpace],
-                    //////////////
                     diffusiveFluxJacobian_u_u[nDOF_trial_element],
-                    ////////////////////////////
                     jac_ext[nSpace*nSpace],
                     jacDet_ext,
                     jacInv_ext[nSpace*nSpace],
@@ -1788,21 +1751,15 @@ for (int i = 0; i < numDOFs; i++)
                     u_grad_trial_trace[nDOF_trial_element*nSpace],
                     u_grad_test_dS[nDOF_trial_element*nSpace],
                     normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
-                    //
                     G[nSpace*nSpace],G_dd_G,tr_G;
                     xt::xtensor_fixed<double, xt::xshape<nSpace>> f_ext;
                     xt::xtensor_fixed<double, xt::xshape<nSpace>> df_ext;
                     xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_f_ext;
                     xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_df_ext;
-                    
-                    // xt::xtensor<double, 1> f_ext({nSpace});
-                    // xt::xtensor<double, 1> df_ext({nSpace});
                     xt::xtensor<double, 1> a_ext({nnz});
                     xt::xtensor<double, 1> da_ext({nnz});
                     xt::xtensor<double, 1> bc_a_ext({nnz});
                     xt::xtensor<double, 1> bc_da_ext({nnz});
-                    // xt::xtensor<double, 1> bc_f_ext({nnz});
-                    // xt::xtensor<double, 1> bc_df_ext({nnz});
 
                   //
                   //calculate the solution and gradients at quadrature points
