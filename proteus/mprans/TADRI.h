@@ -9,10 +9,12 @@
 #include "xtensor-python/pyarray.hpp"
 #include "xtensor/xarray.hpp"
 #include "xtensor/xview.hpp"
-#include "xtensor/xadapt.hpp"
-#include "xtensor/xio.hpp"
-#include <xtensor/xmath.hpp>
+//#include "xtensor/xadapt.hpp"
+//#include "xtensor/xio.hpp"
+//#include <xtensor/xmath.hpp>
 #include <xtensor/xfixed.hpp>
+#include <xtensor/xnoalias.hpp>
+
 #define nnz nSpace
 
 namespace py = pybind11;
@@ -60,7 +62,7 @@ namespace proteus
     //The base class defining the interface
   public:
     std::valarray<double> Rpos, Rneg;
-    //std::valarray<double> FluxCorrectionMatrix;
+    //xt::xarray<double> FluxCorrectionMatrix;
     xt::xarray<double> TransportMatrix, DiffusionMatrix, TransposeTransportMatrix, FluxCorrectionMatrix;
     std::valarray<double> psi, eta;
     xt::xarray<double>global_entropy_residual, boundary_integral;
@@ -70,6 +72,7 @@ namespace proteus
     virtual void calculateResidual(arguments_dict& args)=0;
     virtual void calculateJacobian(arguments_dict& args)=0;
     virtual void FCTStep(arguments_dict& args)=0;
+
   };
 
   template<class CompKernelType,
@@ -111,8 +114,10 @@ void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
                           const double& u,
                           double& m,
                           double& dm,
-                          xt::xtensor<double, 1>& f,  // nSpace size
-                          xt::xtensor<double, 1>& df, // nSpace size
+                          xt::xtensor_fixed<double, xt::xshape<nSpace>>& f,  // nSpace size
+                          xt::xtensor_fixed<double, xt::xshape<nSpace>>& df,  // nSpace size
+                          // xt::xtensor<double, 1>& f,  // nSpace size
+                          // xt::xtensor<double, 1>& df, // nSpace size
                           xt::xtensor<double, 1>& a,  // nnz size
                           xt::xtensor<double, 1>& da) // nnz size
 {
@@ -500,6 +505,7 @@ inline
           STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
           STABILIZATION_TYPE==STABILIZATION::Kuzmin)
         {
+          //resetMatrices(NNZ);
           TransportMatrix = xt::zeros<double>({NNZ});
           DiffusionMatrix = xt::zeros<double>({NNZ});
           TransposeTransportMatrix = xt::zeros<double>({NNZ});
@@ -535,12 +541,17 @@ inline
       for(int eN=0;eN<nElements_global;eN++)
         {
           //declare local storage for element residual and initialize
-          xt::xtensor<double , 1> elementResidual_u = xt::zeros<double>({nDOF_test_element});
-          xt::xtensor<double , 1> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
-          xt::xtensor<double , 2> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xtensor<double , 2> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-          xt::xtensor<double , 2> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
-            //loop over quadrature points and compute integrands
+          // xt::xtensor<double , 1> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+          // xt::xtensor<double , 1> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
+          // xt::xtensor<double , 2> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          // xt::xtensor<double , 2> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          // xt::xtensor<double , 2> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+         //loop over quadrature points and compute integrands
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
               //compute indeces and declare local storage
@@ -554,10 +565,14 @@ inline
                 
             double m = 0.0, dm = 0.0, mn = 0.0, dmn = 0.0;
             double H = 0.0, Hn = 0.0, HTilde = 0.0;
-            xt::xtensor<double, 1> f({nSpace});
-            xt::xtensor<double, 1> fn({nSpace});
-            xt::xtensor<double, 1> df({nSpace});
-            xt::xtensor<double, 1> dfn({nSpace});
+            // xt::xtensor<double, 1> f({nSpace});
+            // xt::xtensor<double, 1> fn({nSpace});
+            // xt::xtensor<double, 1> df({nSpace});
+            // xt::xtensor<double, 1> dfn({nSpace});
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> f;
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> fn;
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> df;
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> dfn;
             xt::xtensor<double, 1> a({nnz});
             xt::xtensor<double, 1> da({nnz});
             xt::xtensor<double, 1> an({nnz});
@@ -956,8 +971,12 @@ inline
         double u_ext = 0.0,
         grad_u_ext[nSpace],
        m_ext = 0.0, dm_ext = 0.0;
-        xt::xtensor<double, 1> f_ext({nSpace});
-        xt::xtensor<double, 1> df_ext({nSpace});
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> f_ext;
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> df_ext;
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_f_ext;
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_df_ext;
+        // xt::xtensor<double, 1> f_ext({nSpace});
+        // xt::xtensor<double, 1> df_ext({nSpace});
         xt::xtensor<double, 1> a_ext({nnz});
         xt::xtensor<double, 1> da_ext({nnz});
         xt::xtensor<double, 1> bc_a_ext({nnz});
@@ -965,8 +984,8 @@ inline
         double flux_ext = 0.0, dflux_u_u_ext = 0.0, bc_u_ext = 0.0;
         double bc_m_ext = 0.0, bc_dm_ext = 0.0, flux_diff_ext = 0.0;
         double difffluxjacobian_ext = 0.0;
-        xt::xtensor<double, 1> bc_f_ext({nSpace});
-        xt::xtensor<double, 1> bc_df_ext({nSpace});
+        // xt::xtensor<double, 1> bc_f_ext({nSpace});
+        // xt::xtensor<double, 1> bc_df_ext({nSpace});
         double 
         jac_ext[nSpace*nSpace],
                 jacDet_ext,
@@ -1524,8 +1543,10 @@ for (int i = 0; i < numDOFs; i++)
                 u_grad_test_dV[nDOF_test_element*nSpace],
                 x,y,z,xt,yt,zt,
                 G[nSpace*nSpace],G_dd_G,tr_G;
-                xt::xtensor<double, 1> f({nSpace});
-                xt::xtensor<double, 1> df({nSpace});
+                xt::xtensor_fixed<double, xt::xshape<nSpace>> f;
+                xt::xtensor_fixed<double, xt::xshape<nSpace>> df;
+                // xt::xtensor<double, 1> f({nSpace});
+                // xt::xtensor<double, 1> df({nSpace});
                 xt::xtensor<double, 1> a({nnz});
                 xt::xtensor<double, 1> da({nnz});
                   //
@@ -1769,14 +1790,19 @@ for (int i = 0; i < numDOFs; i++)
                     normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
                     //
                     G[nSpace*nSpace],G_dd_G,tr_G;
-                    xt::xtensor<double, 1> f_ext({nSpace});
-                    xt::xtensor<double, 1> df_ext({nSpace});
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> f_ext;
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> df_ext;
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_f_ext;
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_df_ext;
+                    
+                    // xt::xtensor<double, 1> f_ext({nSpace});
+                    // xt::xtensor<double, 1> df_ext({nSpace});
                     xt::xtensor<double, 1> a_ext({nnz});
                     xt::xtensor<double, 1> da_ext({nnz});
                     xt::xtensor<double, 1> bc_a_ext({nnz});
                     xt::xtensor<double, 1> bc_da_ext({nnz});
-                    xt::xtensor<double, 1> bc_f_ext({nnz});
-                    xt::xtensor<double, 1> bc_df_ext({nnz});
+                    // xt::xtensor<double, 1> bc_f_ext({nnz});
+                    // xt::xtensor<double, 1> bc_df_ext({nnz});
 
                   //
                   //calculate the solution and gradients at quadrature points
