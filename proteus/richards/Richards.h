@@ -199,7 +199,8 @@ namespace richards
 				     const double a[nnz],
 				     const double da[nnz])
      {
-      double psiC,
+    double 
+	psiC,
 	pcBar,pcBar_n,
 	sBar,
 	thetaW,
@@ -208,26 +209,32 @@ namespace richards
       m_vg = 1.0 - 1.0/n_vg;
       thetaS = thetaR + thetaSR;
       thetaW = m/rho;
-      sBar = (fmax(thetaR+1.0e-8, fmin(thetaS, thetaW)) - thetaR)/thetaSR;
-      //sBar = (thetaW - thetaR)/thetaSR;
-      pcBar_n = pow(sBar, -1.0/m_vg) - 1.0;
-      pcBar = pow(pcBar_n, 1.0/n_vg);
-      psiC = pcBar/alpha;
-      u = - psiC;
-      if (thetaW > thetaS || thetaW <= thetaR)
-	{
-	  //cek debug
-	  std::cout<<"rho "<<rho<<std::endl
-		   <<"n "<<n_vg<<std::endl
-		   <<"m "<<m_vg<<std::endl
-		   <<"thetaR "<<thetaR<<std::endl
-		   <<"theta "<<thetaW<<std::endl
-		   <<"thetaS "<<thetaS<<std::endl
-		   <<"sBar "<<sBar<<std::endl
-		   <<"pcBar_n "<<pcBar_n<<std::endl
-		   <<"pcBar "<<pcBar<<std::endl
-		   <<"psiC "<<psiC<<std::endl;
-	}
+	  if (thetaW> thetaR && thetaW < thetaS)
+	  {
+		      //sBar = (fmax(thetaR+1.0e-8, fmin(thetaS, thetaW)) - thetaR)/thetaSR;
+      	sBar = (thetaW - thetaR)/thetaSR;
+      	pcBar_n = pow(sBar, -1.0/m_vg) - 1.0;
+      	pcBar = pow(pcBar_n, 1.0/n_vg);
+      	psiC = pcBar/alpha;
+		u= -psiC;
+	  }
+    //   if (thetaW > thetaS+0.001 || thetaW < thetaR-0.001)
+	// { u=u;
+	//   //cek debug
+	//   std::cout<<"rho "<<rho<<std::endl
+	// 	   <<"n "<<n_vg<<std::endl
+	// 	   <<"m "<<m_vg<<std::endl
+	// 	   <<"thetaR "<<thetaR<<std::endl
+	// 	   <<"theta "<<thetaW<<std::endl
+	// 	   <<"thetaS "<<thetaS<<std::endl
+	// 	   <<"sBar "<<sBar<<std::endl
+	// 	   <<"pcBar_n "<<pcBar_n<<std::endl
+	// 	   <<"pcBar "<<pcBar<<std::endl
+	// 	   <<"psiC "<<psiC<<std::endl;
+	// }
+	// else{
+	// 	u= -psiC;
+	// }
     }
     inline
     void calculateCFL(const double& elementDiameter,
@@ -939,10 +946,10 @@ namespace richards
 		 	anb_seepage_flux_n.data()[0]= anb_seepage_flux;
 				
 				//anb_seepage_flux= anb_seepage_flux;
-			if (anb_seepage_flux>0)
-				{
-					std::cout<<"The seepage flux is "<<anb_seepage_flux<<std::endl;
-				}
+			// if (anb_seepage_flux>0)
+			// 	{
+			// 		std::cout<<"The seepage flux is "<<anb_seepage_flux<<std::endl;
+			// 	}
 				
 	      ebqe_u.data()[ebNE_kb] = u_ext;  
 	      //
@@ -1420,6 +1427,15 @@ namespace richards
       double FluxCorrectionMatrix[NNZ];
       double solL[numDOFs];
       double sdot[numDOFs];
+	  //xt::pyarray<double>& globalResidual = args.array<double>("globalResidual");
+      xt::pyarray<double>& thetaR = args.array<double>("thetaR");
+      xt::pyarray<double>& thetaSR = args.array<double>("thetaSR");
+	  double rho = args.scalar<double>("rho");
+	  xt::pyarray<int>& elementMaterialTypes = args.array<int>("elementMaterialTypes");	
+      
+      
+
+
       //////////////////
       // LOOP in DOFs //
       //////////////////
@@ -1543,7 +1559,28 @@ namespace richards
 	      //update ij
 	      ij+=1;
 	    }
-	  limited_solution.data()[i] = solL[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i];
+	  //limited_solution.data()[i] = solL[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i];
+
+        double limited_mass = solL[i] + 1. / lumped_mass_matrix.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask[i];
+        
+		//std::cout << "limited mass: " << limited_mass << std::endl;
+		//std::cout << "solL: " << solL[i] << std::endl;
+		//Calculate the min and max mass bounds
+        double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
+        double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
+        
+        // Check if the limited mass is within bounds
+        if (limited_mass < mMin || limited_mass > mMax)
+        {
+            limited_solution.data()[i] = solL[i]; // Fallback to lower-order solution
+        }
+        else
+        {
+            limited_solution.data()[i] = limited_mass; // Assign the limited mass
+        }
+		
+	  //globalResidual.data()[i]+= ith_Limiter_times_FluxCorrectionMatrix;
+	  
 	}
     }
 
@@ -1599,7 +1636,8 @@ namespace richards
 		    {
 		      int j = csrColumnOffsets_DofLoops.data()[offset];
 		      // compute Flux correction
-		      double Fluxij = FluxMatrix.data()[ij] - limitedFlux.data()[ij];	      
+		      double Fluxij = FluxMatrix.data()[ij] - limitedFlux.data()[ij];	
+			  std::cout<<"Flux Matrix : " <<Fluxij  <<std::endl; 
 		      Pposi += Fluxij*((Fluxij > 0) ? 1. : 0.);
 		      // update ij
 		      ij+=1;
@@ -1639,7 +1677,8 @@ namespace richards
 		    }
 		  //update limited solution
 		  double mi = ML.data()[i];
-		  solLim.data()[i] += 1.0/mi*ith_Limiter_times_FluxCorrectionMatrix;	    
+		  //globalResidual.data()[i] += ith_limited_flux_correction;
+		  //solLim.data()[i] += 1.0/mi*ith_Limiter_times_FluxCorrectionMatrix;	    
 		}
 	    }
 	}
@@ -1660,7 +1699,8 @@ namespace richards
 	      mini = fmin(mini,soln.data()[j]);
 	      maxi = fmax(maxi,soln.data()[j]);
 	      // compute P vectors //
-	      double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      //double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      double fij = (MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j])/dt + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
 	      Pposi += fij * (fij > 0 ? 1. : 0.);
 	      Pnegi += fij * (fij < 0 ? 1. : 0.);
 	      //update ij
@@ -1686,12 +1726,15 @@ namespace richards
 	    {
 	      int j = csrColumnOffsets_DofLoops.data()[offset];
 	      // compute flux correction
-	      double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
-	      // compute limiters
+	      //double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      double fij = (MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j])/dt + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      
+		  // compute limiters
 	      double Lij = 1.0;
 	      Lij = fij > 0 ? fmin(Rposi,Rneg[j]) : fmin(Rnegi,Rpos[j]);
 	      // compute ith_limited_flux_correction
 	      ith_limited_flux_correction += Lij*fij;
+		  std::cout<<"Extra term :"<< ith_limited_flux_correction<< std::endl;
 	      ij+=1;
 	    }
 	  double mi = ML.data()[i];
@@ -2752,19 +2795,24 @@ namespace richards
 			       dKrn);
 	  sn.data()[i] = mn;
 	  sLow.data()[i] = m;
+	//   double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
+	//                                                                       csrRowIndeces_DofLoops, 
+	// 																	  csrColumnOffsets_DofLoops, 
+	// 																	  uLow, 
+	// 																	  dt_times_fH_minus_fL, 
+	// 																	  dt, 
+	// 																	  mi);
 
+	// if (ith_limited_flux_correction> 0.0){
+	// 	std:: cout << "ith_limited_ flux correction" << ith_limited_flux_correction<< std::endl;
+	// }
 
-	  double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
-	                                                                      csrRowIndeces_DofLoops, 
-																		  csrColumnOffsets_DofLoops, 
-																		  uLow, 
-																		  dt_times_fH_minus_fL, 
-																		  dt, 
-																		  mi);
 	  
 
 	  //sLow.data()[i] = mn + dt*uDotLow.data()[i]*bc_mask.data()[i];//cek should introduce mn,mnp1 or somethign clearer
-	  globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term+ ith_limited_flux_correction)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	  //globalResidual.data()[i] = (mi*(m - mn)/dt-ith_flux_term + ith_limited_flux_correction )*bc_mask.data()[i];//  ;//cek should introduce mn,mnp1 or somethign clearer
+	  
+	  globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
 	  globalJacobian.data()[ii] += bc_mask.data()[i]*(mi*dm/dt + J_ii) + (1.0-bc_mask.data()[i]);
 	  //globalJacobian[ii] = bc_mask.data()[i]*mi*dm/dt + (1.0-bc_mask.data()[i]);
 	//}
@@ -2775,7 +2823,8 @@ namespace richards
 	  //std::cout<<"dt*divergence "<<dt*uDotLow.data()[i]<<std::endl;
 	  //std::cout<<"mass density old "<<m<<std::endl;
 	  m = sLow.data()[i];
-	  //std::cout<<"mass density "<<m<<std::endl;
+
+	  std::cout<<"mass density "<<m<<std::endl;
 	  double mMin = rho*thetaR.data()[elementMaterialTypes.data()[0]];
 	  double mMax = rho*(thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
 	  if (m < mMin || m  > mMax)
@@ -2887,18 +2936,19 @@ namespace richards
       xt::pyarray<double>& thetaR = args.array<double>("thetaR");
       xt::pyarray<double>& thetaSR = args.array<double>("thetaSR");
       xt::pyarray<double>& KWs = args.array<double>("KWs");
-      xt::pyarray<double>& globalResidual = args.array<double>("globalResidual");
+      //xt::pyarray<double>& globalResidual = args.array<double>("globalResidual");
       xt::pyarray<double>& u_dof = args.array<double>("u_dof");
       xt::pyarray<int>& elementMaterialTypes = args.array<int>("elementMaterialTypes");	
       int numDOFs = args.scalar<int>("numDOFs");
+	  xt::pyarray<double>& uLow = args.array<double>("uLow");
       for (int i=0; i<numDOFs; i++)
 	{
 	  double dm,f[nSpace],df[nSpace],a[nnz],da[nnz];
 	  double mMin = rho*thetaR.data()[elementMaterialTypes.data()[0]];
 	  double mMax = rho*(thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
-	  if (u_dof.data()[i] < mMin || u_dof.data()[i]  > mMax)
+	  if (u_dof.data()[i] < mMin-0.001 || u_dof.data()[i]  > mMax+0.001)
 	    {
-	      std::cout<<"mass out of bounds "<<mMin<<'\t'<<u_dof.data()[i]<<'\t'<<mMax<<std::endl;
+	      std::cout<<"mass out of bounds from invert function"<<mMin<<'\t'<<u_dof.data()[i]<<'\t'<<mMax<<std::endl;
 	    }
 
 	  evaluateInverseCoefficients(a_rowptr.data(),
@@ -2910,8 +2960,9 @@ namespace richards
 				      n.data()[elementMaterialTypes.data()[0]],
 				      thetaR.data()[elementMaterialTypes.data()[0]],
 				      thetaSR.data()[elementMaterialTypes.data()[0]],
-				      &KWs.data()[elementMaterialTypes.data()[0]*nnz],			      
-				      globalResidual.data()[i],//output
+				      &KWs.data()[elementMaterialTypes.data()[0]*nnz],	
+					  uLow.data()[i],	      
+				      //globalResidual.data()[i],//output
 				      u_dof.data()[i],//input
 				      dm,
 				      f,
@@ -3204,8 +3255,6 @@ namespace richards
 	}//elements
     }//computeMassMatrix
   };//Richards
-
-
 
   inline Richards_base* newRichards(int nSpaceIn,
 				    int nQuadraturePoints_elementIn,

@@ -12,7 +12,7 @@ from proteus.mprans import cArgumentsDict
 from proteus.LinearAlgebraTools import SparseMat
 from proteus import TimeIntegration
 from proteus.NonlinearSolvers import ExplicitLumpedMassMatrixForRichards
-from proteus.NonlinearSolvers import Newton
+#from proteus.NonlinearSolvers import Newton
 
 
 class ThetaScheme(TimeIntegration.BackwardEuler):
@@ -304,6 +304,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.uL = uL
         self.uR = uR
         self.cK = cK
+        #self.forceStrongConditions = False
         self.forceStrongConditions = True
         self.cE = cE
         self.outputQuantDOFs = outputQuantDOFs
@@ -418,11 +419,11 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             import pdb
             pdb.set_trace()
    
-    def postStep(self, t, firstStep=False):
-    #    #anb_seepage_flux_n[:]= self.anb_seepage_flux
-        with open('seepage_stab_0', "a") as f:
-    #        f.write("\n Time"+ ",\t" +"Seepage\n")
-            f.write(repr(t)+ ",\t")# +repr(np.sum(self.LevelModel.anb_seepage_flux_n)))
+    # def postStep(self, t, firstStep=False):
+    # #    #anb_seepage_flux_n[:]= self.anb_seepage_flux
+    #     with open('seepage_stab_0', "a") as f:
+    # #        f.write("\n Time"+ ",\t" +"Seepage\n")
+    #         f.write(repr(t)+ ",\t")# +repr(np.sum(self.LevelModel.anb_seepage_flux_n)))
         
 class LevelModel(proteus.Transport.OneLevelTransport):
     nCalls=0
@@ -739,8 +740,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #################################################################
         ####################ARNOB_FCT_EDIT###############################
         #################################################################
-        if not self.coefficients.LUMPED_MASS_MATRIX and self.coefficients.STABILIZATION_TYPE == 2:
-            cond = 'levelNonlinearSolver' in dir(options) and options.levelNonlinearSolver == Newton
+        #if not self.coefficients.LUMPED_MASS_MATRIX and self.coefficients.STABILIZATION_TYPE == 2:
+        #    cond = 'levelNonlinearSolver' in dir(options) and options.levelNonlinearSolver == Newton
         
 
 
@@ -780,7 +781,6 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             self.stride = [self.nc for ci in range(self.nc)]
         #
         logEvent(memory("stride+offset","OneLevelTransport"),level=4)
-        
         
         if numericalFluxType != None:
             if options is None or options.periodicDirichletConditions is None:
@@ -854,6 +854,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.MOVING_DOMAIN=0.0
         if self.mesh.nodeVelocityArray is None:
             self.mesh.nodeVelocityArray = np.zeros(self.mesh.nodeArray.shape,'d')        
+        #self.forceStrongConditions=False
         self.forceStrongConditions=True
         self.dirichletConditionsForceDOF = {}
         if self.forceStrongConditions:
@@ -894,9 +895,16 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["MONOLITHIC"] =0#cek hack self.coefficients.MONOLITHIC
         argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
+        argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes,
+        argsDict["rho"] = self.coefficients.rho
+        argsDict["thetaR"] = self.coefficients.thetaR_types
+        argsDict["thetaSR"] = self.coefficients.thetaSR_types
+        
+        #argsDict["globalResidual"] = r
         #pdb.set_trace()
         self.richards.FCTStep(argsDict)
-        
+        logEvent("limited solution:" + str(limited_solution))
+
             # self.nnz,  # number of non zero entries
             # len(rowptr) - 1,  # number of DOFs
             # self.timeIntegration.dt,
@@ -915,8 +923,26 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             # self.coefficients.LUMPED_MASS_MATRIX,
             # self.coefficients.MONOLITHIC)
         old_dof = self.u[0].dof.copy()
+        logEvent("self.u[0].dof before inversion : " + str(self.u[0].dof))
+        #logEvent("limited solution : " + str(limited_solution[:]))
+        #logEvent("self.u[0].dof : " + str(self.u[0].dof))
         self.invert(limited_solution, self.u[0].dof)
+        # Log the updated self.u[0].dof after inversion
+        logEvent("self.u[0].dof after inversion : " + str(self.u[0].dof))
+
+        # Calculate the difference
+        difference = self.u[0].dof - old_dof
+        # Calculate the sum of the modulus of the differences
+        sum_modulus_difference = np.sum(np.abs(difference))
+
+        # Log the sum of the modulus of the differences
+        logEvent("Sum of modulus of differences : " + str(sum_modulus_difference))
+
+        # Log the difference
+        logEvent("Difference between before and after inversion : " + str(difference))
+        
         self.timeIntegration.u[:] = self.u[0].dof
+
         #fromFreeToGlobal=1 #direction copying
         #cfemIntegrals.copyBetweenFreeUnknownsAndGlobalUnknowns(fromFreeToGlobal,
         #                                                       self.offset[0],
@@ -940,6 +966,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                                                                self.dirichletConditions[0].global2freeGlobal_free_dofs,
                                                                limited_solution,
                                                                self.timeintegration.u_dof_stage[0][self.timeIntegration.lstage])
+                                                               #self.timeintegration.u_dof_stage[0][self.timeIntegration.lstage])
+
 
         self.richards.kth_FCT_step(
             self.timeIntegration.dt,
@@ -957,6 +985,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             limitedFlux,
             rowptr,
             colind)
+        #import pdb
+        #pdb.set_trace()
 
         self.timeIntegration.u[:] = limited_solution
         #self.u[0].dof[:] = limited_solution
@@ -1197,6 +1227,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #     self.ebqe[('diffusiveFlux_bc',0)][t[0],t[1]] = g(self.ebqe[('x')][t[0],t[1]],self.timeIntegration.t)
         #     self.ebqe[('diffusiveFlux_bc_flag',0)][t[0],t[1]] = 1
         #self.shockCapturing.lag=True
+        self.bc_mask = np.ones_like(self.u[0].dof)
+            
         if self.forceStrongConditions:
             self.bc_mask = np.ones_like(self.u[0].dof)
             for cj in range(len(self.dirichletConditionsForceDOF)):
@@ -1344,10 +1376,10 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #print("Seepage Flux from Python file",  np.sum(self.anb_seepage_flux_n))
         seepage_text_variable= np.sum(self.anb_seepage_flux_n)
         
-        with open('seepage_stab_0',"a" ) as f:
+        #with open('seepage_stab_0',"a" ) as f:
             #f.write("\n Time"+ ",\t" +"Seepage\n")
             #f.write(repr(self.coefficients.t)+ ",\t" +repr(seepage_text_variable), "\n")
-            f.write(repr(seepage_text_variable)+ "\n")
+            #f.write(repr(seepage_text_variable)+ "\n")
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
             self.calculateResidual = self.richards.calculateResidual
             self.calculateJacobian = self.richards.calculateJacobian
@@ -1375,7 +1407,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
 
 
 
-    def invert(self,u,r):
+    #def invert(self,u,r):
+    def invert(self,u,ulow):
         #u=s
         #r=p
         import pdb
@@ -1386,7 +1419,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.sHigh[:] = u
         rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
         nnz = nzval.shape[-1]  # number of non-zero entries in sparse matrix
-        r.fill(0.0)
+        #r.fill(0.0)
         rowptr, colind, Cx = self.cterm_global[0].getCSRrepresentation()
         if (self.nSpace_global == 2):
             rowptr, colind, Cy = self.cterm_global[1].getCSRrepresentation()
@@ -1461,7 +1494,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
         argsDict["elementDiameter"] = self.mesh.elementDiametersArray
         argsDict["degree_polynomial"] = degree_polynomial
-        argsDict["u_dof"] = u#self.u[0].dof
+        argsDict["u_dof"] = u #self.u[0].dof
         argsDict["u_dof_old"] = self.u[0].dof
         argsDict["velocity"] = self.q['velocity']
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
@@ -1473,7 +1506,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["q_numDiff_u_last"] = self.q[('cfl',0)]
         argsDict["offset_u"] = self.offset[0]
         argsDict["stride_u"] = self.stride[0]
-        argsDict["globalResidual"] = r
+        
+        #argsDict["globalResidual"] = r
         argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
@@ -1654,10 +1688,10 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #self.nonlinear_function_evaluations += 1
         #if self.globalResidualDummy is None:
         #    self.globalResidualDummy = numpy.zeros(r.shape,'d')
-    def postStep(self, t, firstStep=False):
-        with open('seepage_flux_nnnn', "a") as f:
-            f.write("\n Time"+ ",\t" +"Seepage\n")
-            f.write(repr(t)+ ",\t" +repr(self.coefficients.anb_seepage_flux))
+    # def postStep(self, t, firstStep=False):
+    #     with open('seepage_flux_nnnn', "a") as f:
+    #         f.write("\n Time"+ ",\t" +"Seepage\n")
+    #         f.write(repr(t)+ ",\t" +repr(self.coefficients.anb_seepage_flux))
     def getJacobian(self,jacobian):
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
             cfemIntegrals.zeroJacobian_CSR(self.nNonzerosInJacobian,
