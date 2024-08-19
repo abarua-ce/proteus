@@ -903,7 +903,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #argsDict["globalResidual"] = r
         #pdb.set_trace()
         self.richards.FCTStep(argsDict)
-        logEvent("limited solution:" + str(limited_solution))
+        #logEvent("limited solution:" + str(limited_solution))
 
             # self.nnz,  # number of non zero entries
             # len(rowptr) - 1,  # number of DOFs
@@ -923,24 +923,11 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             # self.coefficients.LUMPED_MASS_MATRIX,
             # self.coefficients.MONOLITHIC)
         old_dof = self.u[0].dof.copy()
-        logEvent("self.u[0].dof before inversion : " + str(self.u[0].dof))
-        #logEvent("limited solution : " + str(limited_solution[:]))
-        #logEvent("self.u[0].dof : " + str(self.u[0].dof))
+
         self.invert(limited_solution, self.u[0].dof)
-        # Log the updated self.u[0].dof after inversion
-        logEvent("self.u[0].dof after inversion : " + str(self.u[0].dof))
 
-        # Calculate the difference
-        difference = self.u[0].dof - old_dof
-        # Calculate the sum of the modulus of the differences
-        sum_modulus_difference = np.sum(np.abs(difference))
-
-        # Log the sum of the modulus of the differences
-        logEvent("Sum of modulus of differences : " + str(sum_modulus_difference))
-
-        # Log the difference
-        logEvent("Difference between before and after inversion : " + str(difference))
-        
+        #import pdb
+        #pdb.set_trace()
         self.timeIntegration.u[:] = self.u[0].dof
 
         #fromFreeToGlobal=1 #direction copying
@@ -1405,10 +1392,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.globalResidualDummy is None:
             self.globalResidualDummy = np.zeros(r.shape,'d')
 
-
-
     #def invert(self,u,r):
-    def invert(self,u,ulow):
+    #def invert(self,u,ulow):
+    def invert(self,limited_solution,ulow):
         #u=s
         #r=p
         import pdb
@@ -1416,7 +1402,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         """
         Calculate the element residuals and add in to the global residual
         """
-        self.sHigh[:] = u
+        #self.sHigh[:] = u
+        self.sHigh[:] = limited_solution
         rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
         nnz = nzval.shape[-1]  # number of non-zero entries in sparse matrix
         #r.fill(0.0)
@@ -1494,7 +1481,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
         argsDict["elementDiameter"] = self.mesh.elementDiametersArray
         argsDict["degree_polynomial"] = degree_polynomial
-        argsDict["u_dof"] = u #self.u[0].dof
+        #argsDict["u_dof"] = u #self.u[0].dof
+        argsDict["u_dof"] = limited_solution
         argsDict["u_dof_old"] = self.u[0].dof
         argsDict["velocity"] = self.q['velocity']
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
@@ -1561,6 +1549,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["quantDOFs"] = self.quantDOFs
         argsDict["sLow"] = self.sLow
         argsDict["sn"] = self.sn
+        argsDict["limited_solution"]= limited_solution
         #Arnob trying to print flux
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
  

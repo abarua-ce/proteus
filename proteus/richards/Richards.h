@@ -17,6 +17,8 @@ namespace proteus
 {
 namespace richards
 {
+  enum class STABILIZATION : int { Galerkin= 0, EntropyViscosity=2, Explicit_FCT=3, Implicit_FCT=4};
+ 
   // Power entropy //
   inline double ENTROPY(const double& phi, const double& phiL, const double& phiR){
     return 1./2.*std::pow(fabs(phi),2.);
@@ -217,6 +219,7 @@ namespace richards
       	pcBar = pow(pcBar_n, 1.0/n_vg);
       	psiC = pcBar/alpha;
 		u= -psiC;
+		//std::cout<<"inverse FCT"<< -psiC<<std::endl;
 	  }
     //   if (thetaW > thetaS+0.001 || thetaW < thetaR-0.001)
 	// { u=u;
@@ -1433,9 +1436,6 @@ namespace richards
 	  double rho = args.scalar<double>("rho");
 	  xt::pyarray<int>& elementMaterialTypes = args.array<int>("elementMaterialTypes");	
       
-      
-
-
       //////////////////
       // LOOP in DOFs //
       //////////////////
@@ -1559,12 +1559,10 @@ namespace richards
 	      //update ij
 	      ij+=1;
 	    }
-	  //limited_solution.data()[i] = solL[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i];
+	  	//limited_solution.data()[i] = solL[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i];
 
         double limited_mass = solL[i] + 1. / lumped_mass_matrix.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask[i];
         
-		//std::cout << "limited mass: " << limited_mass << std::endl;
-		//std::cout << "solL: " << solL[i] << std::endl;
 		//Calculate the min and max mass bounds
         double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
         double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
@@ -1637,7 +1635,7 @@ namespace richards
 		      int j = csrColumnOffsets_DofLoops.data()[offset];
 		      // compute Flux correction
 		      double Fluxij = FluxMatrix.data()[ij] - limitedFlux.data()[ij];	
-			  std::cout<<"Flux Matrix : " <<Fluxij  <<std::endl; 
+			  //std::cout<<"Flux Matrix : " <<Fluxij  <<std::endl; 
 		      Pposi += Fluxij*((Fluxij > 0) ? 1. : 0.);
 		      // update ij
 		      ij+=1;
@@ -1860,7 +1858,7 @@ namespace richards
       xt::pyarray<double>& sn = args.array<double>("sn");
 
 	  xt::pyarray<double>& anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
-
+	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
 
 	  //double anb_seepage_flux=0.0;
 	  double & anb_seepage_flux (args.scalar<double>("anb_seepage_flux")) ;
@@ -2795,14 +2793,18 @@ namespace richards
 			       dKrn);
 	  sn.data()[i] = mn;
 	  sLow.data()[i] = m;
-	//   double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
-	//                                                                       csrRowIndeces_DofLoops, 
-	// 																	  csrColumnOffsets_DofLoops, 
-	// 																	  uLow, 
-	// 																	  dt_times_fH_minus_fL, 
-	// 																	  dt, 
-	// 																	  mi);
+	  if (STABILIZATION_TYPE==4)
+	  {
+  		double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
+	                                                                      csrRowIndeces_DofLoops, 
+																		  csrColumnOffsets_DofLoops, 
+																		  uLow, 
+																		  dt_times_fH_minus_fL, 
+																		  dt, 
+																		  mi);
 
+	  }
+	
 	// if (ith_limited_flux_correction> 0.0){
 	// 	std:: cout << "ith_limited_ flux correction" << ith_limited_flux_correction<< std::endl;
 	// }
@@ -2934,23 +2936,28 @@ namespace richards
       xt::pyarray<double>& alpha = args.array<double>("alpha");
       xt::pyarray<double>& n = args.array<double>("n");
       xt::pyarray<double>& thetaR = args.array<double>("thetaR");
-      xt::pyarray<double>& thetaSR = args.array<double>("thetaSR");
+	  xt::pyarray<double>& thetaSR = args.array<double>("thetaSR");
       xt::pyarray<double>& KWs = args.array<double>("KWs");
       //xt::pyarray<double>& globalResidual = args.array<double>("globalResidual");
-      xt::pyarray<double>& u_dof = args.array<double>("u_dof");
+      //xt::pyarray<double>& u_dof = args.array<double>("u_dof");
       xt::pyarray<int>& elementMaterialTypes = args.array<int>("elementMaterialTypes");	
       int numDOFs = args.scalar<int>("numDOFs");
 	  xt::pyarray<double>& uLow = args.array<double>("uLow");
+	  xt::pyarray<double>& limited_solution = args.array<double>("limited_solution");
+
       for (int i=0; i<numDOFs; i++)
 	{
 	  double dm,f[nSpace],df[nSpace],a[nnz],da[nnz];
 	  double mMin = rho*thetaR.data()[elementMaterialTypes.data()[0]];
 	  double mMax = rho*(thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
-	  if (u_dof.data()[i] < mMin-0.001 || u_dof.data()[i]  > mMax+0.001)
+	//   if (u_dof.data()[i] < mMin-0.001 || u_dof.data()[i]  > mMax+0.001)
+	//     {
+	//       std::cout<<"mass out of bounds "<<mMin<<'\t'<<u_dof.data()[i]<<'\t'<<mMax<<std::endl;
+	//     }
+	  if (limited_solution.data()[i] < mMin-0.001 || limited_solution.data()[i]  > mMax+0.001)
 	    {
-	      std::cout<<"mass out of bounds from invert function"<<mMin<<'\t'<<u_dof.data()[i]<<'\t'<<mMax<<std::endl;
+	      std::cout<<"mass out of bounds "<<mMin<<'\t'<<limited_solution.data()[i]<<'\t'<<mMax<<std::endl;
 	    }
-
 	  evaluateInverseCoefficients(a_rowptr.data(),
 				      a_colind.data(),
 				      rho,
@@ -2963,7 +2970,7 @@ namespace richards
 				      &KWs.data()[elementMaterialTypes.data()[0]*nnz],	
 					  uLow.data()[i],	      
 				      //globalResidual.data()[i],//output
-				      u_dof.data()[i],//input
+				      limited_solution.data()[i],//input
 				      dm,
 				      f,
 				      df,
