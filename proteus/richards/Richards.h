@@ -15,10 +15,11 @@ namespace py = pybind11;
 #define GLOBAL_FCT 0
 namespace proteus
 {
+	enum class STABILIZATION : int { Galerkin= 0, EV_Stab=1, EntropyViscosity=2, Implicit_FCT=3};
+ 
 namespace richards
 {
-  enum class STABILIZATION : int { Galerkin= 0, EntropyViscosity=2, Explicit_FCT=3, Implicit_FCT=4};
- 
+  
   // Power entropy //
   inline double ENTROPY(const double& phi, const double& phiL, const double& phiR){
     return 1./2.*std::pow(fabs(phi),2.);
@@ -694,7 +695,12 @@ double computeIthLimitedFluxCorrection(int i,
       xt::pyarray<double>& delta_x_ij = args.array<double>("delta_x_ij");
       // PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
       int LUMPED_MASS_MATRIX  = args.scalar<int>("LUMPED_MASS_MATRIX");
-      int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+      //int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+	  //STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+	  STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+
+	  //STABILIZATION STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
       int ENTROPY_TYPE = args.scalar<int>("ENTROPY_TYPE");
       // FOR FCT
       xt::pyarray<double>& dLow = args.array<double>("dLow");
@@ -1078,15 +1084,7 @@ double computeIthLimitedFluxCorrection(int i,
 							  						  isSeepageFace.data()[ebNE],
 							  						  dS,
 							  						  flux_ext);
-				//std::cout<<"The seepage flux is "<<anb_seepage_flux<<std::endl;
-		 	anb_seepage_flux_n.data()[0]= anb_seepage_flux;
-				
-				//anb_seepage_flux= anb_seepage_flux;
-			// if (anb_seepage_flux>0)
-			// 	{
-			// 		std::cout<<"The seepage flux is "<<anb_seepage_flux<<std::endl;
-			// 	}
-				
+		  anb_seepage_flux_n.data()[0]= anb_seepage_flux;				
 	      ebqe_u.data()[ebNE_kb] = u_ext;  
 	      //
 	      //update residuals
@@ -1977,7 +1975,11 @@ double computeIthLimitedFluxCorrection(int i,
       xt::pyarray<double>& delta_x_ij = args.array<double>("delta_x_ij");
       // PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
       int LUMPED_MASS_MATRIX  = args.scalar<int>("LUMPED_MASS_MATRIX");
-      int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+      //int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+	  //STABILIZATION STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+	  STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+
       int ENTROPY_TYPE = args.scalar<int>("ENTROPY_TYPE");
       // FOR FCT
       xt::pyarray<double>& dLow = args.array<double>("dLow");
@@ -2035,7 +2037,7 @@ double computeIthLimitedFluxCorrection(int i,
       for (int i=0; i<numDOFs; i++)
 	{
 	  // NODAL ENTROPY //
-	  if (STABILIZATION_TYPE==1) //EV stab
+	  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV stab
 	    {
 	      double porosity_times_solni = 1.0*u_free_dof_old[i];
 	      eta[i] = ENTROPY_TYPE == 1 ? ENTROPY(porosity_times_solni,uL,uR) : ENTROPY_LOG(porosity_times_solni,uL,uR);
@@ -2210,7 +2212,7 @@ double computeIthLimitedFluxCorrection(int i,
 	      //////////////////////////////////////////////
 	      // CALCULATE ENTROPY RESIDUAL AT QUAD POINT //
 	      //////////////////////////////////////////////
-	      if (STABILIZATION_TYPE==1) // EV stab
+	      if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) // EV stab
 		{
 		  for (int I=0;I<nSpace;I++)
 		    aux_entropy_residual += porosity_times_velocity[I]*grad_un[I];
@@ -2224,7 +2226,7 @@ double computeIthLimitedFluxCorrection(int i,
 		  // VECTOR OF ENTROPY RESIDUAL //
 		  int eN_i=eN*nDOF_test_element+i;
 		  ML2[u_l2g.data()[eN_i]] += u_test_dV[i];
-		  if (STABILIZATION_TYPE==1) // EV stab
+		  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) // EV stab
 		    {
 		      int gi = offset_u+stride_u*u_l2g.data()[eN_i]; //global i-th index
 		      double porosity_times_uni = 1.0*u_dof_old.data()[gi];
@@ -2275,7 +2277,7 @@ double computeIthLimitedFluxCorrection(int i,
 	      // distribute global residual for (lumped) mass matrix
 	      //globalResidual.data()[gi] += elementResidual_u[i];
 	      // distribute entropy_residual
-	      if (STABILIZATION_TYPE==1) // EV Stab
+	      if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) // EV Stab
 		global_entropy_residual[gi] += element_entropy_residual[i];
 	      // distribute transport matrices
 	      for (int j=0;j<nDOF_trial_element;j++)
@@ -2610,7 +2612,7 @@ double computeIthLimitedFluxCorrection(int i,
       for (int i=0; i<numDOFs; i++)
 	{
 	  double gi[nSpace], Cij[nSpace], xi[nSpace], etaMaxi, etaMini;
-	  if (STABILIZATION_TYPE==1) //EV Stabilization
+	  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV Stabilization
 	    {
 	      // For eta min and max
 	      etaMaxi = fabs(eta[i]);
@@ -2628,7 +2630,7 @@ double computeIthLimitedFluxCorrection(int i,
 	  for (int offset=csrRowIndeces_DofLoops.data()[i]; offset<csrRowIndeces_DofLoops.data()[i+1]; offset++)
 	    { // First loop in j (sparsity pattern)
 	      int j = csrColumnOffsets_DofLoops.data()[offset];
-	      if (STABILIZATION_TYPE==1) //EV Stabilization
+	      if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV Stabilization
 		{
 		  // COMPUTE ETA MIN AND ETA MAX //
 		  etaMaxi = fmax(etaMaxi,fabs(eta[j]));
@@ -2667,7 +2669,7 @@ double computeIthLimitedFluxCorrection(int i,
 	    std::cout<<"ML "<<ML.data()[i]<<'\t'<<ML2[i]<<std::endl;
 	  for (int I=0; I < nSpace; I++)
 	    gi[I] /= ML.data()[i];
-	  if (STABILIZATION_TYPE==1) //EV Stab
+	  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV Stab
 	    {
 	      // Normalizae entropy residual
 	      global_entropy_residual[i] *= etaMini == etaMaxi ? 0. : 2*cE/(etaMaxi-etaMini);
@@ -2930,8 +2932,9 @@ double computeIthLimitedFluxCorrection(int i,
 			       dKrn);
 	  sn.data()[i] = mn;
 	  sLow.data()[i] = m;
-
-	double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
+	  if (STABILIZATION_TYPE == STABILIZATION::Implicit_FCT)
+	  {
+		double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
 																		 csrRowIndeces_DofLoops,
 																		 csrColumnOffsets_DofLoops,
 																		 uLow,
@@ -2940,23 +2943,17 @@ double computeIthLimitedFluxCorrection(int i,
 																		 dLow,       // Passing dLow array
 																		 ML,
 																		 dt);
-	
-	//std:: cout << "ith_limited_ flux correction" << ith_limited_flux_correction<< std::endl;
-	  //}
-	
-	// if (ith_limited_flux_correction> 0.0){
-	// 	std:: cout << "ith_limited_ flux correction" << ith_limited_flux_correction<< std::endl;
-	// }
 
-	  
+		globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term + ith_limited_flux_correction)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	  }
 
-	  //sLow.data()[i] = mn + dt*uDotLow.data()[i]*bc_mask.data()[i];//cek should introduce mn,mnp1 or somethign clearer
-	  //globalResidual.data()[i] = (mi*(m - mn)/dt-ith_flux_term + ith_limited_flux_correction )*bc_mask.data()[i];//  ;//cek should introduce mn,mnp1 or somethign clearer
-	  
-	  globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term + ith_limited_flux_correction)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	  else
+	  {
+		globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	  }
+
+	
 	  globalJacobian.data()[ii] += bc_mask.data()[i]*(mi*dm/dt + J_ii) + (1.0-bc_mask.data()[i]);
-	  //globalJacobian[ii] = bc_mask.data()[i]*mi*dm/dt + (1.0-bc_mask.data()[i]);
-	//}
 
 	  if (false)
 	    {

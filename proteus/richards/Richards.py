@@ -228,7 +228,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  diagonal_conductivity=True,
                  getSeepageFace=None,
                 # FOR EDGE BASED EV
-                 STABILIZATION_TYPE=0,
+                 STABILIZATION_TYPE='Implicit_FCT',
                  ENTROPY_TYPE=2,  # logarithmic
                  LUMPED_MASS_MATRIX=False,
                  MONOLITHIC=True,
@@ -294,10 +294,23 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             else:
                 assert Ksw_types.shape[1] == self.nd**2
                 self.Ksw_types = Ksw_types
+
+        stabilization_types = {"Galerkin":0, 
+                               "EV_Stab":1, 
+                               "EntropyViscosity":2, 
+                               "Implicit_FCT":3}
+        try:
+            if isinstance(STABILIZATION_TYPE, int):
+                STABILIZATION_TYPE = [key for key, value in stabilization_types.items() if value == STABILIZATION_TYPE][0]
+            
+            self.STABILIZATION_TYPE = stabilization_types[STABILIZATION_TYPE]
+        except:
+            raise ValueError("STABILIZATION_TYPE must be one of "+str(stabilization_types.keys())+" not "+STABILIZATION_TYPE)
+        
         # EDGE BASED (AND ENTROPY) VISCOSITY
         self.LUMPED_MASS_MATRIX = LUMPED_MASS_MATRIX
         self.MONOLITHIC = MONOLITHIC
-        self.STABILIZATION_TYPE = STABILIZATION_TYPE
+        #self.STABILIZATION_TYPE = STABILIZATION_TYPE
         self.ENTROPY_TYPE = ENTROPY_TYPE
         self.FCT = FCT
         self.num_fct_iter=num_fct_iter
@@ -743,13 +756,20 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #if not self.coefficients.LUMPED_MASS_MATRIX and self.coefficients.STABILIZATION_TYPE == 2:
         #    cond = 'levelNonlinearSolver' in dir(options) and options.levelNonlinearSolver == Newton
         
+        #if self.coefficients.FCT == True:
+        #    cond = self.coefficients.STABILIZATION_TYPE = 3, "Use FCT just with STABILIZATION_TYPE=3; i.e., edge based stabilization"
+        
+        if self.coefficients.FCT:
+            valid_stabilization_types = {1, 2}  # Only allow FCT for STABILIZATION_TYPE 1 (EV_Stab) and 2 (EntropyViscosity)
+            if self.coefficients.STABILIZATION_TYPE not in valid_stabilization_types:
+                raise ValueError("Use FCT only with STABILIZATION_TYPE 1 (EV_Stab) or 2 (EntropyViscosity).")
 
 
 
         
         if self.coefficients.FCT == True:
             cond = self.coefficients.STABILIZATION_TYPE > 0, "Use FCT just with STABILIZATION_TYPE>0; i.e., edge based stabilization"
-        # END OF ASSERTS
+        # # END OF ASSERTS
 
         # cek adding empty data member for low order numerical viscosity structures here for now
         self.ML = None  # lumped mass matrix
