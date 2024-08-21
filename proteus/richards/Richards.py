@@ -1329,6 +1329,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["CTz"] = CTz
         argsDict["ML"] = self.ML
         argsDict["delta_x_ij"] = self.delta_x_ij
+        argsDict["MC"] = self.MC_a
+        
+
         # PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["STABILIZATTION_TYPE"] = self.coefficients.STABILIZATION_TYPE
@@ -1392,8 +1395,6 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.globalResidualDummy is None:
             self.globalResidualDummy = np.zeros(r.shape,'d')
 
-    #def invert(self,u,r):
-    #def invert(self,u,ulow):
     def invert(self,limited_solution,ulow):
         #u=s
         #r=p
@@ -1550,9 +1551,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["sLow"] = self.sLow
         argsDict["sn"] = self.sn
         argsDict["limited_solution"]= limited_solution
-        #Arnob trying to print flux
-        argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
- 
+       
 
         self.richards.invert(argsDict)
             # self.timeIntegration.dt,

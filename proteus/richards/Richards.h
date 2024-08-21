@@ -425,44 +425,177 @@ namespace richards
 		return anb_seepage_flux;
 	}
 
-	double computeIthLimitedFluxCorrection(
-    int i,
-    const xt::pyarray<int>& csrRowIndeces_DofLoops,
-    const xt::pyarray<int>& csrColumnOffsets_DofLoops,
-    const xt::pyarray<double>& uLow,
-    const xt::pyarray<double>& dt_times_fH_minus_fL,
-    double dt,
-    double mi
-) {
+// 	double computeIthLimitedFluxCorrection(
+//     int i,
+//     const xt::pyarray<int>& csrRowIndeces_DofLoops,
+//     const xt::pyarray<int>& csrColumnOffsets_DofLoops,
+//     const xt::pyarray<double>& uLow,
+//     const xt::pyarray<double>& dt_times_fH_minus_fL,
+//     double dt,
+//     double mi
+// ) {
+//     double Pposi = 0.0, Pnegi = 0.0;
+//     double mini = 0.0, maxi = 1.0;
+//     int ij = csrRowIndeces_DofLoops(i); // assuming using xtensor array
+
+//     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
+//         int j = csrColumnOffsets_DofLoops(offset);
+//         // Compute P vectors
+//         Pposi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) > 0 ? 1.0 : 0.0);
+//         Pnegi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) < 0 ? 1.0 : 0.0);
+//     }
+
+//     double Qposi = mi * (maxi - uLow(i));
+//     double Qnegi = mi * (mini - uLow(i));
+//     double Rposi = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
+//     double Rnegi = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+
+//     double ith_limited_flux_correction = 0.0;
+//     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
+//         int j = csrColumnOffsets_DofLoops(offset);
+//         double Lij = dt_times_fH_minus_fL(offset) > 0 ? std::fmin(Rposi, uLow(j)) : std::fmin(Rnegi, uLow(j));
+//         ith_limited_flux_correction += Lij * dt_times_fH_minus_fL(offset);
+//     }
+
+//     if (std::isnan(ith_limited_flux_correction)) {
+//         ith_limited_flux_correction = 0.0;
+//     }
+
+//     return ith_limited_flux_correction;
+// }
+double computeIthLimitedFluxCorrection(int i,
+										const xt::pyarray<int>& csrRowIndeces_DofLoops,
+										const xt::pyarray<int>& csrColumnOffsets_DofLoops,
+										const xt::pyarray<double>& uLow,
+										const xt::pyarray<double>& uDotLow,
+										const xt::pyarray<double>& MC,
+										const xt::pyarray<double>& dLow,
+										const xt::pyarray<double>& ML,
+										double dt) 
+{	
+    int numDOFs = uLow.size();
+	double Rpos[numDOFs], Rneg[numDOFs];
+    int ij = 0; // Initialize ij to 0 for global indexing
+
+    // Compute P and Q vectors and R values
+    //for (int i = 0; i < numDOFs; ++i) {
+    double mini = uLow(i), maxi = uLow(i);
     double Pposi = 0.0, Pnegi = 0.0;
-    double mini = 0.0, maxi = 1.0;
-    int ij = csrRowIndeces_DofLoops(i); // assuming using xtensor array
 
     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
         int j = csrColumnOffsets_DofLoops(offset);
-        // Compute P vectors
-        Pposi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) > 0 ? 1.0 : 0.0);
-        Pnegi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) < 0 ? 1.0 : 0.0);
-    }
 
-    double Qposi = mi * (maxi - uLow(i));
-    double Qnegi = mi * (mini - uLow(i));
-    double Rposi = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
-    double Rnegi = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+            // Compute local bounds
+            mini = std::fmin(mini, uLow(j));
+            maxi = std::fmax(maxi, uLow(j));
 
+            // Compute fij
+            double fij = (MC(ij) * (uDotLow(i) - uDotLow(j)) / dt + dLow(ij) * (uLow(i) - uLow(j)));
+
+            // Accumulate Pposi and Pnegi
+            Pposi += fij * (fij > 0.0 ? 1.0 : 0.0);
+            Pnegi += fij * (fij < 0.0 ? 1.0 : 0.0);
+
+            // Update global index
+            ij++;
+        }
+
+        // Compute Q vectors
+        double mi = ML(i);
+        double Qposi = mi * (maxi - uLow(i))/dt;
+        double Qnegi = mi * (mini - uLow(i))/dt;
+
+        // Compute R vectors
+        Rpos[i] = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
+        Rneg[i] = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+    //}
+
+    // Compute the ith_limited_flux_correction
+    ij = 0; // Reset global index for second pass
     double ith_limited_flux_correction = 0.0;
+    double Rposi = Rpos[i];
+    double Rnegi = Rneg[i];
     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
-        int j = csrColumnOffsets_DofLoops(offset);
-        double Lij = dt_times_fH_minus_fL(offset) > 0 ? std::fmin(Rposi, uLow(j)) : std::fmin(Rnegi, uLow(j));
-        ith_limited_flux_correction += Lij * dt_times_fH_minus_fL(offset);
-    }
-
-    if (std::isnan(ith_limited_flux_correction)) {
-        ith_limited_flux_correction = 0.0;
-    }
+            int j = csrColumnOffsets_DofLoops(offset);
+            // Compute fij
+            double fij = (MC(ij) * (uDotLow(i) - uDotLow(j)) / dt + dLow(ij) * (uLow(i) - uLow(j)));
+            // Compute the limiter Lij
+            double Lij = fij > 0.0 ? std::fmin(Rposi, Rneg[j]) : std::fmin(Rnegi, Rpos[j]);
+            // Accumulate the flux correction
+            ith_limited_flux_correction += Lij * fij;
+            // Update global index
+            ij++;
+        }
 
     return ith_limited_flux_correction;
 }
+
+// double computeIthLimitedFluxCorrection(
+//     int i,
+//     const xt::pyarray<int>& csrRowIndeces_DofLoops,
+//     const xt::pyarray<int>& csrColumnOffsets_DofLoops,
+//     const xt::pyarray<double>& uLow,
+//     const xt::pyarray<double>& uDotLow,
+//     const xt::pyarray<double>& MC,
+//     const xt::pyarray<double>& dLow,
+//     double dt,
+//     double mi
+// ) {
+//     double Pposi = 0.0, Pnegi = 0.0;
+//     double mini = 0.0, maxi = 1.0;
+//     int xy = 0; // Initialize xy to 0
+
+
+//     // Loop to compute Pposi and Pnegi
+//     for (int offset = csrRowIndeces_DofLoops(x); offset < csrRowIndeces_DofLoops(x + 1); ++offset) {
+//         int y = csrColumnOffsets_DofLoops(offset);
+        
+//         // Compute fij manually
+//         double fij = (MC(xy) * (uDotLow(x) - uDotLow(y)) / dt + dLow(xy) * (uLow(x) - uLow(y)));
+        
+//         // Accumulate Pposi and Pnegi based on fij
+//         Pposi += fij * (fij > 0 ? 1.0 : 0.0);
+//         Pnegi += fij * (fij < 0 ? 1.0 : 0.0);
+        
+//         xy++; // Increment xy for the next iteration
+//     }
+
+//     // Compute Q vectors
+//     double Qposi = mi * (maxi - uLow(i));
+//     double Qnegi = mi * (mini - uLow(i));
+    
+//     // Compute R vectors
+//     double Rposi = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
+//     double Rnegi = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+
+//     double ith_limited_flux_correction = 0.0;
+//     xy = 0; // Reset xy for the second loop
+
+//     // Loop to compute the ith_limited_flux_correction
+//     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
+//         int j = csrColumnOffsets_DofLoops(offset);
+        
+//         // Recompute fij manually
+//         double fij = (MC(xy) * (uDotLow(i) - uDotLow(j)) / dt + dLow(xy) * (uLow(i) - uLow(j)));
+        
+//         // Compute the limiter Lij
+//         double Lij = fij > 0 ? std::fmin(Rposi, uLow(j)) : std::fmin(Rnegi, uLow(j));
+        
+//         // Accumulate the flux correction
+//         ith_limited_flux_correction += Lij * fij;
+        
+//         xy++; // Increment xy for the next iteration
+//     }
+
+//     // Handle possible NaN values
+//     //if (std::isnan(ith_limited_flux_correction)) {
+//     //    ith_limited_flux_correction = 0.0;
+//     //}
+
+//     return ith_limited_flux_correction;
+// }
+
+
 
 
 
@@ -1839,6 +1972,8 @@ namespace richards
       xt::pyarray<double>& CTy = args.array<double>("CTy");
       xt::pyarray<double>& CTz = args.array<double>("CTz");
       xt::pyarray<double>& ML = args.array<double>("ML");
+      xt::pyarray<double>& MC = args.array<double>("MC");
+
       xt::pyarray<double>& delta_x_ij = args.array<double>("delta_x_ij");
       // PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
       int LUMPED_MASS_MATRIX  = args.scalar<int>("LUMPED_MASS_MATRIX");
@@ -2584,6 +2719,7 @@ namespace richards
       ij=0;
       for (int i=0; i<numDOFs; i++)
 	{
+		double sum_abs_dt_times_fH_minus_fL = 0.0;
 	  // NOTE: Transport matrices already have the porosity considered. ---> Dissipation matrices as well.
 	  double soli = u_free_dof[i]; // solution at time tn for the ith DOF
 	  double solni = u_free_dof_old[i]; // solution at time tn for the ith DOF
@@ -2740,6 +2876,7 @@ namespace richards
 		  fA -= fL;
 		}
 	      dt_times_fH_minus_fL.data()[ij] = dt*fA;
+		  //sum_abs_dt_times_fH_minus_fL += std::abs(dt_times_fH_minus_fL.data()[ij]);
 	      ij+=1;
 	    }
 	  double mi = ML.data()[i];
@@ -2793,17 +2930,19 @@ namespace richards
 			       dKrn);
 	  sn.data()[i] = mn;
 	  sLow.data()[i] = m;
-	  if (STABILIZATION_TYPE==4)
-	  {
-  		double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
-	                                                                      csrRowIndeces_DofLoops, 
-																		  csrColumnOffsets_DofLoops, 
-																		  uLow, 
-																		  dt_times_fH_minus_fL, 
-																		  dt, 
-																		  mi);
 
-	  }
+	double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
+																		 csrRowIndeces_DofLoops,
+																		 csrColumnOffsets_DofLoops,
+																		 uLow,
+																		 uDotLow,    // Passing uDotLow instead of dt_times_fH_minus_fL
+																		 MC,         // Passing MC array
+																		 dLow,       // Passing dLow array
+																		 ML,
+																		 dt);
+	
+	//std:: cout << "ith_limited_ flux correction" << ith_limited_flux_correction<< std::endl;
+	  //}
 	
 	// if (ith_limited_flux_correction> 0.0){
 	// 	std:: cout << "ith_limited_ flux correction" << ith_limited_flux_correction<< std::endl;
@@ -2814,7 +2953,7 @@ namespace richards
 	  //sLow.data()[i] = mn + dt*uDotLow.data()[i]*bc_mask.data()[i];//cek should introduce mn,mnp1 or somethign clearer
 	  //globalResidual.data()[i] = (mi*(m - mn)/dt-ith_flux_term + ith_limited_flux_correction )*bc_mask.data()[i];//  ;//cek should introduce mn,mnp1 or somethign clearer
 	  
-	  globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	  globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term + ith_limited_flux_correction)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
 	  globalJacobian.data()[ii] += bc_mask.data()[i]*(mi*dm/dt + J_ii) + (1.0-bc_mask.data()[i]);
 	  //globalJacobian[ii] = bc_mask.data()[i]*mi*dm/dt + (1.0-bc_mask.data()[i]);
 	//}
