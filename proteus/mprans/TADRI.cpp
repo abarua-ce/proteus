@@ -2,7 +2,7 @@
 #include "pybind11/stl_bind.h"
 
 #define FORCE_IMPORT_ARRAY
-#include "TADR.h"
+#include "TADRI.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
     namespace workaround
@@ -16,15 +16,15 @@
 #endif
 
 namespace py = pybind11;
-using proteus::TADR_base;
+using proteus::TADRI_base;
 
-PYBIND11_MODULE(cTADR, m)
+PYBIND11_MODULE(cTADRI, m)
 {
     xt::import_numpy();
 
-    py::class_<TADR_base>(m, "cTADR_base")
-        .def(py::init(&proteus::newTADR))
-        .def("calculateResidual", &TADR_base::calculateResidual)
-        .def("calculateJacobian", &TADR_base::calculateJacobian)
-        .def("FCTStep", &TADR_base::FCTStep);
+    py::class_<TADRI_base>(m, "cTADRI_base")
+        .def(py::init(&proteus::newTADRI))
+        .def("calculateResidual", &TADRI_base::calculateResidual)
+        .def("calculateJacobian", &TADRI_base::calculateJacobian)
+        .def("FCTStep", &TADRI_base::FCTStep);
 }

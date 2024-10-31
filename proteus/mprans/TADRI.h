@@ -1,5 +1,5 @@
-#ifndef TADR_H
-#define TADR_H
+#ifndef TADRI_H
+#define TADRI_H
 #include <cmath>
 #include <iostream>
 #include <valarray>
@@ -7,6 +7,12 @@
 #include "ModelFactory.h"
 #include "ArgumentsDict.h"
 #include "xtensor-python/pyarray.hpp"
+#include "xtensor/xarray.hpp"
+#include "xtensor/xview.hpp"
+#include <xtensor/xfixed.hpp>
+
+//#include <xtensor/xnoalias.hpp>
+
 #define nnz nSpace
 
 namespace py = pybind11;
@@ -49,19 +55,22 @@ namespace proteus
 
 namespace proteus
 {
-  class TADR_base
+  class TADRI_base
   {
     //The base class defining the interface
   public:
     std::valarray<double> Rpos, Rneg;
-    std::valarray<double> FluxCorrectionMatrix;
-    std::valarray<double> TransportMatrix, DiffusionMatrix, TransposeTransportMatrix;
-    std::valarray<double> psi, eta, global_entropy_residual, boundary_integral;
+    xt::xtensor<double, 2> FluxCorrectionMatrix;
+    xt::xtensor<double, 1> TransportMatrix, DiffusionMatrix, TransposeTransportMatrix;
+    std::valarray<double> psi, eta;
+    xt::xtensor<double, 1>global_entropy_residual, boundary_integral;
     std::valarray<double> maxVel,maxEntRes;
-    virtual ~TADR_base(){}
+
+    virtual ~TADRI_base(){}
     virtual void calculateResidual(arguments_dict& args)=0;
     virtual void calculateJacobian(arguments_dict& args)=0;
     virtual void FCTStep(arguments_dict& args)=0;
+
   };
 
   template<class CompKernelType,
@@ -71,12 +80,12 @@ namespace proteus
            int nDOF_trial_element,
            int nDOF_test_element,
            int nQuadraturePoints_elementBoundary>
-  class TADR : public TADR_base
+  class TADRI : public TADRI_base
   {
   public:
     const int nDOF_test_X_trial_element;
     CompKernelType ck;
-    TADR():
+    TADRI():
       nDOF_test_X_trial_element(nDOF_test_element*nDOF_trial_element),
       ck()
     {}
@@ -95,33 +104,35 @@ namespace proteus
       cfl = nrm_v/h;
     }
 
-    inline
-void evaluateCoefficients(const int rowptr[nSpace],
-				                      const int colind[nnz],
-                              const double v[nSpace],
-                              const double* q_a,
-                              const double& u,
-                              double& m,
-                              double& dm,
-                              double f[nSpace],
-                              double df[nSpace], 
-                              double a[nnz],
-                              double da[nnz])
+inline
+void evaluateCoefficients(const int rowptr[nSpace], // nSpace size
+                          const int colind[nnz], // nnz size
+                          const double v[nSpace],   // nSpace size
+                          const double* q_a,
+                          const double& u,
+                          double& m,
+                          double& dm,
+                          xt::xtensor_fixed<double, xt::xshape<nSpace>>& f,  // nSpace size
+                          xt::xtensor_fixed<double, xt::xshape<nSpace>>& df,  // nSpace size
+                          // xt::xtensor<double, 1>& f,  // nSpace size
+                          // xt::xtensor<double, 1>& df, // nSpace size
+                          xt::xtensor<double, 1>& a,  // nnz size
+                          xt::xtensor<double, 1>& da) // nnz size
+{
+    m = u;
+    dm = 1.0;
+    for (int I = 0; I < nSpace; I++)
     {
-      m = u;
-      dm= 1.0;
-      for (int I=0; I < nSpace; I++)
+        f(I) = v[I] * u;
+        df(I) = v[I];
+        for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++)
         {
-          f[I] = v[I]*u;
-          df[I] = v[I];
-           for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++)
-        {
-            a[ii] = q_a[ii];
-            da[ii] = 0.0;
+            a(ii) = q_a[ii];
+            da(ii) = 0.0;
         }
-
-        } 
     }
+}
+
 
 inline
     void exteriorNumericalDiffusiveFlux(int* rowptr,
@@ -272,13 +283,7 @@ inline
                                         const double velocity[nSpace],
                                         double& flux)
     {
-    //   // Debug: Print input values
-    // std:: cout << "Exterior Numerical Advective Flux Function"<< std::endl;
-    // std::cout << "isDOFBoundary_u: " << isDOFBoundary_u << ", isFluxBoundary_u: " << isFluxBoundary_u << std::endl;
-    // std::cout << "bc_u: " << bc_u << ", bc_flux_u: " << bc_flux_u << ", u: " << u << std::endl;
-    // std::cout << "velocity: [" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << "]" << std::endl;
-    // std::cout << "Normal: [" << n[0] << ", " << n[1] << ", " << n[2] << "]\n";
-    // std ::cout <<"End Line"<< "\n";
+
 
       double flow=0.0;
       for (int I=0; I < nSpace; I++)
@@ -307,7 +312,7 @@ inline
             }
           else
             {
-              std::cout<<"warning: TADR open boundary with no external trace, setting to zero for inflow"<<std::endl;
+              std::cout<<"warning: TADRI open boundary with no external trace, setting to zero for inflow"<<std::endl;
               flux = 0.0;
             }
 
@@ -466,10 +471,8 @@ inline
       xt::pyarray<int>& csrColumnOffsets_eb_CellLoops = args.array<int>("csrColumnOffsets_eb_CellLoops");
       xt::pyarray<double>& ML = args.array<double>("ML");
       int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
-      STABILIZATION STABILIZATION_TYPE = static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"));
-      ENTROPY ENTROPY_TYPE = static_cast<ENTROPY>(args.scalar<int>("ENTROPY_TYPE"));    
-      //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
-      //ENTROPY ENTROPY_TYPE{args.scalar<int>("ENTROPY_TYPE")};
+      STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+      ENTROPY ENTROPY_TYPE{args.scalar<int>("ENTROPY_TYPE")};
       xt::pyarray<double>& uLow = args.array<double>("uLow");
       xt::pyarray<double>& dLow = args.array<double>("dLow");
       xt::pyarray<double>& dt_times_dH_minus_dL = args.array<double>("dt_times_dH_minus_dL");
@@ -494,28 +497,35 @@ inline
       maxVel.resize(nElements_global, 0.0);
       maxEntRes.resize(nElements_global, 0.0);
       double Ct_sge = 4.0;
+
       if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity or 
           STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
           STABILIZATION_TYPE==STABILIZATION::Kuzmin)
         {
-          TransportMatrix.resize(NNZ,0.0);
-          DiffusionMatrix.resize(NNZ,0.0);
-          TransposeTransportMatrix.resize(NNZ,0.0);
+          TransportMatrix.resize({NNZ});
+          DiffusionMatrix.resize({NNZ});
+          TransposeTransportMatrix.resize({NNZ});
+
+          // Set the elements to 0.0
+          TransportMatrix.fill(0.0);
+          DiffusionMatrix.fill(0.0);
+          TransposeTransportMatrix.fill(0.0);
+
           // compute entropy and init global_entropy_residual and boundary_integral
           psi.resize(numDOFs,0.0);
           eta.resize(numDOFs,0.0);
-          global_entropy_residual.resize(numDOFs,0.0);
-          boundary_integral.resize(numDOFs,0.0);
-          for (int i=0; i<numDOFs; i++)
-            {
-              // NODAL ENTROPY //
-              if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity) //EV stab
-                {
-                  eta[i] = ENTROPY_TYPE == ENTROPY::POWER ? EPOWER(u_dof_old.data()[i],uL,uR) : ELOG(u_dof_old.data()[i],uL,uR);
-                  global_entropy_residual[i]=0.;
-                }
-              boundary_integral[i]=0.;
-            }
+
+          global_entropy_residual = xt::zeros<double>({numDOFs});
+          boundary_integral = xt::zeros<double>({numDOFs});
+
+
+          if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity)
+          {
+              for (int i = 0; i < numDOFs; i++)
+              {
+                  eta[i] = ENTROPY_TYPE == ENTROPY::POWER ? EPOWER(u_dof_old(i), uL, uR) : ELOG(u_dof_old(i), uL, uR);
+              }
+          }
         }
       //
       //loop over elements to compute volume integrals and load them into element and global residual
@@ -530,53 +540,39 @@ inline
       for(int eN=0;eN<nElements_global;eN++)
         {
           //declare local storage for element residual and initialize
-          double
-            elementResidual_u[nDOF_test_element],
-            element_entropy_residual[nDOF_test_element];
-          double  elementTransport[nDOF_test_element][nDOF_trial_element];
-          double  elementDiffusion[nDOF_test_element][nDOF_trial_element];
-          double  elementTransposeTransport[nDOF_test_element][nDOF_trial_element];
-          for (int i=0;i<nDOF_test_element;i++)
-            {
-              elementResidual_u[i]=0.0;
-            }//i
-          if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity or 
-              STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
-              STABILIZATION_TYPE==STABILIZATION::Kuzmin)
-            {
-              for (int i=0;i<nDOF_test_element;i++)
-                {
-                  element_entropy_residual[i]=0.0;
-                  for (int j=0;j<nDOF_trial_element;j++)
-                    {
-                      elementTransport[i][j]=0.0;
-                      elementDiffusion[i][j]=0.0;
-                      elementTransposeTransport[i][j]=0.0;
-                    }
-                }
-            }
-          //loop over quadrature points and compute integrands
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> element_entropy_residual = xt::zeros<double>({nDOF_test_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementDiffusion = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementTransposeTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+         //loop over quadrature points and compute integrands
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
               //compute indeces and declare local storage
               int eN_k = eN*nQuadraturePoints_element+k,
-                eN_k_nSpace = eN_k*nSpace,
-                eN_nDOF_trial_element = eN*nDOF_trial_element;
-                //int index_D = eN_k * a_rowptr.data()[nSpace];
+              eN_k_nSpace = eN_k*nSpace,
+              eN_nDOF_trial_element = eN*nDOF_trial_element;
               double
                 entVisc_minus_artComp,
                 u=0.0,un=0.0,
-                grad_u[nSpace],grad_u_old[nSpace],grad_uTilde[nSpace],
-                m=0.0,dm=0.0,mn=0.0,dmn=0.0,
-                H=0.0,Hn=0.0,HTilde=0.0,
-                f[nSpace],fn[nSpace],df[nSpace],dfn[nSpace],
-                ////////////////////////////////////////////
-                //a[nSpace], da[nSpace], an[nSpace], dan[nSpace],
-                a[nnz], da[nnz], an[nnz], dan[nnz],
-                m_t=0.0,dm_t=0.0,
-                pdeResidual_u=0.0,
-                Lstar_u[nDOF_test_element],
-                subgridError_u=0.0,
+                grad_u[nSpace],grad_u_old[nSpace],grad_uTilde[nSpace];
+                
+            double m = 0.0, dm = 0.0, mn = 0.0, dmn = 0.0;
+            double H = 0.0, Hn = 0.0, HTilde = 0.0;
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> f;
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> fn;
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> df;
+            xt::xtensor_fixed<double, xt::xshape<nSpace>> dfn;
+            
+            xt::xtensor<double, 1> a({nnz});
+            xt::xtensor<double, 1> da({nnz});
+            xt::xtensor<double, 1> an({nnz});
+            xt::xtensor<double, 1> dan({nnz});
+            double    m_t=0.0,dm_t=0.0,
+            pdeResidual_u=0.0,
+            Lstar_u[nDOF_test_element];    
+            //xt::xarray<double> Lstar_u({nDOF_test_element});
+            double    subgridError_u=0.0,
                 tau=0.0,tau0=0.0,tau1=0.0,
                 numDiff0=0.0,numDiff1=0.0,
                 jac[nSpace*nSpace],
@@ -586,11 +582,10 @@ inline
                 u_test_dV[nDOF_trial_element],
                 u_grad_test_dV[nDOF_test_element*nSpace],
                 dV,x,y,z,xt,yt,zt,
-                G[nSpace*nSpace],G_dd_G,tr_G,
-                // for entropy residual
-                aux_entropy_residual=0.0, DENTROPY_un, DENTROPY_uni;//norm_Rv;
-
-              ck.calculateMapping_element(eN,
+                G[nSpace*nSpace],G_dd_G,tr_G;
+              // for entropy residual
+            double  aux_entropy_residual=0.0, DENTROPY_un, DENTROPY_uni;//norm_Rv;
+            ck.calculateMapping_element(eN,
                                           k,
                                           mesh_dof.data(),
                                           mesh_l2g.data(),
@@ -600,12 +595,12 @@ inline
                                           jacDet,
                                           jacInv,
                                           x,y,z);
-              ck.calculateMappingVelocity_element(eN,
-                                                  k,
-                                                  mesh_velocity_dof.data(),
-                                                  mesh_l2g.data(),
-                                                  mesh_trial_ref.data(),
-                                                  xt,yt,zt);
+            ck.calculateMappingVelocity_element(eN,
+                                                k,
+                                                mesh_velocity_dof.data(),
+                                                mesh_l2g.data(),
+                                                mesh_trial_ref.data(),
+                                                xt,yt,zt);
               //get the physical integration weight
               dV = fabs(jacDet)*dV_ref.data()[k];
               ck.calculateG(jacInv,G,G_dd_G,tr_G);
@@ -648,83 +643,82 @@ inline
               //
               //
               //calculate pde coefficients at quadrature points
-
+              //
               const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
-              evaluateCoefficients(a_rowptr.data(),
-				                           a_colind.data(),
+              // Call the updated evaluateCoefficients function
+
+
+              evaluateCoefficients(a_rowptr.data(), 
+                                   a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
-                                   u,
-                                   m,
-                                   dm,
-                                   f,
-                                   df,
-                                   a,
+                                   q_a_ptr, 
+                                   u, 
+                                   m, 
+                                   dm, 
+                                   f, 
+                                   df, 
+                                   a, 
                                    da);
-
-            //D.data()[eN * nQuadraturePoints_element * nnz + k * nnz] calculates 
-            //the correct starting index for D for the current element eN and 
-            //quadrature point k, considering nnz as the number of non-zero entries for the sparse matrix. This ensures that the values for D are accessed correctly based on the element and quadrature point.
-
-              //cek todo, this should be velocity_old
-              evaluateCoefficients(a_rowptr.data(),
-				                           a_colind.data(),
+              evaluateCoefficients(a_rowptr.data(), 
+                                   a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
-                                   un,
-                                   mn,
-                                   dmn,
-                                   fn,
+                                   q_a_ptr, 
+                                   u, 
+                                   m, 
+                                   dm, 
+                                   fn, 
                                    dfn, 
                                    an, 
                                    dan);
-              //an= &q_a.data()[eN_k * sd_rowptr.data()[nSpace]];
 
               //
               //moving mesh
               //
-              double mesh_velocity[3];
-              mesh_velocity[0] = xt;
-              mesh_velocity[1] = yt;
-              mesh_velocity[2] = zt;
 
-              for (int I=0;I<nSpace;I++)
-                {
-                  f[I] -= MOVING_DOMAIN*m*mesh_velocity[I];
-                  df[I] -= MOVING_DOMAIN*dm*mesh_velocity[I];
-                  fn[I] -= MOVING_DOMAIN*mn*mesh_velocity[I];
-                  dfn[I] -= MOVING_DOMAIN*dmn*mesh_velocity[I];
-                }
+              xt::xtensor<double, 1> mesh_velocity = {xt, yt, zt};
+              // Create a view based on nSpace
+              auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
+
+              // Perform vectorized operations using the view
+              f -= MOVING_DOMAIN * m * mesh_velocity_view;
+              df -= MOVING_DOMAIN * dm * mesh_velocity_view;
+              fn -= MOVING_DOMAIN * mn * mesh_velocity_view;
+              dfn -= MOVING_DOMAIN * dmn * mesh_velocity_view;
+
               //
               //calculate time derivative at quadrature points
               //
-              if (q_dV_last.data()[eN_k] <= -100)
-                q_dV_last.data()[eN_k] = dV;
-              q_dV.data()[eN_k] = dV;
-              ck.bdf(alphaBDF,
-                     q_m_betaBDF.data()[eN_k]*q_dV_last.data()[eN_k]/dV,//ensure prior mass integral is correct for  m_t with BDF1
-                     m,
-                     dm,
-                     m_t,
-                     dm_t);
+              // Calculate time derivative at quadrature points
+              if (q_dV_last(eN_k) <= -100)
+                  q_dV_last(eN_k) = dV;
+              q_dV(eN_k) = dV;
 
-              if (STABILIZATION_TYPE==STABILIZATION::TaylorGalerkinEV)
-                {
-                  double normVel=0., norm_grad_un=0.;
-                  for (int I=0;I<nSpace;I++)
-                    {
-                      Hn += dfn[I]*grad_u_old[I];
-                      HTilde += dfn[I]*grad_uTilde[I];
-                      fn[I] = dfn[I]*un-MOVING_DOMAIN*m*mesh_velocity[I];//cek check this for moving domain
-                      H += dfn[I]*grad_u[I];
-                      normVel += dfn[I]*df[I];
-                      norm_grad_un += grad_u_old[I]*grad_u_old[I];
-                    }
+              ck.bdf(alphaBDF,
+                    q_m_betaBDF(eN_k) * q_dV_last(eN_k) / dV, // ensure prior mass integral is correct for m_t with BDF1
+                    m,
+                    dm,
+                    m_t,
+                    dm_t);
+
+              if (STABILIZATION_TYPE == STABILIZATION::TaylorGalerkinEV)
+                  {
+                      double normVel = 0., norm_grad_un = 0.;
+                      double Hn = 0., HTilde = 0., H = 0.;
+
+                      for (int I = 0; I < nSpace; I++)
+                      {
+                          Hn += dfn[I] * grad_u_old[I];
+                          HTilde += dfn[I] * grad_uTilde[I];
+                          fn(I) = dfn[I] * un - MOVING_DOMAIN * m * mesh_velocity(I);
+                          H += dfn[I] * grad_u[I];
+                          normVel += dfn[I] * df(I);
+                          norm_grad_un += grad_u_old[I] * grad_u_old[I];
+                      }
                   normVel = std::sqrt(normVel);
                   norm_grad_un = std::sqrt(norm_grad_un)+1E-10;
 
                   // calculate CFL
-                  calculateCFL(elementDiameter.data()[eN]/degree_polynomial,dfn,cfl.data()[eN_k]);
+                  calculateCFL(elementDiameter.data()[eN]/degree_polynomial,dfn.data(),cfl.data()[eN_k]);
 
 
                   // compute max velocity at cell
@@ -741,8 +735,10 @@ inline
                   minEntropy = fmin(minEntropy,EPOWER(u,0,1));
 
                   // artificial compression
-                  double hK=elementDiameter.data()[eN]/degree_polynomial;
-                  entVisc_minus_artComp = fmax(1-cK*fmax(un*(1-un),0)/hK/norm_grad_un,0);
+                  double hK = elementDiameter(eN) / degree_polynomial;
+                  //entVisc_minus_artComp = std::max(1 - cK * std::max(un * (1 - un), 0) / hK / norm_grad_un, 0);
+                  // double hK = elementDiameter(eN) / degree_polynomial;
+                   entVisc_minus_artComp = std::max(1.0 - cK * std::max(un * (1 - un), 0.0) / hK / norm_grad_un, 0.0);
                 }
               else if (STABILIZATION_TYPE==STABILIZATION::VMS)
                 {
@@ -750,19 +746,22 @@ inline
                   //calculate subgrid error (strong residual and adjoint)
                   //
                   //calculate strong residual
-                  pdeResidual_u = ck.Mass_strong(m_t) + ck.Advection_strong(df,grad_u);
+                  pdeResidual_u = ck.Mass_strong(m_t) + ck.Advection_strong(df.data(),grad_u);
+                  //pdeResidual_u = m_t + xt::sum(df * grad_u)();
+
                   //calculate adjoint
                   for (int i=0;i<nDOF_test_element;i++)
                     {
                       int i_nSpace = i*nSpace;
-                      Lstar_u[i]  = ck.Advection_adjoint(df,&u_grad_test_dV[i_nSpace]);
+                      Lstar_u[i]  = ck.Advection_adjoint(df.data(),&u_grad_test_dV[i_nSpace]);
                     }
+
                   //calculate tau and tau*Res
-                  calculateSubgridError_tau(elementDiameter.data()[eN],dm_t,df,cfl.data()[eN_k],tau0);
+                  calculateSubgridError_tau(elementDiameter.data()[eN],dm_t,df.data(),cfl.data()[eN_k],tau0);
                   calculateSubgridError_tau(Ct_sge,
                                             G,
                                             dm_t,
-                                            df,
+                                            df.data(),
                                             tau1,
                                             cfl.data()[eN_k]);
                   tau = useMetrics*tau1+(1.0-useMetrics)*tau0;
@@ -791,10 +790,10 @@ inline
                 for (int I=0;I<nSpace;I++)
                   aux_entropy_residual += dfn[I]*grad_u_old[I];
                 DENTROPY_un = ENTROPY_TYPE==ENTROPY::POWER ? DEPOWER(un,uL,uR) : DELOG(un,uL,uR);
-                calculateCFL(elementDiameter.data()[eN]/degree_polynomial,dfn,cfl.data()[eN_k]);
+                calculateCFL(elementDiameter.data()[eN]/degree_polynomial,dfn.data(),cfl.data()[eN_k]);
               }
               else
-                calculateCFL(elementDiameter.data()[eN]/degree_polynomial,dfn,cfl.data()[eN_k]);
+                calculateCFL(elementDiameter.data()[eN]/degree_polynomial,dfn.data(),cfl.data()[eN_k]);
 
               for(int i=0;i<nDOF_test_element;i++)
                 {
@@ -803,34 +802,35 @@ inline
                   int i_nSpace=i*nSpace;
                   if (STABILIZATION_TYPE==STABILIZATION::TaylorGalerkinEV)
                     {
-                      if (stage == 1)
-                        elementResidual_u[i] +=
-                          ck.Mass_weak(dt*m_t,u_test_dV[i]) +  // time derivative
-                          1./3*dt*(ck.Advection_weak(fn,&u_grad_test_dV[i_nSpace]) +
-                                   ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),a,grad_u,&u_grad_test_dV[i_nSpace])+ 
-                                   ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
-                          1./9*dt*dt*ck.NumericalDiffusion(Hn,dfn,&u_grad_test_dV[i_nSpace]) +
-                          1./3*dt*entVisc_minus_artComp*ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k]+physicalDiffusion,
-                                                                              grad_u_old,
-                                                                              &u_grad_test_dV[i_nSpace]);
-                      // TODO: Add part about moving mesh
-                      else //stage 2
-                        elementResidual_u[i] +=
-                          ck.Mass_weak(dt*m_t,u_test_dV[i]) +  // time derivative
-                          dt*(ck.Advection_weak(fn,&u_grad_test_dV[i_nSpace]) + 
-                              ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),an,grad_u,&u_grad_test_dV[i_nSpace])+
-                              ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
-                          0.5*dt*dt*ck.NumericalDiffusion(HTilde,dfn,&u_grad_test_dV[i_nSpace]) +
-                          dt*entVisc_minus_artComp*ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k]+physicalDiffusion,
-                                                                         grad_u_old,
-                                                                         &u_grad_test_dV[i_nSpace]);
+                      if(stage == 1)
+                    {
+                      elementResidual_u(i) += ck.Mass_weak(dt * m_t, u_test_dV[i]) +  // time derivative
+                                              1./3 * dt * (ck.Advection_weak(fn.data(), &u_grad_test_dV[i_nSpace]) +
+                                                          ck.Diffusion_weak(a_rowptr.data(), a_colind.data(), a.data(), grad_u, &u_grad_test_dV[i_nSpace]) + 
+                                                          ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
+                                              1./9 * dt * dt * ck.NumericalDiffusion(Hn, dfn.data(), &u_grad_test_dV[i_nSpace]) +
+                                              1./3 * dt * entVisc_minus_artComp * ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k] + physicalDiffusion,
+                                                                                                        grad_u_old,
+                                                                                                        &u_grad_test_dV[i_nSpace]);
+                    }
+                    else // stage 2
+                    {
+                      elementResidual_u(i) += ck.Mass_weak(dt * m_t, u_test_dV[i]) +  // time derivative
+                                              dt * (ck.Advection_weak(fn.data(), &u_grad_test_dV[i_nSpace]) + 
+                                                    ck.Diffusion_weak(a_rowptr.data(), a_colind.data(), an.data(), grad_u, &u_grad_test_dV[i_nSpace]) +
+                                                    ck.NumericalDiffusion(physicalDiffusion, grad_u_old, &u_grad_test_dV[i_nSpace])) +
+                                              0.5 * dt * dt * ck.NumericalDiffusion(HTilde, dfn.data(), &u_grad_test_dV[i_nSpace]) +
+                                              dt * entVisc_minus_artComp * ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k] + physicalDiffusion,
+                                                                                                grad_u_old,
+                                                                                                &u_grad_test_dV[i_nSpace]);
+                    }
                     }
                   else if (STABILIZATION_TYPE==STABILIZATION::VMS)
                     {
-                      elementResidual_u[i] +=
+                      elementResidual_u(i) +=
                         ck.Mass_weak(m_t,u_test_dV[i]) +
-                        ck.Advection_weak(f,&u_grad_test_dV[i_nSpace]) +
-                        ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),a,grad_u,&u_grad_test_dV[i_nSpace]) +    
+                        ck.Advection_weak(f.data(),&u_grad_test_dV[i_nSpace]) +
+                        ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),a.data(),grad_u,&u_grad_test_dV[i_nSpace]) +    
                         ck.SubgridError(subgridError_u,Lstar_u[i]) +
                         ck.NumericalDiffusion(q_numDiff_u_last.data()[eN_k] + physicalDiffusion,//todo add full sparse diffusion terms
                                               grad_u,
@@ -848,7 +848,7 @@ inline
                           DENTROPY_uni = ENTROPY_TYPE == ENTROPY::POWER ? DEPOWER(u_dof_old.data()[gi],uL,uR) : DELOG(u_dof_old.data()[gi],uL,uR);
                           element_entropy_residual[i] += (DENTROPY_un - DENTROPY_uni)*aux_entropy_residual*u_test_dV[i];
                         }
-                      elementResidual_u[i] += (u-un)*u_test_dV[i];
+                      elementResidual_u(i) += (u-un)*u_test_dV[i];
                       ///////////////
                       // j-th LOOP // To construct transport matrices
                       ///////////////
@@ -859,41 +859,35 @@ inline
                           //cek todo, see if we really need elementTransposeTransport
                           // (can we just swap indices on local transport matrix?)
                           //or event TransposeTransportMatrix (can we just use pointers?)
-                          elementTransport[i][j] +=
-                            ck.AdvectionJacobian_weak(dfn,
-                                                      u_trial_ref.data()[k*nDOF_trial_element+j],
-                                                      &u_grad_test_dV[i_nSpace])
-                                                      +
-                            ck.SimpleDiffusionJacobian_weak(a_rowptr.data(),
-										                                        a_colind.data(),
-                                                            a,
-                                                            &u_grad_trial[j_nSpace],
-                                                            &u_grad_test_dV[i_nSpace]);
-                                                      
-
-
-                                               
-                           elementDiffusion[i][j] += ck.NumericalDiffusionJacobian(physicalDiffusion,
-                                                                                   &u_grad_trial[j_nSpace],
-                                                                                   &u_grad_test_dV[i_nSpace]);
-                          elementTransposeTransport[i][j] += ck.AdvectionJacobian_weak(dfn,
-                                                                                       u_trial_ref.data()[k*nDOF_trial_element+i],
-                                                                                       &u_grad_test_dV[j_nSpace])+
+                          elementTransport(i, j) += ck.AdvectionJacobian_weak(dfn.data(),
+                                                           u_trial_ref.data()[k * nDOF_trial_element + j],
+                                                           &u_grad_test_dV[i_nSpace]) +
+                                                    ck.SimpleDiffusionJacobian_weak(a_rowptr.data(),
+                                                                  a_colind.data(),
+                                                                  a.data(),
+                                                                  &u_grad_trial[j_nSpace],
+                                                                  &u_grad_test_dV[i_nSpace]);
+                          
+                          elementDiffusion(i, j) += ck.NumericalDiffusionJacobian(physicalDiffusion,
+                                                                &u_grad_trial[j_nSpace],
+                                                                &u_grad_test_dV[i_nSpace]);
+        
+                          elementTransposeTransport(i, j) += ck.AdvectionJacobian_weak(dfn.data(),
+                                                                    u_trial_ref.data()[k * nDOF_trial_element + i],
+                                                                    &u_grad_test_dV[j_nSpace]) +
                                                              ck.SimpleDiffusionJacobian_weak(a_rowptr.data(),
-                                                                                              a_colind.data(),
-                                                                                              a,
-                                                                                              &u_grad_trial[j_nSpace],
-                                                                                              &u_grad_test_dV[i_nSpace]);                          
-                                                                                       
-                                                            
+                                                                           a_colind.data(),
+                                                                           a.data(),
+                                                                           &u_grad_trial[j_nSpace],
+                                                                           &u_grad_test_dV[i_nSpace]);
                                                           }
                     }
                   else
                     {
-                      elementResidual_u[i] +=
-                        ck.Mass_weak(m_t,u_test_dV[i]) +
-                        ck.Advection_weak(f,&u_grad_test_dV[i_nSpace])+
-                        ck.Diffusion_weak(a_rowptr.data(),a_colind.data(),a,grad_u,&u_grad_test_dV[i_nSpace]);
+                      elementResidual_u(i) += ck.Mass_weak(m_t, u_test_dV[i]) +
+                                              ck.Advection_weak(f.data(),&u_grad_test_dV[i_nSpace]) +
+                                              ck.Diffusion_weak(a_rowptr.data(), a_colind.data(), a.data(), grad_u, &u_grad_test_dV[i_nSpace]);
+                                                                 
 
                         //std::cout << "elementResidual_u[" << i << "]: " << elementResidual_u[i] << std::endl;
                         //  +
@@ -917,7 +911,7 @@ inline
             {
               int eN_i=eN*nDOF_test_element+i;
               int gi = offset_u+stride_u*u_l2g.data()[eN_i]; //global i-th index
-              globalResidual.data()[gi] += elementResidual_u[i];
+              globalResidual.data()[gi] += elementResidual_u(i);
               if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity or 
                   STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
                   STABILIZATION_TYPE==STABILIZATION::Kuzmin)
@@ -925,18 +919,17 @@ inline
                   
                   // distribute entropy_residual
                   if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity) // EV Stab
-                    global_entropy_residual[gi] += element_entropy_residual[i];
+                    global_entropy_residual(gi) += element_entropy_residual(i);
                   // distribute transport matrices
                   for (int j=0;j<nDOF_trial_element;j++)
                     {
                       int eN_i_j = eN_i*nDOF_trial_element+j;
-                      TransportMatrix[csrRowIndeces_CellLoops.data()[eN_i] +
-                                      csrColumnOffsets_CellLoops.data()[eN_i_j]] += elementTransport[i][j];
-                      DiffusionMatrix[csrRowIndeces_CellLoops.data()[eN_i] +
-                                      csrColumnOffsets_CellLoops.data()[eN_i_j]] += elementDiffusion[i][j];
-                      TransposeTransportMatrix[csrRowIndeces_CellLoops.data()[eN_i] +
-                                               csrColumnOffsets_CellLoops.data()[eN_i_j]]
-                        += elementTransposeTransport[i][j];
+                      TransportMatrix(csrRowIndeces_CellLoops.data()[eN_i] +
+                                      csrColumnOffsets_CellLoops.data()[eN_i_j]) += elementTransport(i,j);
+                      DiffusionMatrix(csrRowIndeces_CellLoops.data()[eN_i] +
+                                      csrColumnOffsets_CellLoops.data()[eN_i_j]) += elementDiffusion(i,j);
+                      TransposeTransportMatrix(csrRowIndeces_CellLoops.data()[eN_i] +
+                                               csrColumnOffsets_CellLoops.data()[eN_i_j])+= elementTransposeTransport(i,j);
                     }//j
                 }//edge-based
             }//i
@@ -948,52 +941,47 @@ inline
       //ebN is the element boundary INdex
       //eN is the element index
       for (int ebNE = 0; ebNE < nExteriorElementBoundaries_global; ebNE++)
-        {
-          double min_u_bc_local = 1E10, max_u_bc_local = -1E10;
-          int ebN = exteriorElementBoundariesArray.data()[ebNE],
-            eN  = elementBoundaryElementsArray.data()[ebN*2+0],
-            ebN_local = elementBoundaryLocalElementBoundariesArray.data()[ebN*2+0],
-            eN_nDOF_trial_element = eN*nDOF_trial_element;
-          double elementResidual_u[nDOF_test_element],
-            fluxTransport[nDOF_test_element][nDOF_trial_element];
-          for (int i=0;i<nDOF_test_element;i++)
-            {
-              elementResidual_u[i]=0.0;
-              for (int j=0;j<nDOF_trial_element;j++)
-                fluxTransport[i][j] = 0.0;
-            }
-          for  (int kb=0;kb<nQuadraturePoints_elementBoundary;kb++)
-            {
-              int ebNE_kb = ebNE*nQuadraturePoints_elementBoundary+kb,
-                ebNE_kb_nSpace = ebNE_kb*nSpace,
-                ebN_local_kb = ebN_local*nQuadraturePoints_elementBoundary+kb,
-                ebN_local_kb_nSpace = ebN_local_kb*nSpace;
-              double u_ext=0.0,
-                grad_u_ext[nSpace],
-                m_ext=0.0,
-                dm_ext=0.0,
-                f_ext[nSpace],
-                df_ext[nSpace],
-                /////////////////////
+{
+    double min_u_bc_local = 1E10, max_u_bc_local = -1E10;
+    int ebN = exteriorElementBoundariesArray.data()[ebNE],
+        eN  = elementBoundaryElementsArray.data()[ebN*2+0],
+        ebN_local = elementBoundaryLocalElementBoundariesArray.data()[ebN*2+0],
+        eN_nDOF_trial_element = eN*nDOF_trial_element;
+    
+    // Initialize the arrays directly to zero using xt::zeros
+    // xt::xarray<double> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+    // xt::xarray<double> fluxTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
 
-                a_ext[nnz],
-		            da_ext[nnz],
+    xt::xtensor_fixed<double, xt::xshape<nDOF_test_element>> elementResidual_u = xt::zeros<double>({nDOF_test_element});
+    xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> fluxTransport = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+          
+    for (int kb = 0; kb < nQuadraturePoints_elementBoundary; kb++)
+    {
+        int ebNE_kb = ebNE * nQuadraturePoints_elementBoundary + kb,
+            ebNE_kb_nSpace = ebNE_kb * nSpace,
+            ebN_local_kb = ebN_local * nQuadraturePoints_elementBoundary + kb,
+            ebN_local_kb_nSpace = ebN_local_kb * nSpace;
 
-                bc_a_ext[nnz],
-		            bc_da_ext[nnz],
-
-                /////////////////////////////
-                flux_ext=0.0,
-                dflux_u_u_ext=0.0,
-                bc_u_ext=0.0,
-                bc_m_ext=0.0,
-                bc_dm_ext=0.0,
-
-                flux_diff_ext=0.0,
-                difffluxjacobian_ext=0.0,
-                bc_f_ext[nSpace],
-                bc_df_ext[nSpace],
-                jac_ext[nSpace*nSpace],
+        double u_ext = 0.0,
+        grad_u_ext[nSpace],
+       m_ext = 0.0, dm_ext = 0.0;
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> f_ext;
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> df_ext;
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_f_ext;
+        xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_df_ext;
+        // xt::xtensor<double, 1> f_ext({nSpace});
+        // xt::xtensor<double, 1> df_ext({nSpace});
+        xt::xtensor<double, 1> a_ext({nnz});
+        xt::xtensor<double, 1> da_ext({nnz});
+        xt::xtensor<double, 1> bc_a_ext({nnz});
+        xt::xtensor<double, 1> bc_da_ext({nnz});
+        double flux_ext = 0.0, dflux_u_u_ext = 0.0, bc_u_ext = 0.0;
+        double bc_m_ext = 0.0, bc_dm_ext = 0.0, flux_diff_ext = 0.0;
+        double difffluxjacobian_ext = 0.0;
+        // xt::xtensor<double, 1> bc_f_ext({nSpace});
+        // xt::xtensor<double, 1> bc_df_ext({nSpace});
+        double 
+        jac_ext[nSpace*nSpace],
                 jacDet_ext,
                 jacInv_ext[nSpace*nSpace],
                 boundaryJac[nSpace*(nSpace-1)],
@@ -1006,7 +994,7 @@ inline
                 normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
                 
                 G[nSpace*nSpace],G_dd_G,tr_G;
-                
+
               //
               //calculate the solution and gradients at quadrature points
               //
@@ -1073,15 +1061,33 @@ inline
                                  u_grad_trial_trace,
                                  grad_u_ext);
                 }
-              //precalculate test function products with integration weights
+              
+              // Precalculate test function products with integration weights
+
               for (int j=0;j<nDOF_trial_element;j++)
-                {
-                  u_test_dS[j] = u_test_trace_ref.data()[ebN_local_kb*nDOF_test_element+j]*dS;
-                  for (int I=0;I<nSpace;I++)
-		                u_grad_test_dS[j*nSpace+I] = u_grad_trial_trace[j*nSpace+I]*dS;//cek hack, using trial
-	
-                }
-              //
+                    {
+                      u_test_dS[j] = u_test_trace_ref[ebN_local_kb*nDOF_test_element+j]*dS;
+                      for (int I=0;I<nSpace;I++)
+                      {
+                        u_grad_test_dS[j*nSpace+I]= u_grad_trial_trace[j*nSpace+I]*dS;
+                      }
+                    }
+
+
+
+
+
+
+              // for (int j = 0; j < nDOF_trial_element; j++)
+              // {
+              //     // Update u_test_dS
+              //     u_test_dS(j) = u_test_trace_ref(ebN_local_kb * nDOF_test_element + j) * dS;
+
+              //     // Update u_grad_test_dS
+              //     //auto u_grad_trial_trace_section = xt::view(u_grad_trial_trace, xt::range(j * nSpace, (j + 1) * nSpace));
+              //     //xt::view(u_grad_test_dS, xt::range(j * nSpace, (j + 1) * nSpace)) = u_grad_trial_trace_section * dS;
+              // }
+                            //
               //load the boundary values
               //
               bc_u_ext = isDOFBoundary_u.data()[ebNE_kb]*ebqe_bc_u_ext.data()[ebNE_kb]+
@@ -1091,44 +1097,42 @@ inline
               //
               //calculate the pde coefficients using the solution and the boundary values for the solution
               //
-              const double* qb_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
-              evaluateCoefficients(a_rowptr.data(),
-				                           a_colind.data(),
-                                   &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                   qb_a_ptr, //&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
-                                   u_ext,
-                                   m_ext,
-                                   dm_ext,
-                                   f_ext,
-                                   df_ext,
-                                   a_ext,
+              const double* ebqe_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];              
+              // Call the updated evaluateCoefficients function for both cases
+              evaluateCoefficients(a_rowptr.data(), 
+                                   a_colind.data(),
+                                   &velocity.data()[ebNE_kb_nSpace],
+                                   ebqe_a_ptr, 
+                                   u_ext, 
+                                   m_ext, 
+                                   dm_ext, 
+                                   f_ext, 
+                                   df_ext, 
+                                   a_ext, 
                                    da_ext);
               
-              evaluateCoefficients(a_rowptr.data(),
-				                           a_colind.data(),
-                                   &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                   qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
-                                   bc_u_ext,
-                                   bc_m_ext,
-                                   bc_dm_ext,
-                                   bc_f_ext,
-                                   bc_df_ext,
-                                   bc_a_ext,
-                                   bc_da_ext);         
+              evaluateCoefficients(a_rowptr.data(), 
+                                   a_colind.data(),
+                                   &velocity.data()[ebNE_kb_nSpace],
+                                   ebqe_a_ptr, 
+                                   u_ext, 
+                                   m_ext, 
+                                   dm_ext, 
+                                   bc_f_ext, 
+                                   bc_df_ext, 
+                                   bc_a_ext, 
+                                   bc_da_ext);
               //moving mesh
               //
-              double mesh_velocity[3];
-              mesh_velocity[0] = xt_ext;
-              mesh_velocity[1] = yt_ext;
-              mesh_velocity[2] = zt_ext;
+              // Initialize mesh_velocity using xtensor
+              xt::xtensor<double, 1> mesh_velocity = {xt_ext, yt_ext, zt_ext};
+              auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
 
-              for (int I=0;I<nSpace;I++)
-                {
-                  f_ext[I] -= MOVING_DOMAIN*m_ext*mesh_velocity[I];
-                  df_ext[I] -= MOVING_DOMAIN*dm_ext*mesh_velocity[I];
-                  bc_f_ext[I] -= MOVING_DOMAIN*bc_m_ext*mesh_velocity[I];
-                  bc_df_ext[I] -= MOVING_DOMAIN*bc_dm_ext*mesh_velocity[I];
-                }
+              // Update f_ext, df_ext, bc_f_ext, and bc_df_ext using xtensor operations
+              f_ext -= MOVING_DOMAIN * m_ext * mesh_velocity_view;
+              df_ext -= MOVING_DOMAIN * dm_ext * mesh_velocity_view;
+              bc_f_ext -= MOVING_DOMAIN * bc_m_ext * mesh_velocity_view;
+              bc_df_ext -= MOVING_DOMAIN * bc_dm_ext * mesh_velocity_view;
               //
               //calculate the numerical fluxes
               //
@@ -1137,10 +1141,10 @@ inline
                                              isDOFBoundary_u.data()[ebNE_kb],
                                              isDiffusiveFluxBoundary_u.data()[ebNE_kb],
                                              normal,
-                                             a_ext,
+                                             bc_a_ext.data(),
                                              bc_u_ext,
                                              ebqe_bc_diffusiveFlux_u_ext.data()[ebNE_kb],
-                                             a_ext,
+                                             a_ext.data(),
                                              grad_u_ext,
                                              u_ext,
                                              ebqe_penalty_ext.data()[ebNE_kb],
@@ -1152,15 +1156,9 @@ inline
                                              bc_u_ext,
                                              ebqe_bc_flux_u_ext.data()[ebNE_kb],
                                              u_ext,
-                                             df_ext,
+                                             df_ext.data(),
                                              flux_ext);
-            
-                  
-    
-              
-               //std::cout<<"Advection EXT"<<flux_ext<<std::endl;
-               //std::cout<<"Diffusion  Ext"<<flux_diff_ext<<std::endl;
-                    
+                                
               flux_ext += flux_diff_ext;  
               //std::cout<<"Combine EXT"<<flux_ext<<std::endl;
               ebqe_flux.data()[ebNE_kb] = flux_ext;
@@ -1189,7 +1187,7 @@ inline
                       STABILIZATION_TYPE == STABILIZATION::VMS or 
                       STABILIZATION_TYPE == STABILIZATION::TaylorGalerkinEV) 
                       {
-                    elementResidual_u[i] += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i])+
+                    elementResidual_u(i) += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i])+
                                             ck.ExteriorElementBoundaryDiffusionAdjoint(isDOFBoundary_u.data()[ebNE_kb],
                                                                                             isDiffusiveFluxBoundary_u.data()[ebNE_kb],
                                                                                             eb_adjoint_sigma,
@@ -1198,7 +1196,7 @@ inline
                                                                                             normal,
                                                                                             a_rowptr.data(),
                                                                                             a_colind.data(),
-                                                                                            a_ext,
+                                                                                            a_ext.data(),
                                                                                             &u_grad_test_dS[i*nSpace]);
                       }
                   else if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity or 
@@ -1208,32 +1206,33 @@ inline
                       exteriorNumericalAdvectiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
                                                            isFluxBoundary_u.data()[ebNE_kb],
                                                            normal,
-                                                           df_ext,
+                                                           df_ext.data(),
                                                            dflux_u_u_ext);  
                       exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
                                                            isDiffusiveFluxBoundary_u.data()[ebNE_kb],
                                                            a_rowptr.data(),
                                                            a_colind.data(),
                                                            normal,
-                                                           a_ext,
-                                                           da_ext,
+                                                           a_ext.data(),
+                                                           da_ext.data(),
                                                            grad_u_ext,
                                                            &u_grad_trial_trace[nSpace],
                                                            &u_trial_trace_ref.data()[ebN_local_kb*nSpace],
                                                            ebqe_penalty_ext.data()[ebNE_kb],
                                                            difffluxjacobian_ext);                 
                       
-                      if (dflux_u_u_ext> 0.0)
+                      if (dflux_u_u_ext > 0.0)
                       { 
-                        int ebN_local_kb_i = ebN_local_kb*nDOF_test_element+i;
-                        for (int j=0;j<nDOF_trial_element;j++)
-                          fluxTransport[j][i] += (dflux_u_u_ext + difffluxjacobian_ext)*
-                            u_trial_trace_ref.data()[ebN_local_kb_i]*
-                            u_test_dS[j];
-                           
+                          int ebN_local_kb_i = ebN_local_kb * nDOF_test_element + i;
+                          for (int j = 0; j < nDOF_trial_element; j++)
+                          {
+                              fluxTransport(j, i) += (dflux_u_u_ext + difffluxjacobian_ext) *
+                                                      u_trial_trace_ref.data()[ebN_local_kb_i]*
+                                                      u_test_dS[j];
+                          }
                       }
                       else
-                        elementResidual_u[i] += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i])+
+                        elementResidual_u(i) += ck.ExteriorElementBoundaryFlux(flux_ext,u_test_dS[i])+
                                                 ck.ExteriorElementBoundaryDiffusionAdjoint(isDOFBoundary_u.data()[ebNE_kb],
                                                                                             isDiffusiveFluxBoundary_u.data()[ebNE_kb],
                                                                                             eb_adjoint_sigma,
@@ -1242,7 +1241,7 @@ inline
                                                                                             normal,
                                                                                             a_rowptr.data(),
                                                                                             a_colind.data(),
-                                                                                            a_ext,
+                                                                                            a_ext.data(),
                                                                                             &u_grad_test_dS[i*nSpace]);                                                                                        
                     }                   
                 }//i
@@ -1259,22 +1258,22 @@ inline
               int gi = offset_u+stride_u*u_l2g.data()[eN_i]; //global i-th index
               if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity or STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or STABILIZATION_TYPE==STABILIZATION::Kuzmin)
                 {
-                  globalResidual.data()[gi] += dt*elementResidual_u[i];
-                  boundary_integral[gi] += elementResidual_u[i];
+                  globalResidual.data()[gi] += dt*elementResidual_u(i);
+                  boundary_integral(gi) += elementResidual_u(i);
                   min_u_bc[gi] = fmin(min_u_bc_local,min_u_bc[gi]);
                   max_u_bc[gi] = fmax(max_u_bc_local,max_u_bc[gi]);
                   for (int j=0;j<nDOF_trial_element;j++)
                     {
                       int ebN_i_j = ebN*4*nDOF_test_X_trial_element + i*nDOF_trial_element + j;
-                      TransportMatrix[csrRowIndeces_CellLoops.data()[eN_i] + csrColumnOffsets_eb_CellLoops.data()[ebN_i_j]]
-                        += fluxTransport[i][j];
-                      TransposeTransportMatrix[csrRowIndeces_CellLoops.data()[eN_i] + csrColumnOffsets_eb_CellLoops.data()[ebN_i_j]]
-                        += fluxTransport[j][i];
+                      TransportMatrix(csrRowIndeces_CellLoops.data()[eN_i] + csrColumnOffsets_eb_CellLoops.data()[ebN_i_j])
+                        += fluxTransport(i,j);
+                      TransposeTransportMatrix(csrRowIndeces_CellLoops.data()[eN_i] + csrColumnOffsets_eb_CellLoops.data()[ebN_i_j])
+                        += fluxTransport(j,i);
                     }//j
                 }
               else
                 {
-                  globalResidual.data()[offset_u+stride_u*r_l2g.data()[eN_i]] += elementResidual_u[i];
+                  globalResidual.data()[offset_u+stride_u*r_l2g.data()[eN_i]] += elementResidual_u(i);
                 }
             }//i
         }//ebNE
@@ -1333,84 +1332,86 @@ inline
               if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity) //EV Stab
                 {
                   // Normalize entropy residual
-                  global_entropy_residual[i] *= etaMini == etaMaxi ? 0. : 2*cE/(etaMaxi-etaMini);
-                  quantDOFs[i] = fabs(global_entropy_residual[i]);
+                  global_entropy_residual(i) *= etaMini == etaMaxi ? 0. : 2*cE/(etaMaxi-etaMini);
+                  quantDOFs[i] = fabs(global_entropy_residual(i));
                 }
 
               double alphai = alpha_numerator/(alpha_denominator+1E-15);
               quantDOFs[i] = alphai;
-
-
               if (POWER_SMOOTHNESS_INDICATOR==0)
                 psi[i] = 1.0;
               else
                 psi[i] = std::pow(alphai,POWER_SMOOTHNESS_INDICATOR); //NOTE: they use alpha^2 in the paper
+
+              // if (POWER_SMOOTHNESS_INDICATOR==0)
+              //   psi(i) = 1.0;
+              // else
+              //   psi(i) = std::pow(alphai,POWER_SMOOTHNESS_INDICATOR); //NOTE: they use alpha^2 in the paper
             }
-          /////////////////////////////////////////////
-          // ** LOOP IN DOFs FOR EDGE BASED TERMS ** //
-          /////////////////////////////////////////////
-          ij=0;
-          for (int i=0; i<numDOFs; i++)
+/////////////////////////////////////////////
+// ** LOOP IN DOFs FOR EDGE BASED TERMS ** //
+/////////////////////////////////////////////
+ij = 0;
+for (int i = 0; i < numDOFs; i++)
+{
+    double solni = u_dof_old(i); // solution at time tn for the ith DOF
+    double ith_dissipative_term = 0;
+    double ith_low_order_dissipative_term = 0;
+    double ith_flux_term = 0;
+    double dLii = 0.0;
+
+    // loop over the sparsity pattern of the i-th DOF
+    for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); offset++)
+    {
+        int j = csrColumnOffsets_DofLoops(offset);
+        double solnj = u_dof_old(j); // solution at time tn for the jth DOF
+        double dLowij, dLij, dEVij, dHij;
+
+        ith_flux_term += (TransportMatrix(ij) + DiffusionMatrix(ij)) * solnj;
+
+        if (i != j) // NOTE: there is really no need to check for i!=j (see formula for ith_dissipative_term)
+        {
+            // artificial compression
+            double solij = 0.5 * (solni + solnj);
+            double Compij = cK * fmax(solij * (1.0 - solij), 0.0) / (fabs(solni - solnj) + 1E-14);
+            // first-order dissipative operator
+            dLowij = fmax(fabs(TransportMatrix(ij)), fabs(TransposeTransportMatrix(ij)));
+            // std::cout << dLowij;
+            // dLij = fmax(0.,fmax(psi(i)*TransportMatrix(ij), // Approach by S. Badia
+            //              psi(j)*TransposeTransportMatrix(ij)));
+            dLij = dLowij * fmax(psi[i], psi[j]); // Approach by JLG & BP
+
+            if (STABILIZATION_TYPE == STABILIZATION::EntropyViscosity) // EV Stab
             {
-              double solni = u_dof_old.data()[i]; // solution at time tn for the ith DOF
-              double ith_dissipative_term = 0;
-              double ith_low_order_dissipative_term = 0;
-              double ith_flux_term = 0;
-              double dLii = 0.;
+                // high-order (entropy viscosity) dissipative operator
+                dEVij = fmax(fabs(global_entropy_residual(i)), fabs(global_entropy_residual(j)));
+                dHij = fmin(dLowij, dEVij) * fmax(1.0 - Compij, 0.0); // artificial compression
+            }
+            else // smoothness based indicator
+            {
+                dHij = dLij * fmax(1.0 - Compij, 0.0); // artificial compression
+            }
+            // dissipative terms
+            ith_dissipative_term += dHij * (solnj - solni);
+            ith_low_order_dissipative_term += dLowij * (solnj - solni);
+            // dHij - dLij. This matrix is needed during FCT step
+            dt_times_dH_minus_dL(ij) = dt * (dHij - dLowij);
+            // std::cout << dLij;
 
-              // loop over the sparsity pattern of the i-th DOF
-              for (int offset=csrRowIndeces_DofLoops.data()[i]; offset<csrRowIndeces_DofLoops.data()[i+1]; offset++)
-                {
-                  int j = csrColumnOffsets_DofLoops.data()[offset];
-                  double solnj = u_dof_old.data()[j]; // solution at time tn for the jth DOF
-                  double dLowij, dLij, dEVij, dHij;
-
-                  ith_flux_term += (TransportMatrix[ij]+ DiffusionMatrix[ij])*solnj;
-                 
-                  
-                  if (i != j) //NOTE: there is really no need to check for i!=j (see formula for ith_dissipative_term)
-                    {
-                      // artificial compression
-                      double solij = 0.5*(solni+solnj);
-                      double Compij = cK*fmax(solij*(1.0-solij),0.0)/(fabs(solni-solnj)+1E-14);
-                      // first-order dissipative operator
-                      dLowij = fmax(fabs(TransportMatrix[ij]),fabs(TransposeTransportMatrix[ij]));
-                      //std::cout << dLowij;
-                      //dLij = fmax(0.,fmax(psi[i]*TransportMatrix[ij], // Approach by S. Badia
-                      //              psi[j]*TransposeTransportMatrix[ij]));
-                      dLij = dLowij*fmax(psi[i],psi[j]); // Approach by JLG & BP
-                      
-                      if (STABILIZATION_TYPE==STABILIZATION::EntropyViscosity) //EV Stab
-                        {
-                          // high-order (entropy viscosity) dissipative operator
-                          dEVij = fmax(fabs(global_entropy_residual[i]),fabs(global_entropy_residual[j]));
-                          dHij = fmin(dLowij,dEVij) * fmax(1.0-Compij,0.0); // artificial compression
-                        }
-                      else // smoothness based indicator
-                        {
-                          dHij = dLij * fmax(1.0-Compij,0.0); // artificial compression
-                        }
-                      //dissipative terms
-                      ith_dissipative_term += dHij*(solnj-solni);
-                      ith_low_order_dissipative_term += dLowij*(solnj-solni);
-                      //dHij - dLij. This matrix is needed during FCT step
-                      dt_times_dH_minus_dL[ij] = dt*(dHij - dLowij);
-                      //std::cout << dLij;
-
-                      dLii -= dLij;
-                      dLow[ij] = dLowij;
-                      
-                    }
-                  else //i==j
-                    {
-                      // NOTE: this is incorrect. Indeed, dLii = -sum_{j!=i}(dLij) and similarly for dCii.
-                      // However, it is irrelevant since during the FCT step we do (dL-dC)*(solnj-solni)
-                      dt_times_dH_minus_dL[ij]=0;
-                      dLow[ij]=0;
-                    }
-                  //update ij
-                  ij+=1;
-                }
+            dLii -= dLij;
+            dLow(ij) = dLowij;
+        }
+        else // i == j
+        {
+            // NOTE: this is incorrect. Indeed, dLii = -sum_{j!=i}(dLij) and similarly for dCii.
+            // However, it is irrelevant since during the FCT step we do (dL-dC)*(solnj-solni)
+            dt_times_dH_minus_dL(ij) = 0;
+            dLow(ij) = 0;
+        }
+        // update ij
+        ij += 1;
+    
+       }
               double mi = ML.data()[i];
               // compute edge_based_cfl
               edge_based_cfl.data()[i] = 2.*fabs(dLii)/mi;
@@ -1418,13 +1419,13 @@ inline
               //std::cout << "Element: " << i << ", dLii: " << fabs(dLii) << ", mi: " << mi << std::endl;
 
               uLow[i] = u_dof_old.data()[i] - dt/mi*(ith_flux_term
-                                                     + boundary_integral[i]
+                                                     + boundary_integral(i)
                                                      - ith_low_order_dissipative_term);
 
               // update residual
               if (LUMPED_MASS_MATRIX==1)
                 globalResidual.data()[i] = u_dof_old.data()[i] - dt/mi*(ith_flux_term
-                                                                        + boundary_integral[i]
+                                                                        + boundary_integral(i)
                                                                         - ith_dissipative_term);
               else
                 globalResidual.data()[i] += dt*(ith_flux_term - ith_dissipative_term);//cek todo: shouldn't this have boundaryIntegral?
@@ -1481,9 +1482,7 @@ inline
       xt::pyarray<int>& isFluxBoundary_u = args.array<int>("isFluxBoundary_u");
       xt::pyarray<double>& ebqe_bc_flux_u_ext = args.array<double>("ebqe_bc_flux_u_ext");
       xt::pyarray<int>& csrColumnOffsets_eb_u_u = args.array<int>("csrColumnOffsets_eb_u_u");
-      STABILIZATION STABILIZATION_TYPE = static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"));
-//      ENTROPY ENTROPY_TYPE = static_cast<ENTROPY>(args.scalar<int>("ENTROPY_TYPE"));    
-//      STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+      STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
       xt::pyarray<double>& q_a = args.array<double>("q_a");
       xt::pyarray<double>& ebqe_a = args.array<double>("ebq_a");
@@ -1507,12 +1506,9 @@ inline
       //
       for(int eN=0;eN<nElements_global;eN++)
         {
-          double  elementJacobian_u_u[nDOF_test_element][nDOF_trial_element];
-          for (int i=0;i<nDOF_test_element;i++)
-            for (int j=0;j<nDOF_trial_element;j++)
-              {
-                elementJacobian_u_u[i][j]=0.0;
-              }
+                  
+          xt::xtensor_fixed<double, xt::xshape<nDOF_test_element, nDOF_trial_element>> elementJacobian_u_u = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});
+    
           for  (int k=0;k<nQuadraturePoints_element;k++)
             {
               int eN_k = eN*nQuadraturePoints_element+k, //index to a scalar at a quadrature point
@@ -1523,9 +1519,6 @@ inline
               double u=0.0,
                 grad_u[nSpace],
                 m=0.0,dm=0.0,
-                f[nSpace],df[nSpace],
-                a[nnz],da[nnz],
-                
                 m_t=0.0,dm_t=0.0,
                 dpdeResidual_u_u[nDOF_trial_element],
                 Lstar_u[nDOF_test_element],
@@ -1540,7 +1533,11 @@ inline
                 u_grad_test_dV[nDOF_test_element*nSpace],
                 x,y,z,xt,yt,zt,
                 G[nSpace*nSpace],G_dd_G,tr_G;
-              //
+                xt::xtensor_fixed<double, xt::xshape<nSpace>> f;
+                xt::xtensor_fixed<double, xt::xshape<nSpace>> df;
+                xt::xtensor<double, 1> a({nnz});
+                xt::xtensor<double, 1> da({nnz});
+                  //
               //calculate solution and gradients at quadrature points
               //
               //get jacobian, etc for mapping reference element
@@ -1583,31 +1580,26 @@ inline
               //
               
               const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
-              evaluateCoefficients(a_rowptr.data(),
-				                           a_colind.data(),
+              evaluateCoefficients(a_rowptr.data(), 
+                                   a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a_ptr, //&q_a.data()[eN * nQuadraturePoints_element * nnz + k * nnz],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
-                                   u,
-                                   m,
-                                   dm,
-                                   f,
-                                   df,
-                                   a,
+                                   q_a_ptr, 
+                                   u, 
+                                   m, 
+                                   dm, 
+                                   f, 
+                                   df, 
+                                   a, 
                                    da);
               //
               //moving mesh
               //
-              double mesh_velocity[3];
-              mesh_velocity[0] = xt;
-              mesh_velocity[1] = yt;
-              mesh_velocity[2] = zt;
-            
-              for(int I=0;I<nSpace;I++)
-                {
-                  f[I] -= MOVING_DOMAIN*m*mesh_velocity[I];
-                  df[I] -= MOVING_DOMAIN*dm*mesh_velocity[I];
-                }
-              //
+              
+              xt::xtensor<double, 1> mesh_velocity = {xt, yt, zt};
+              auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
+              f -= MOVING_DOMAIN * m * mesh_velocity_view;
+              df-= MOVING_DOMAIN * dm * mesh_velocity_view;
+
               //calculate time derivatives
               //
               ck.bdf(alphaBDF,
@@ -1625,26 +1617,26 @@ inline
                   for (int i=0;i<nDOF_test_element;i++)
                     {
                       int i_nSpace = i*nSpace;
-                      Lstar_u[i]=ck.Advection_adjoint(df,&u_grad_test_dV[i_nSpace]);
+                      Lstar_u[i]=ck.Advection_adjoint(df.data(),&u_grad_test_dV[i_nSpace]);
                     }
                   //calculate the Jacobian of strong residual
                   for (int j=0;j<nDOF_trial_element;j++)
                     {
                       int j_nSpace = j*nSpace;
                       dpdeResidual_u_u[j]= ck.MassJacobian_strong(dm_t,u_trial_ref.data()[k*nDOF_trial_element+j]) +
-                        ck.AdvectionJacobian_strong(df,&u_grad_trial[j_nSpace]);
+                        ck.AdvectionJacobian_strong(df.data(),&u_grad_trial[j_nSpace]);
                     }
                   //tau and tau*Res
                   calculateSubgridError_tau(elementDiameter.data()[eN],
                                             dm_t,
-                                            df,
+                                            df.data(),
                                             cfl.data()[eN_k],
                                             tau0);
 
                   calculateSubgridError_tau(Ct_sge,
                                             G,
                                             dm_t,
-                                            df,
+                                            df.data(),
                                             tau1,
                                             cfl.data()[eN_k]);
                   tau = useMetrics*tau1+(1.0-useMetrics)*tau0;
@@ -1660,14 +1652,14 @@ inline
                       int i_nSpace = i*nSpace;
                       if (STABILIZATION_TYPE==STABILIZATION::Galerkin)
                         {
-                          elementJacobian_u_u[i][j] +=
+                          elementJacobian_u_u(i,j) +=
                             ck.MassJacobian_weak(dm_t,
                                                  u_trial_ref.data()[k*nDOF_trial_element+j],
                                                  u_test_dV[i]) +
-                            ck.AdvectionJacobian_weak(df,
+                            ck.AdvectionJacobian_weak(df.data(),
                                                       u_trial_ref.data()[k*nDOF_trial_element+j],
                                                       &u_grad_test_dV[i_nSpace]) +
-                            ck.DiffusionJacobian_weak(a_rowptr.data(),a_colind.data(),a,da,
+                            ck.DiffusionJacobian_weak(a_rowptr.data(),a_colind.data(),a.data(),da.data(),
 						                                          grad_u,&u_grad_test_dV[i_nSpace],1.0,
 						                                          u_trial_ref.data()[k*nDOF_trial_element+j],&u_grad_trial[j_nSpace])
                                                       +
@@ -1677,14 +1669,14 @@ inline
                         }
                       else if (STABILIZATION_TYPE==STABILIZATION::VMS)
                         {
-                          elementJacobian_u_u[i][j] +=
+                          elementJacobian_u_u(i,j) +=
                             ck.MassJacobian_weak(dm_t,
                                                  u_trial_ref.data()[k*nDOF_trial_element+j],
                                                  u_test_dV[i]) +
-                            ck.AdvectionJacobian_weak(df,
+                            ck.AdvectionJacobian_weak(df.data(),
                                                       u_trial_ref.data()[k*nDOF_trial_element+j],
                                                       &u_grad_test_dV[i_nSpace]) +
-                            ck.DiffusionJacobian_weak(a_rowptr.data(),a_colind.data(),a,da,
+                            ck.DiffusionJacobian_weak(a_rowptr.data(),a_colind.data(),a.data(),da.data(),
                                                       grad_u,&u_grad_test_dV[i_nSpace],1.0,
                                                       u_trial_ref.data()[k*nDOF_trial_element+j],&u_grad_trial[j_nSpace])+
 
@@ -1698,7 +1690,7 @@ inline
                                STABILIZATION_TYPE==STABILIZATION::SmoothnessIndicator or 
                                STABILIZATION_TYPE==STABILIZATION::Kuzmin)
                         {
-                          elementJacobian_u_u[i][j] +=
+                          elementJacobian_u_u(i,j) +=
                             ck.MassJacobian_weak(1.0,
                                                  u_trial_ref.data()[k*nDOF_trial_element+j],
                                                  u_test_dV[i]);
@@ -1715,7 +1707,7 @@ inline
               for (int j=0;j<nDOF_trial_element;j++)
                 {
                   int eN_i_j = eN_i*nDOF_trial_element+j;
-                  globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]] += elementJacobian_u_u[i][j];
+                  globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]] += elementJacobian_u_u(i,j);
                 }//j
             }//i
         }//elements
@@ -1730,12 +1722,8 @@ inline
               int eN  = elementBoundaryElementsArray.data()[ebN*2+0],
                 ebN_local = elementBoundaryLocalElementBoundariesArray.data()[ebN*2+0],
                 eN_nDOF_trial_element = eN*nDOF_trial_element;
-              double fluxJacobian_u_u[nDOF_test_element][nDOF_trial_element];
-              for (int i=0;i<nDOF_test_element;i++)
-                for (int j=0;j<nDOF_trial_element;j++)
-                  {
-                    fluxJacobian_u_u[i][j]=0.0;
-                  }
+              //double fluxJacobian_u_u[nDOF_test_element][nDOF_trial_element];
+              xt::xarray<double> fluxJacobian_u_u = xt::zeros<double>({nDOF_test_element, nDOF_trial_element});              
               for  (int kb=0;kb<nQuadraturePoints_elementBoundary;kb++)
                 {
                   int ebNE_kb = ebNE*nQuadraturePoints_elementBoundary+kb,
@@ -1746,25 +1734,12 @@ inline
                     grad_u_ext[nSpace],
                     m_ext=0.0,
                     dm_ext=0.0,
-                    f_ext[nSpace],
-                    df_ext[nSpace],
-
-                    a_ext[nnz],
-                    da_ext[nnz],
-                    bc_a_ext[nnz],
-                    bc_da_ext[nnz],
-
                     dflux_u_u_ext=0.0,
                     difffluxjacobian_ext=0.0,
                     bc_u_ext=0.0,
-                    //bc_grad_u_ext[nSpace],
                     bc_m_ext=0.0,
                     bc_dm_ext=0.0,
-                    bc_f_ext[nSpace],
-                    bc_df_ext[nSpace],
-                    //////////////
                     diffusiveFluxJacobian_u_u[nDOF_trial_element],
-                    ////////////////////////////
                     jac_ext[nSpace*nSpace],
                     jacDet_ext,
                     jacInv_ext[nSpace*nSpace],
@@ -1776,8 +1751,15 @@ inline
                     u_grad_trial_trace[nDOF_trial_element*nSpace],
                     u_grad_test_dS[nDOF_trial_element*nSpace],
                     normal[nSpace],x_ext,y_ext,z_ext,xt_ext,yt_ext,zt_ext,integralScaling,
-                    //
                     G[nSpace*nSpace],G_dd_G,tr_G;
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> f_ext;
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> df_ext;
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_f_ext;
+                    xt::xtensor_fixed<double, xt::xshape<nSpace>> bc_df_ext;
+                    xt::xtensor<double, 1> a_ext({nnz});
+                    xt::xtensor<double, 1> da_ext({nnz});
+                    xt::xtensor<double, 1> bc_a_ext({nnz});
+                    xt::xtensor<double, 1> bc_da_ext({nnz});
 
                   //
                   //calculate the solution and gradients at quadrature points
@@ -1837,61 +1819,57 @@ inline
                   //
                   //calculate the internal and external trace of the pde coefficients
                   //
-
-                  const double* qb_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
-                  evaluateCoefficients(a_rowptr.data(),
-                                       a_colind.data(),
-                                       &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                       qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
-                                       u_ext,
-                                       m_ext,
-                                       dm_ext,
-                                       f_ext,
-                                       df_ext,
-                                       a_ext,
-                                       da_ext
-                                       );
-
-                  evaluateCoefficients(a_rowptr.data(),
-                                       a_colind.data(),
-                                       &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                       qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
-                                       bc_u_ext,
-                                       bc_m_ext,
-                                       bc_dm_ext,
-                                       bc_f_ext,
-                                       bc_df_ext,
-                                       bc_a_ext,
-                                       bc_da_ext);
+                  const double* ebqe_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
+                  evaluateCoefficients(a_rowptr.data(), 
+                                   a_colind.data(),
+                                   &velocity.data()[ebNE_kb_nSpace],
+                                   ebqe_a_ptr, 
+                                   u_ext, 
+                                   m_ext, 
+                                   dm_ext, 
+                                   f_ext, 
+                                   df_ext, 
+                                   a_ext, 
+                                   da_ext);
+              
+                  evaluateCoefficients(a_rowptr.data(), 
+                                   a_colind.data(),
+                                   &velocity.data()[ebNE_kb_nSpace],
+                                   ebqe_a_ptr, 
+                                   u_ext, 
+                                   m_ext, 
+                                   dm_ext, 
+                                   bc_f_ext, 
+                                   bc_df_ext, 
+                                   bc_a_ext, 
+                                   bc_da_ext);
                   //
                   //moving domain
                   //
-                  double mesh_velocity[3];
-                  mesh_velocity[0] = xt_ext;
-                  mesh_velocity[1] = yt_ext;
-                  mesh_velocity[2] = zt_ext;
-                  for (int I=0;I<nSpace;I++)
-                    {
-                      f_ext[I] -= MOVING_DOMAIN*m_ext*mesh_velocity[I];
-                      df_ext[I] -= MOVING_DOMAIN*dm_ext*mesh_velocity[I];
-                      bc_f_ext[I] -= MOVING_DOMAIN*bc_m_ext*mesh_velocity[I];
-                      bc_df_ext[I] -= MOVING_DOMAIN*bc_dm_ext*mesh_velocity[I];
-                    }
+                  xt::xtensor<double, 1> mesh_velocity = {xt_ext, yt_ext, zt_ext};
+                  auto mesh_velocity_view = xt::view(mesh_velocity, xt::range(0, nSpace));
+
+                  // Update f_ext, df_ext, bc_f_ext, and bc_df_ext using xtensor operations
+                  f_ext -= MOVING_DOMAIN * m_ext * mesh_velocity_view;
+                  df_ext -= MOVING_DOMAIN * dm_ext * mesh_velocity_view;
+                  bc_f_ext -= MOVING_DOMAIN * bc_m_ext * mesh_velocity_view;
+                  bc_df_ext -= MOVING_DOMAIN * bc_dm_ext * mesh_velocity_view;
+                  
                   //
                   //calculate the numerical fluxes
                   //
                   exteriorNumericalAdvectiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
                                                            isFluxBoundary_u.data()[ebNE_kb],
                                                            normal,
-                                                           df_ext,
+                                                           df_ext.data(),
                                                            dflux_u_u_ext);
                   exteriorNumericalDiffusiveFluxDerivative(isDOFBoundary_u.data()[ebNE_kb],
                                                            isDiffusiveFluxBoundary_u.data()[ebNE_kb],
                                                            a_rowptr.data(),
                                                            a_colind.data(),
                                                            normal,
-                                                           a_ext,
-                                                           da_ext,
+                                                           a_ext.data(),
+                                                           da_ext.data(),
                                                            grad_u_ext,
                                                            &u_grad_trial_trace[nSpace],
                                                            &u_trial_trace_ref.data()[ebN_local_kb*nSpace],
@@ -1907,13 +1885,13 @@ inline
                       {
                         int ebN_local_kb_j=ebN_local_kb*nDOF_trial_element+j;
   
-                        fluxJacobian_u_u[i][j]+=ck.ExteriorNumericalAdvectiveFluxJacobian(dflux_u_u_ext,u_trial_trace_ref.data()[ebN_local_kb_j])*u_test_dS[i]+
+                        fluxJacobian_u_u(i,j)+=ck.ExteriorNumericalAdvectiveFluxJacobian(dflux_u_u_ext,u_trial_trace_ref.data()[ebN_local_kb_j])*u_test_dS[i]+
                                                 ExteriorNumericalDiffusiveFluxJacobian(a_rowptr.data(),
                                                                                        a_colind.data(),
                                                                                        isDOFBoundary_u.data()[ebNE_kb],
                                                                                        isDiffusiveFluxBoundary_u.data()[ebNE_kb],
                                                                                        normal,
-                                                                                       a_ext,
+                                                                                       a_ext.data(),
                                                                                        u_trial_trace_ref.data()[ebN_local_kb_j],
                                                                                        &u_grad_trial_trace[j*nSpace],
                                                                                        ebqe_penalty_ext.data()[ebNE_kb])*u_test_dS[i];
@@ -1928,7 +1906,7 @@ inline
                   for (int j=0;j<nDOF_trial_element;j++)
                     {
                       int ebN_i_j = ebN*4*nDOF_test_X_trial_element + i*nDOF_trial_element + j;
-                      globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_eb_u_u.data()[ebN_i_j]] += fluxJacobian_u_u[i][j];
+                      globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_eb_u_u.data()[ebN_i_j]] += fluxJacobian_u_u(i,j);
 //                                                                                                                         
                     }//j
                 }//i
@@ -1955,12 +1933,11 @@ inline
     xt::pyarray<double>& min_u_bc = args.array<double>("min_u_bc");
     xt::pyarray<double>& max_u_bc = args.array<double>("max_u_bc");
     int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
-//    STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
-    STABILIZATION STABILIZATION_TYPE = static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"));
-//      ENTROPY ENTROPY_TYPE = static_cast<ENTROPY>(args.scalar<int>("ENTROPY_TYPE"));    
+    STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
     Rpos.resize(numDOFs,0.0);
     Rneg.resize(numDOFs,0.0);
-    FluxCorrectionMatrix.resize(NNZ,0.0);
+    FluxCorrectionMatrix = xt::zeros<double>({NNZ});
+    //FluxCorrectionMatrix.resize(NNZ,0.0);
     int ij=0;
     //loop over nodes (i)
     for (int i=0; i<numDOFs; i++)
@@ -1989,18 +1966,18 @@ inline
             // i-th row of flux correction matrix
             if (STABILIZATION_TYPE == STABILIZATION::Kuzmin)
               {
-                FluxCorrectionMatrix[ij] = dt*(MassMatrix.data()[ij]*(uDotLowi-uDotLowj)
+                FluxCorrectionMatrix(ij) = dt*(MassMatrix.data()[ij]*(uDotLowi-uDotLowj)
                                                + dLow.data()[ij]*(uLowi-uLowj));
               }
             else
               {
                 double ML_minus_MC =
                   (LUMPED_MASS_MATRIX == 1 ? 0. : (i==j ? 1. : 0.)*mi - MassMatrix.data()[ij]);
-                FluxCorrectionMatrix[ij] = ML_minus_MC * (solH.data()[j]-solnj - (solHi-solni))
+                FluxCorrectionMatrix(ij) = ML_minus_MC * (solH.data()[j]-solnj - (solHi-solni))
                   + dt_times_dH_minus_dL.data()[ij]*(solnj-solni);
               }
-            Pposi += FluxCorrectionMatrix[ij]*((FluxCorrectionMatrix[ij] > 0) ? 1. : 0.);
-            Pnegi += FluxCorrectionMatrix[ij]*((FluxCorrectionMatrix[ij] < 0) ? 1. : 0.);
+            Pposi += FluxCorrectionMatrix(ij)*((FluxCorrectionMatrix(ij) > 0) ? 1. : 0.);
+            Pnegi += FluxCorrectionMatrix(ij)*((FluxCorrectionMatrix(ij) < 0) ? 1. : 0.);
             ij+=1;
           }//j
         double Qposi = mi*(maxi-uLow.data()[i]);
@@ -2018,16 +1995,16 @@ inline
             assert(offset == ij); // (CSR matrix consistency
             int j = csrColumnOffsets_DofLoops.data()[offset];
             double Lij = 1;
-            Lij = ((FluxCorrectionMatrix[ij]>0) ? fmin(Rposi,Rneg[j]) : fmin(Rnegi,Rpos[j]));
-            ith_Limiter_times_FluxCorrectionMatrix += Lij * FluxCorrectionMatrix[ij];
+            Lij = ((FluxCorrectionMatrix(ij)>0) ? fmin(Rposi,Rneg[j]) : fmin(Rnegi,Rpos[j]));
+            ith_Limiter_times_FluxCorrectionMatrix += Lij * FluxCorrectionMatrix(ij);
             ij+=1;
           }
         limited_solution.data()[i] = uLow.data()[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix;
       }
     }//FCTStep
-  };//TADR
+  };//TADRI
 
-inline TADR_base* newTADR(int nSpaceIn,
+inline TADRI_base* newTADRI(int nSpaceIn,
                           int nQuadraturePoints_elementIn,
                           int nDOF_mesh_trial_elementIn,
                           int nDOF_trial_elementIn,
@@ -2036,7 +2013,7 @@ inline TADR_base* newTADR(int nSpaceIn,
                           int CompKernelFlag)
 {
   if (nSpaceIn == 1)
-    return proteus::chooseAndAllocateDiscretization1D<TADR_base,TADR,CompKernel>(nSpaceIn,
+    return proteus::chooseAndAllocateDiscretization1D<TADRI_base,TADRI,CompKernel>(nSpaceIn,
                                                                                  nQuadraturePoints_elementIn,
                                                                                  nDOF_mesh_trial_elementIn,
                                                                                  nDOF_trial_elementIn,
@@ -2044,7 +2021,7 @@ inline TADR_base* newTADR(int nSpaceIn,
                                                                                  nQuadraturePoints_elementBoundaryIn,
                                                                                  CompKernelFlag);
   else if (nSpaceIn == 2)
-    return proteus::chooseAndAllocateDiscretization2D<TADR_base,TADR,CompKernel>(nSpaceIn,
+    return proteus::chooseAndAllocateDiscretization2D<TADRI_base,TADRI,CompKernel>(nSpaceIn,
                                                                                  nQuadraturePoints_elementIn,
                                                                                  nDOF_mesh_trial_elementIn,
                                                                                  nDOF_trial_elementIn,
@@ -2052,7 +2029,7 @@ inline TADR_base* newTADR(int nSpaceIn,
                                                                                  nQuadraturePoints_elementBoundaryIn,
                                                                                  CompKernelFlag);
   else
-    return proteus::chooseAndAllocateDiscretization<TADR_base,TADR,CompKernel>(nSpaceIn,
+    return proteus::chooseAndAllocateDiscretization<TADRI_base,TADRI,CompKernel>(nSpaceIn,
                                                                                nQuadraturePoints_elementIn,
                                                                                nDOF_mesh_trial_elementIn,
                                                                                nDOF_trial_elementIn,

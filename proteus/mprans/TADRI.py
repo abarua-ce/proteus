@@ -18,7 +18,7 @@ from proteus.ShockCapturing import ShockCapturing_base
 from proteus.NumericalFlux import Advection_DiagonalUpwind_Diffusion_IIPG_exterior
 from proteus.LinearAlgebraTools import SparseMat
 from proteus.NonlinearSolvers import ExplicitLumpedMassMatrix,ExplicitConsistentMassMatrixForVOF,TwoStageNewton
-from proteus.mprans.cTADR import cTADR_base
+from proteus.mprans.cTADRI import cTADRI_base
 
 from . import cArgumentsDict
 
@@ -50,7 +50,7 @@ class ShockCapturing(ShockCapturing_base):
         self.nStepsToDelay = nStepsToDelay
         self.nSteps = 0
         if self.lag:
-            logEvent("TADR.ShockCapturing: lagging requested but must delay the first step; switching lagging off and delaying")
+            logEvent("TADRI.ShockCapturing: lagging requested but must delay the first step; switching lagging off and delaying")
             self.nStepsToDelay = 1
             self.lag = False
 
@@ -69,12 +69,12 @@ class ShockCapturing(ShockCapturing_base):
             for ci in range(self.nc):
                 self.numDiff_last[ci][:] = self.numDiff[ci]
         if self.lag == False and self.nStepsToDelay is not None and self.nSteps > self.nStepsToDelay:
-            logEvent("TADR.ShockCapturing: switched to lagged shock capturing")
+            logEvent("TADRI.ShockCapturing: switched to lagged shock capturing")
             self.lag = True
             self.numDiff_last = []
             for ci in range(self.nc):
                 self.numDiff_last.append(self.numDiff[ci].copy())
-        logEvent("TADR: max numDiff %e" % (globalMax(self.numDiff_last[0].max()),))
+        logEvent("TADRI: max numDiff %e" % (globalMax(self.numDiff_last[0].max()),))
 
 class NumericalFlux(Advection_DiagonalUpwind_Diffusion_IIPG_exterior):
     def __init__(self,
@@ -350,7 +350,7 @@ class Coefficients(TC_base):
             self.initialize()
         
 
-        #must keep synchronized with TADR.h enums
+        #must keep synchronized with TADRI.h enums
         stabilization_types = {"Galerkin":-1, 
                                "VMS":0, 
                                "TaylorGalerkinEV":1, 
@@ -468,7 +468,7 @@ class Coefficients(TC_base):
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
                                                     self.model.q[('m', 0)],
                                                     self.model.mesh.nElements_owned)
-            logEvent("Phase  0 mass before TADR step = %12.5e" % (self.m_pre,), level=2)
+            logEvent("Phase  0 mass before TADRI step = %12.5e" % (self.m_pre,), level=2)
         copyInstructions = {}
         return copyInstructions
 
@@ -478,7 +478,7 @@ class Coefficients(TC_base):
             self.m_post = Norms.scalarDomainIntegral(self.model.q['dV'],
                                                      self.model.q[('m', 0)],
                                                      self.model.mesh.nElements_owned)
-            logEvent("Phase  0 mass after TADR step = %12.5e" % (self.m_post,), level=2)
+            logEvent("Phase  0 mass after TADRI step = %12.5e" % (self.m_post,), level=2)
         copyInstructions = {}
         return copyInstructions
 
@@ -919,7 +919,7 @@ class LevelModel(OneLevelTransport):
         #TODO how to handle redistancing calls for calculateCoefficients,calculateElementResidual etc
         self.globalResidualDummy = None
         compKernelFlag = 0
-        self.adr = cTADR_base(self.nSpace_global,
+        self.adr = cTADRI_base(self.nSpace_global,
                              self.nQuadraturePoints_element,
                              self.u[0].femSpace.elementMaps.localFunctionSpace.dim,
                              self.u[0].femSpace.referenceFiniteElement.localFunctionSpace.dim,
@@ -941,7 +941,7 @@ class LevelModel(OneLevelTransport):
         # Stuff added by mql.
         # Some ASSERTS to restrict the combination of the methods
         if self.coefficients.STABILIZATION_TYPE > 1:
-            assert self.timeIntegration.isSSP == True, "If STABILIZATION_TYPE>1, use RKEV timeIntegration within TADR model"
+            assert self.timeIntegration.isSSP == True, "If STABILIZATION_TYPE>1, use RKEV timeIntegration within TADRI model"
             cond = 'levelNonlinearSolver' in dir(options) and (options.levelNonlinearSolver ==
                                                                ExplicitLumpedMassMatrix or options.levelNonlinearSolver == ExplicitConsistentMassMatrixForVOF)
             assert cond, "If STABILIZATION_TYPE>1, use levelNonlinearSolver=ExplicitLumpedMassMatrix or ExplicitConsistentMassMatrixForVOF"
