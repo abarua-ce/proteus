@@ -471,8 +471,11 @@ inline
       xt::pyarray<int>& csrColumnOffsets_eb_CellLoops = args.array<int>("csrColumnOffsets_eb_CellLoops");
       xt::pyarray<double>& ML = args.array<double>("ML");
       int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
-      STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
-      ENTROPY ENTROPY_TYPE{args.scalar<int>("ENTROPY_TYPE")};
+      STABILIZATION STABILIZATION_TYPE = static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"));
+      ENTROPY ENTROPY_TYPE = static_cast<ENTROPY>(args.scalar<int>("ENTROPY_TYPE"));    
+      
+      //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+      //ENTROPY ENTROPY_TYPE{args.scalar<int>("ENTROPY_TYPE")};
       xt::pyarray<double>& uLow = args.array<double>("uLow");
       xt::pyarray<double>& dLow = args.array<double>("dLow");
       xt::pyarray<double>& dt_times_dH_minus_dL = args.array<double>("dt_times_dH_minus_dL");
@@ -1482,7 +1485,10 @@ for (int i = 0; i < numDOFs; i++)
       xt::pyarray<int>& isFluxBoundary_u = args.array<int>("isFluxBoundary_u");
       xt::pyarray<double>& ebqe_bc_flux_u_ext = args.array<double>("ebqe_bc_flux_u_ext");
       xt::pyarray<int>& csrColumnOffsets_eb_u_u = args.array<int>("csrColumnOffsets_eb_u_u");
-      STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+      //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+      STABILIZATION STABILIZATION_TYPE = static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"));
+      //ENTROPY ENTROPY_TYPE = static_cast<ENTROPY>(args.scalar<int>("ENTROPY_TYPE"));    
+      
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
       xt::pyarray<double>& q_a = args.array<double>("q_a");
       xt::pyarray<double>& ebqe_a = args.array<double>("ebq_a");
@@ -1933,7 +1939,8 @@ for (int i = 0; i < numDOFs; i++)
     xt::pyarray<double>& min_u_bc = args.array<double>("min_u_bc");
     xt::pyarray<double>& max_u_bc = args.array<double>("max_u_bc");
     int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
-    STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+    //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+    STABILIZATION STABILIZATION_TYPE = static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"));
     Rpos.resize(numDOFs,0.0);
     Rneg.resize(numDOFs,0.0);
     FluxCorrectionMatrix = xt::zeros<double>({NNZ});

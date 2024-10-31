@@ -15,6 +15,11 @@ namespace py = pybind11;
 #define GLOBAL_FCT 0
 namespace proteus
 {
+	enum class STABILIZATION : int { Galerkin= 0, EV_Stab=1, EntropyViscosity=2, Implicit_FCT=3};
+ 
+namespace richards
+{
+  
   // Power entropy //
   inline double ENTROPY(const double& phi, const double& phiL, const double& phiR){
     return 1./2.*std::pow(fabs(phi),2.);
@@ -30,10 +35,11 @@ namespace proteus
     return (phiL+phiR-2*phi)*((phi-phiL)*(phiR-phi)>=0 ? 1 : -1)/(fabs((phi-phiL)*(phiR-phi))+1E-14);
   }
 }
-
+}
 namespace proteus
-
 {
+namespace richards
+{  
   class Richards_base
   {
     //The base class defining the interface
@@ -196,7 +202,8 @@ namespace proteus
 				     const double a[nnz],
 				     const double da[nnz])
      {
-      double psiC,
+    double 
+	psiC,
 	pcBar,pcBar_n,
 	sBar,
 	thetaW,
@@ -205,26 +212,33 @@ namespace proteus
       m_vg = 1.0 - 1.0/n_vg;
       thetaS = thetaR + thetaSR;
       thetaW = m/rho;
-      sBar = (fmax(thetaR+1.0e-8, fmin(thetaS, thetaW)) - thetaR)/thetaSR;
-      //sBar = (thetaW - thetaR)/thetaSR;
-      pcBar_n = pow(sBar, -1.0/m_vg) - 1.0;
-      pcBar = pow(pcBar_n, 1.0/n_vg);
-      psiC = pcBar/alpha;
-      u = - psiC;
-      if (thetaW > thetaS || thetaW <= thetaR)
-	{
-	  //cek debug
-	  std::cout<<"rho "<<rho<<std::endl
-		   <<"n "<<n_vg<<std::endl
-		   <<"m "<<m_vg<<std::endl
-		   <<"thetaR "<<thetaR<<std::endl
-		   <<"theta "<<thetaW<<std::endl
-		   <<"thetaS "<<thetaS<<std::endl
-		   <<"sBar "<<sBar<<std::endl
-		   <<"pcBar_n "<<pcBar_n<<std::endl
-		   <<"pcBar "<<pcBar<<std::endl
-		   <<"psiC "<<psiC<<std::endl;
-	}
+	  if (thetaW> thetaR && thetaW < thetaS)
+	  {
+		      //sBar = (fmax(thetaR+1.0e-8, fmin(thetaS, thetaW)) - thetaR)/thetaSR;
+      	sBar = (thetaW - thetaR)/thetaSR;
+      	pcBar_n = pow(sBar, -1.0/m_vg) - 1.0;
+      	pcBar = pow(pcBar_n, 1.0/n_vg);
+      	psiC = pcBar/alpha;
+		u= -psiC;
+		//std::cout<<"inverse FCT"<< -psiC<<std::endl;
+	  }
+    //   if (thetaW > thetaS+0.001 || thetaW < thetaR-0.001)
+	// { u=u;
+	//   //cek debug
+	//   std::cout<<"rho "<<rho<<std::endl
+	// 	   <<"n "<<n_vg<<std::endl
+	// 	   <<"m "<<m_vg<<std::endl
+	// 	   <<"thetaR "<<thetaR<<std::endl
+	// 	   <<"theta "<<thetaW<<std::endl
+	// 	   <<"thetaS "<<thetaS<<std::endl
+	// 	   <<"sBar "<<sBar<<std::endl
+	// 	   <<"pcBar_n "<<pcBar_n<<std::endl
+	// 	   <<"pcBar "<<pcBar<<std::endl
+	// 	   <<"psiC "<<psiC<<std::endl;
+	// }
+	// else{
+	// 	u= -psiC;
+	// }
     }
     inline
     void calculateCFL(const double& elementDiameter,
@@ -412,44 +426,177 @@ namespace proteus
 		return anb_seepage_flux;
 	}
 
-	double computeIthLimitedFluxCorrection(
-    int i,
-    const xt::pyarray<int>& csrRowIndeces_DofLoops,
-    const xt::pyarray<int>& csrColumnOffsets_DofLoops,
-    const xt::pyarray<double>& uLow,
-    const xt::pyarray<double>& dt_times_fH_minus_fL,
-    double dt,
-    double mi
-) {
+// 	double computeIthLimitedFluxCorrection(
+//     int i,
+//     const xt::pyarray<int>& csrRowIndeces_DofLoops,
+//     const xt::pyarray<int>& csrColumnOffsets_DofLoops,
+//     const xt::pyarray<double>& uLow,
+//     const xt::pyarray<double>& dt_times_fH_minus_fL,
+//     double dt,
+//     double mi
+// ) {
+//     double Pposi = 0.0, Pnegi = 0.0;
+//     double mini = 0.0, maxi = 1.0;
+//     int ij = csrRowIndeces_DofLoops(i); // assuming using xtensor array
+
+//     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
+//         int j = csrColumnOffsets_DofLoops(offset);
+//         // Compute P vectors
+//         Pposi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) > 0 ? 1.0 : 0.0);
+//         Pnegi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) < 0 ? 1.0 : 0.0);
+//     }
+
+//     double Qposi = mi * (maxi - uLow(i));
+//     double Qnegi = mi * (mini - uLow(i));
+//     double Rposi = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
+//     double Rnegi = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+
+//     double ith_limited_flux_correction = 0.0;
+//     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
+//         int j = csrColumnOffsets_DofLoops(offset);
+//         double Lij = dt_times_fH_minus_fL(offset) > 0 ? std::fmin(Rposi, uLow(j)) : std::fmin(Rnegi, uLow(j));
+//         ith_limited_flux_correction += Lij * dt_times_fH_minus_fL(offset);
+//     }
+
+//     if (std::isnan(ith_limited_flux_correction)) {
+//         ith_limited_flux_correction = 0.0;
+//     }
+
+//     return ith_limited_flux_correction;
+// }
+double computeIthLimitedFluxCorrection(int i,
+										const xt::pyarray<int>& csrRowIndeces_DofLoops,
+										const xt::pyarray<int>& csrColumnOffsets_DofLoops,
+										const xt::pyarray<double>& uLow,
+										const xt::pyarray<double>& uDotLow,
+										const xt::pyarray<double>& MC,
+										const xt::pyarray<double>& dLow,
+										const xt::pyarray<double>& ML,
+										double dt) 
+{	
+    int numDOFs = uLow.size();
+	double Rpos[numDOFs], Rneg[numDOFs];
+    int ij = 0; // Initialize ij to 0 for global indexing
+
+    // Compute P and Q vectors and R values
+    //for (int i = 0; i < numDOFs; ++i) {
+    double mini = uLow(i), maxi = uLow(i);
     double Pposi = 0.0, Pnegi = 0.0;
-    double mini = 0.0, maxi = 1.0;
-    int ij = csrRowIndeces_DofLoops(i); // assuming using xtensor array
 
     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
         int j = csrColumnOffsets_DofLoops(offset);
-        // Compute P vectors
-        Pposi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) > 0 ? 1.0 : 0.0);
-        Pnegi += dt_times_fH_minus_fL(offset) * (dt_times_fH_minus_fL(offset) < 0 ? 1.0 : 0.0);
-    }
 
-    double Qposi = mi * (maxi - uLow(i));
-    double Qnegi = mi * (mini - uLow(i));
-    double Rposi = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
-    double Rnegi = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+            // Compute local bounds
+            mini = std::fmin(mini, uLow(j));
+            maxi = std::fmax(maxi, uLow(j));
 
+            // Compute fij
+            double fij = (MC(ij) * (uDotLow(i) - uDotLow(j)) / dt + dLow(ij) * (uLow(i) - uLow(j)));
+
+            // Accumulate Pposi and Pnegi
+            Pposi += fij * (fij > 0.0 ? 1.0 : 0.0);
+            Pnegi += fij * (fij < 0.0 ? 1.0 : 0.0);
+
+            // Update global index
+            ij++;
+        }
+
+        // Compute Q vectors
+        double mi = ML(i);
+        double Qposi = mi * (maxi - uLow(i))/dt;
+        double Qnegi = mi * (mini - uLow(i))/dt;
+
+        // Compute R vectors
+        Rpos[i] = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
+        Rneg[i] = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+    //}
+
+    // Compute the ith_limited_flux_correction
+    ij = 0; // Reset global index for second pass
     double ith_limited_flux_correction = 0.0;
+    double Rposi = Rpos[i];
+    double Rnegi = Rneg[i];
     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
-        int j = csrColumnOffsets_DofLoops(offset);
-        double Lij = dt_times_fH_minus_fL(offset) > 0 ? std::fmin(Rposi, uLow(j)) : std::fmin(Rnegi, uLow(j));
-        ith_limited_flux_correction += Lij * dt_times_fH_minus_fL(offset);
-    }
-
-    if (std::isnan(ith_limited_flux_correction)) {
-        ith_limited_flux_correction = 0.0;
-    }
+            int j = csrColumnOffsets_DofLoops(offset);
+            // Compute fij
+            double fij = (MC(ij) * (uDotLow(i) - uDotLow(j)) / dt + dLow(ij) * (uLow(i) - uLow(j)));
+            // Compute the limiter Lij
+            double Lij = fij > 0.0 ? std::fmin(Rposi, Rneg[j]) : std::fmin(Rnegi, Rpos[j]);
+            // Accumulate the flux correction
+            ith_limited_flux_correction += Lij * fij;
+            // Update global index
+            ij++;
+        }
 
     return ith_limited_flux_correction;
 }
+
+// double computeIthLimitedFluxCorrection(
+//     int i,
+//     const xt::pyarray<int>& csrRowIndeces_DofLoops,
+//     const xt::pyarray<int>& csrColumnOffsets_DofLoops,
+//     const xt::pyarray<double>& uLow,
+//     const xt::pyarray<double>& uDotLow,
+//     const xt::pyarray<double>& MC,
+//     const xt::pyarray<double>& dLow,
+//     double dt,
+//     double mi
+// ) {
+//     double Pposi = 0.0, Pnegi = 0.0;
+//     double mini = 0.0, maxi = 1.0;
+//     int xy = 0; // Initialize xy to 0
+
+
+//     // Loop to compute Pposi and Pnegi
+//     for (int offset = csrRowIndeces_DofLoops(x); offset < csrRowIndeces_DofLoops(x + 1); ++offset) {
+//         int y = csrColumnOffsets_DofLoops(offset);
+        
+//         // Compute fij manually
+//         double fij = (MC(xy) * (uDotLow(x) - uDotLow(y)) / dt + dLow(xy) * (uLow(x) - uLow(y)));
+        
+//         // Accumulate Pposi and Pnegi based on fij
+//         Pposi += fij * (fij > 0 ? 1.0 : 0.0);
+//         Pnegi += fij * (fij < 0 ? 1.0 : 0.0);
+        
+//         xy++; // Increment xy for the next iteration
+//     }
+
+//     // Compute Q vectors
+//     double Qposi = mi * (maxi - uLow(i));
+//     double Qnegi = mi * (mini - uLow(i));
+    
+//     // Compute R vectors
+//     double Rposi = (Pposi == 0.0) ? 1.0 : std::fmin(1.0, Qposi / Pposi);
+//     double Rnegi = (Pnegi == 0.0) ? 1.0 : std::fmin(1.0, Qnegi / Pnegi);
+
+//     double ith_limited_flux_correction = 0.0;
+//     xy = 0; // Reset xy for the second loop
+
+//     // Loop to compute the ith_limited_flux_correction
+//     for (int offset = csrRowIndeces_DofLoops(i); offset < csrRowIndeces_DofLoops(i + 1); ++offset) {
+//         int j = csrColumnOffsets_DofLoops(offset);
+        
+//         // Recompute fij manually
+//         double fij = (MC(xy) * (uDotLow(i) - uDotLow(j)) / dt + dLow(xy) * (uLow(i) - uLow(j)));
+        
+//         // Compute the limiter Lij
+//         double Lij = fij > 0 ? std::fmin(Rposi, uLow(j)) : std::fmin(Rnegi, uLow(j));
+        
+//         // Accumulate the flux correction
+//         ith_limited_flux_correction += Lij * fij;
+        
+//         xy++; // Increment xy for the next iteration
+//     }
+
+//     // Handle possible NaN values
+//     //if (std::isnan(ith_limited_flux_correction)) {
+//     //    ith_limited_flux_correction = 0.0;
+//     //}
+
+//     return ith_limited_flux_correction;
+// }
+
+
 
 
 
@@ -548,7 +695,12 @@ namespace proteus
       xt::pyarray<double>& delta_x_ij = args.array<double>("delta_x_ij");
       // PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
       int LUMPED_MASS_MATRIX  = args.scalar<int>("LUMPED_MASS_MATRIX");
-      int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+      //int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+	  //STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+	  STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+
+	  //STABILIZATION STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
       int ENTROPY_TYPE = args.scalar<int>("ENTROPY_TYPE");
       // FOR FCT
       xt::pyarray<double>& dLow = args.array<double>("dLow");
@@ -932,15 +1084,7 @@ namespace proteus
 							  						  isSeepageFace.data()[ebNE],
 							  						  dS,
 							  						  flux_ext);
-				//std::cout<<"The seepage flux is "<<anb_seepage_flux<<std::endl;
-		 	anb_seepage_flux_n.data()[0]= anb_seepage_flux;
-				
-				//anb_seepage_flux= anb_seepage_flux;
-			if (anb_seepage_flux>0)
-				{
-					std::cout<<"The seepage flux is "<<anb_seepage_flux<<std::endl;
-				}
-				
+		  anb_seepage_flux_n.data()[0]= anb_seepage_flux;				
 	      ebqe_u.data()[ebNE_kb] = u_ext;  
 	      //
 	      //update residuals
@@ -1417,6 +1561,12 @@ namespace proteus
       double FluxCorrectionMatrix[NNZ];
       double solL[numDOFs];
       double sdot[numDOFs];
+	  //xt::pyarray<double>& globalResidual = args.array<double>("globalResidual");
+      xt::pyarray<double>& thetaR = args.array<double>("thetaR");
+      xt::pyarray<double>& thetaSR = args.array<double>("thetaSR");
+	  double rho = args.scalar<double>("rho");
+	  xt::pyarray<int>& elementMaterialTypes = args.array<int>("elementMaterialTypes");	
+      
       //////////////////
       // LOOP in DOFs //
       //////////////////
@@ -1540,7 +1690,26 @@ namespace proteus
 	      //update ij
 	      ij+=1;
 	    }
-	  limited_solution.data()[i] = solL[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i];
+	  	//limited_solution.data()[i] = solL[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i];
+
+        double limited_mass = solL[i] + 1. / lumped_mass_matrix.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask[i];
+        
+		//Calculate the min and max mass bounds
+        double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
+        double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
+        
+        // Check if the limited mass is within bounds
+        if (limited_mass < mMin || limited_mass > mMax)
+        {
+            limited_solution.data()[i] = solL[i]; // Fallback to lower-order solution
+        }
+        else
+        {
+            limited_solution.data()[i] = limited_mass; // Assign the limited mass
+        }
+		
+	  //globalResidual.data()[i]+= ith_Limiter_times_FluxCorrectionMatrix;
+	  
 	}
     }
 
@@ -1596,7 +1765,8 @@ namespace proteus
 		    {
 		      int j = csrColumnOffsets_DofLoops.data()[offset];
 		      // compute Flux correction
-		      double Fluxij = FluxMatrix.data()[ij] - limitedFlux.data()[ij];	      
+		      double Fluxij = FluxMatrix.data()[ij] - limitedFlux.data()[ij];	
+			  //std::cout<<"Flux Matrix : " <<Fluxij  <<std::endl; 
 		      Pposi += Fluxij*((Fluxij > 0) ? 1. : 0.);
 		      // update ij
 		      ij+=1;
@@ -1636,7 +1806,8 @@ namespace proteus
 		    }
 		  //update limited solution
 		  double mi = ML.data()[i];
-		  solLim.data()[i] += 1.0/mi*ith_Limiter_times_FluxCorrectionMatrix;	    
+		  //globalResidual.data()[i] += ith_limited_flux_correction;
+		  //solLim.data()[i] += 1.0/mi*ith_Limiter_times_FluxCorrectionMatrix;	    
 		}
 	    }
 	}
@@ -1657,7 +1828,8 @@ namespace proteus
 	      mini = fmin(mini,soln.data()[j]);
 	      maxi = fmax(maxi,soln.data()[j]);
 	      // compute P vectors //
-	      double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      //double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      double fij = (MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j])/dt + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
 	      Pposi += fij * (fij > 0 ? 1. : 0.);
 	      Pnegi += fij * (fij < 0 ? 1. : 0.);
 	      //update ij
@@ -1683,12 +1855,15 @@ namespace proteus
 	    {
 	      int j = csrColumnOffsets_DofLoops.data()[offset];
 	      // compute flux correction
-	      double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
-	      // compute limiters
+	      //double fij = dt*(MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j]) + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      double fij = (MC.data()[ij]*(uDotLow.data()[i]-uDotLow.data()[j])/dt + dLow.data()[ij]*(uLow.data()[i]-uLow.data()[j]));
+	      
+		  // compute limiters
 	      double Lij = 1.0;
 	      Lij = fij > 0 ? fmin(Rposi,Rneg[j]) : fmin(Rnegi,Rpos[j]);
 	      // compute ith_limited_flux_correction
 	      ith_limited_flux_correction += Lij*fij;
+		  std::cout<<"Extra term :"<< ith_limited_flux_correction<< std::endl;
 	      ij+=1;
 	    }
 	  double mi = ML.data()[i];
@@ -1795,10 +1970,16 @@ namespace proteus
       xt::pyarray<double>& CTy = args.array<double>("CTy");
       xt::pyarray<double>& CTz = args.array<double>("CTz");
       xt::pyarray<double>& ML = args.array<double>("ML");
+      xt::pyarray<double>& MC = args.array<double>("MC");
+
       xt::pyarray<double>& delta_x_ij = args.array<double>("delta_x_ij");
       // PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
       int LUMPED_MASS_MATRIX  = args.scalar<int>("LUMPED_MASS_MATRIX");
-      int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+      //int STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
+	  //STABILIZATION STABILIZATION_TYPE = args.scalar<int>("STABILIZATION_TYPE");
+	  STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+
       int ENTROPY_TYPE = args.scalar<int>("ENTROPY_TYPE");
       // FOR FCT
       xt::pyarray<double>& dLow = args.array<double>("dLow");
@@ -1814,7 +1995,7 @@ namespace proteus
       xt::pyarray<double>& sn = args.array<double>("sn");
 
 	  xt::pyarray<double>& anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
-
+	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
 
 	  //double anb_seepage_flux=0.0;
 	  double & anb_seepage_flux (args.scalar<double>("anb_seepage_flux")) ;
@@ -1856,7 +2037,7 @@ namespace proteus
       for (int i=0; i<numDOFs; i++)
 	{
 	  // NODAL ENTROPY //
-	  if (STABILIZATION_TYPE==1) //EV stab
+	  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV stab
 	    {
 	      double porosity_times_solni = 1.0*u_free_dof_old[i];
 	      eta[i] = ENTROPY_TYPE == 1 ? ENTROPY(porosity_times_solni,uL,uR) : ENTROPY_LOG(porosity_times_solni,uL,uR);
@@ -2031,7 +2212,7 @@ namespace proteus
 	      //////////////////////////////////////////////
 	      // CALCULATE ENTROPY RESIDUAL AT QUAD POINT //
 	      //////////////////////////////////////////////
-	      if (STABILIZATION_TYPE==1) // EV stab
+	      if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) // EV stab
 		{
 		  for (int I=0;I<nSpace;I++)
 		    aux_entropy_residual += porosity_times_velocity[I]*grad_un[I];
@@ -2045,7 +2226,7 @@ namespace proteus
 		  // VECTOR OF ENTROPY RESIDUAL //
 		  int eN_i=eN*nDOF_test_element+i;
 		  ML2[u_l2g.data()[eN_i]] += u_test_dV[i];
-		  if (STABILIZATION_TYPE==1) // EV stab
+		  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) // EV stab
 		    {
 		      int gi = offset_u+stride_u*u_l2g.data()[eN_i]; //global i-th index
 		      double porosity_times_uni = 1.0*u_dof_old.data()[gi];
@@ -2096,7 +2277,7 @@ namespace proteus
 	      // distribute global residual for (lumped) mass matrix
 	      //globalResidual.data()[gi] += elementResidual_u[i];
 	      // distribute entropy_residual
-	      if (STABILIZATION_TYPE==1) // EV Stab
+	      if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) // EV Stab
 		global_entropy_residual[gi] += element_entropy_residual[i];
 	      // distribute transport matrices
 	      for (int j=0;j<nDOF_trial_element;j++)
@@ -2431,7 +2612,7 @@ namespace proteus
       for (int i=0; i<numDOFs; i++)
 	{
 	  double gi[nSpace], Cij[nSpace], xi[nSpace], etaMaxi, etaMini;
-	  if (STABILIZATION_TYPE==1) //EV Stabilization
+	  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV Stabilization
 	    {
 	      // For eta min and max
 	      etaMaxi = fabs(eta[i]);
@@ -2449,7 +2630,7 @@ namespace proteus
 	  for (int offset=csrRowIndeces_DofLoops.data()[i]; offset<csrRowIndeces_DofLoops.data()[i+1]; offset++)
 	    { // First loop in j (sparsity pattern)
 	      int j = csrColumnOffsets_DofLoops.data()[offset];
-	      if (STABILIZATION_TYPE==1) //EV Stabilization
+	      if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV Stabilization
 		{
 		  // COMPUTE ETA MIN AND ETA MAX //
 		  etaMaxi = fmax(etaMaxi,fabs(eta[j]));
@@ -2488,7 +2669,7 @@ namespace proteus
 	    std::cout<<"ML "<<ML.data()[i]<<'\t'<<ML2[i]<<std::endl;
 	  for (int I=0; I < nSpace; I++)
 	    gi[I] /= ML.data()[i];
-	  if (STABILIZATION_TYPE==1) //EV Stab
+	  if (STABILIZATION_TYPE==STABILIZATION::EV_Stab) //EV Stab
 	    {
 	      // Normalizae entropy residual
 	      global_entropy_residual[i] *= etaMini == etaMaxi ? 0. : 2*cE/(etaMaxi-etaMini);
@@ -2540,6 +2721,7 @@ namespace proteus
       ij=0;
       for (int i=0; i<numDOFs; i++)
 	{
+		double sum_abs_dt_times_fH_minus_fL = 0.0;
 	  // NOTE: Transport matrices already have the porosity considered. ---> Dissipation matrices as well.
 	  double soli = u_free_dof[i]; // solution at time tn for the ith DOF
 	  double solni = u_free_dof_old[i]; // solution at time tn for the ith DOF
@@ -2696,6 +2878,7 @@ namespace proteus
 		  fA -= fL;
 		}
 	      dt_times_fH_minus_fL.data()[ij] = dt*fA;
+		  //sum_abs_dt_times_fH_minus_fL += std::abs(dt_times_fH_minus_fL.data()[ij]);
 	      ij+=1;
 	    }
 	  double mi = ML.data()[i];
@@ -2749,22 +2932,28 @@ namespace proteus
 			       dKrn);
 	  sn.data()[i] = mn;
 	  sLow.data()[i] = m;
+	  if (STABILIZATION_TYPE == STABILIZATION::Implicit_FCT)
+	  {
+		double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
+																		 csrRowIndeces_DofLoops,
+																		 csrColumnOffsets_DofLoops,
+																		 uLow,
+																		 uDotLow,    // Passing uDotLow instead of dt_times_fH_minus_fL
+																		 MC,         // Passing MC array
+																		 dLow,       // Passing dLow array
+																		 ML,
+																		 dt);
 
+		globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term + ith_limited_flux_correction)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	  }
 
-	  double ith_limited_flux_correction = computeIthLimitedFluxCorrection(i,
-	                                                                      csrRowIndeces_DofLoops, 
-																		  csrColumnOffsets_DofLoops, 
-																		  uLow, 
-																		  dt_times_fH_minus_fL, 
-																		  dt, 
-																		  mi);
-	  
+	  else
+	  {
+		globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	  }
 
-	  //sLow.data()[i] = mn + dt*uDotLow.data()[i]*bc_mask.data()[i];//cek should introduce mn,mnp1 or somethign clearer
-	  globalResidual.data()[i] = (mi*(m - mn)/dt - ith_flux_term+ ith_limited_flux_correction)*bc_mask.data()[i];// + ith_limited_flux_correction ;//cek should introduce mn,mnp1 or somethign clearer
+	
 	  globalJacobian.data()[ii] += bc_mask.data()[i]*(mi*dm/dt + J_ii) + (1.0-bc_mask.data()[i]);
-	  //globalJacobian[ii] = bc_mask.data()[i]*mi*dm/dt + (1.0-bc_mask.data()[i]);
-	//}
 
 	  if (false)
 	    {
@@ -2772,7 +2961,8 @@ namespace proteus
 	  //std::cout<<"dt*divergence "<<dt*uDotLow.data()[i]<<std::endl;
 	  //std::cout<<"mass density old "<<m<<std::endl;
 	  m = sLow.data()[i];
-	  //std::cout<<"mass density "<<m<<std::endl;
+
+	  std::cout<<"mass density "<<m<<std::endl;
 	  double mMin = rho*thetaR.data()[elementMaterialTypes.data()[0]];
 	  double mMax = rho*(thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
 	  if (m < mMin || m  > mMax)
@@ -2882,22 +3072,28 @@ namespace proteus
       xt::pyarray<double>& alpha = args.array<double>("alpha");
       xt::pyarray<double>& n = args.array<double>("n");
       xt::pyarray<double>& thetaR = args.array<double>("thetaR");
-      xt::pyarray<double>& thetaSR = args.array<double>("thetaSR");
+	  xt::pyarray<double>& thetaSR = args.array<double>("thetaSR");
       xt::pyarray<double>& KWs = args.array<double>("KWs");
-      xt::pyarray<double>& globalResidual = args.array<double>("globalResidual");
-      xt::pyarray<double>& u_dof = args.array<double>("u_dof");
+      //xt::pyarray<double>& globalResidual = args.array<double>("globalResidual");
+      //xt::pyarray<double>& u_dof = args.array<double>("u_dof");
       xt::pyarray<int>& elementMaterialTypes = args.array<int>("elementMaterialTypes");	
       int numDOFs = args.scalar<int>("numDOFs");
+	  xt::pyarray<double>& uLow = args.array<double>("uLow");
+	  xt::pyarray<double>& limited_solution = args.array<double>("limited_solution");
+
       for (int i=0; i<numDOFs; i++)
 	{
 	  double dm,f[nSpace],df[nSpace],a[nnz],da[nnz];
 	  double mMin = rho*thetaR.data()[elementMaterialTypes.data()[0]];
 	  double mMax = rho*(thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
-	  if (u_dof.data()[i] < mMin || u_dof.data()[i]  > mMax)
+	//   if (u_dof.data()[i] < mMin-0.001 || u_dof.data()[i]  > mMax+0.001)
+	//     {
+	//       std::cout<<"mass out of bounds "<<mMin<<'\t'<<u_dof.data()[i]<<'\t'<<mMax<<std::endl;
+	//     }
+	  if (limited_solution.data()[i] < mMin-0.001 || limited_solution.data()[i]  > mMax+0.001)
 	    {
-	      std::cout<<"mass out of bounds "<<mMin<<'\t'<<u_dof.data()[i]<<'\t'<<mMax<<std::endl;
+	      std::cout<<"mass out of bounds "<<mMin<<'\t'<<limited_solution.data()[i]<<'\t'<<mMax<<std::endl;
 	    }
-
 	  evaluateInverseCoefficients(a_rowptr.data(),
 				      a_colind.data(),
 				      rho,
@@ -2907,9 +3103,10 @@ namespace proteus
 				      n.data()[elementMaterialTypes.data()[0]],
 				      thetaR.data()[elementMaterialTypes.data()[0]],
 				      thetaSR.data()[elementMaterialTypes.data()[0]],
-				      &KWs.data()[elementMaterialTypes.data()[0]*nnz],			      
-				      globalResidual.data()[i],//output
-				      u_dof.data()[i],//input
+				      &KWs.data()[elementMaterialTypes.data()[0]*nnz],	
+					  uLow.data()[i],	      
+				      //globalResidual.data()[i],//output
+				      limited_solution.data()[i],//input
 				      dm,
 				      f,
 				      df,
@@ -3202,8 +3399,6 @@ namespace proteus
     }//computeMassMatrix
   };//Richards
 
-
-
   inline Richards_base* newRichards(int nSpaceIn,
 				    int nQuadraturePoints_elementIn,
 				    int nDOF_mesh_trial_elementIn,
@@ -3240,5 +3435,6 @@ namespace proteus
 											   CompKernelFlag);
       }
   }
-};//proteus
+}//richards
+}//proteus
 #endif
