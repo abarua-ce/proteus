@@ -142,17 +142,17 @@ namespace richards
 	  vBar2 = vBar*vBar;
 	  DvBar_DpsiC = -alpha*(n_vg-1.0)*pcBar_nM2*sBar - pcBar_nM1*DsBar_DpsiC;
 
-	  thetaW = thetaSR*sBar + thetaR;
-	  DthetaW_DpsiC = thetaSR * DsBar_DpsiC;
+	  thetaW = thetaS;//thetaSR*sBar + thetaR;
+	  DthetaW_DpsiC = 0.0;// thetaSR * DsBar_DpsiC;
 
 	  sqrt_sBar = sqrt(sBar);
 	  sqrt_sBarStar = sqrt_sBar;
 	  if (sqrt_sBar < 1.0e-8)
 	    sqrt_sBarStar = 1.0e-8;
-	  KWr= sqrt_sBar*vBar2;
-	  DKWr_DpsiC= ((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
-		       +
-		       2.0*sqrt_sBar*vBar*DvBar_DpsiC);
+	  KWr= 1.0;//sqrt_sBar*vBar2;
+	  DKWr_DpsiC= 0.0;// ((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
+		       //+
+		       //2.0*sqrt_sBar*vBar*DvBar_DpsiC);
 	}
       else
 	{
@@ -173,9 +173,9 @@ namespace richards
 	  for (int ii=rowptr[I]; ii < rowptr[I+1]; ii++)
 	    {
 	      f[I]  += rho2*KWr*KWs[ii]*gravity[colind[ii]];
-	      df[I] += -rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]];
+	      df[I] += 0.0;//-rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]];
 	      a[ii]  = rho*KWr*KWs[ii];
-	      da[ii] = -rho*DKWr_DpsiC*KWs[ii];
+	      da[ii] = 0.0;//-rho*DKWr_DpsiC*KWs[ii];
 	      as[ii]  = rho*KWs[ii];
 	      kr = KWr;
 	      dkr=0.0;//mod picard DKWr_DpsiC;
