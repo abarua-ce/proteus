@@ -216,14 +216,6 @@ EXTENSIONS_TO_BUILD = [
         extra_compile_args=PROTEUS_OPT+['-std=c++14'],
     ),
     Extension(
-        'richards_sat.cRichards_sat',
-        sources=['proteus/richards_sat/cRichards_sat.cpp'],
-        depends=['proteus/richards_sat/Richards_sat.h', 'proteus/mprans/ArgumentsDict.h' ,'proteus/ModelFactory.h', 'proteus/CompKernel.h'],
-        include_dirs=get_xtensor_include(),
-        language='c++',
-        extra_compile_args=PROTEUS_OPT+['-std=c++14'],
-    ),
-    Extension(
         'elastoplastic.cElastoPlastic',
         sources=['proteus/elastoplastic/cElastoPlastic.cpp'],
         define_macros=[('PROTEUS_LAPACK_H',
@@ -739,13 +731,6 @@ EXTENSIONS_TO_BUILD = [
         extra_compile_args=PROTEUS_OPT+['-std=c++14'],
         language='c++'),
     Extension(
-        'mprans.cTADRI',
-        sources=['proteus/mprans/TADRI.cpp'],
-        depends=["proteus/mprans/TADRI.h", "proteus/mprans/ArgumentsDict.h", "proteus/ModelFactory.h","proteus/CompKernel.h"],
-        include_dirs=get_xtensor_include(),
-        extra_compile_args=PROTEUS_OPT+['-std=c++14'],
-        language='c++'),
-    Extension(
         'mprans.cMoveMesh',
         ['proteus/mprans/MoveMesh.cpp'],
         depends=["proteus/mprans/MoveMesh.h", "proteus/mprans/ArgumentsDict.h"] + ["proteus/ModelFactory.h","proteus/CompKernel.h"],
@@ -837,7 +822,6 @@ def setup_given_extensions(extensions):
                       'proteus.fenton',
                       'proteus.mprans',
                       'proteus.richards',
-                      'proteus.richards_sat',
                       'proteus.elastoplastic',
                       'proteus.mbd',
                       'proteus.test_utils',
