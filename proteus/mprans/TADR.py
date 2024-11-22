@@ -81,15 +81,15 @@ class NumericalFlux(Advection_DiagonalUpwind_Diffusion_IIPG_exterior):
                  vt,
                  getPointwiseBoundaryConditions,
                  getAdvectiveFluxBoundaryConditions,
-                 getDiffusiveFluxBoundaryConditions,
-                 getPeriodicBoundaryConditions=None):
+                 getDiffusiveFluxBoundaryConditions):#,
+                 #getPeriodicBoundaryConditions=None):
         Advection_DiagonalUpwind_Diffusion_IIPG_exterior.__init__(
             self,
             vt,
             getPointwiseBoundaryConditions,
             getAdvectiveFluxBoundaryConditions,
-            getDiffusiveFluxBoundaryConditions,
-            getPeriodicBoundaryConditions)
+            getDiffusiveFluxBoundaryConditions)#,
+            #getPeriodicBoundaryConditions)#
   
 class RKEV(TimeIntegration.SSP):
     """
