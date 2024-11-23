@@ -396,8 +396,6 @@ class Coefficients(TC_base):
         sparseDiffusionTensors = {(0,0):(np.arange(self.nd+1,dtype='i'),
                                          np.arange(self.nd,dtype='i'))}
 
-        
-
         TC_base.__init__(self,
                          nc,
                          mass,
@@ -451,18 +449,36 @@ class Coefficients(TC_base):
         else:
             self.flowCoefficients = None
         
+            # Attach velocity field as a function if provided
+        # if hasattr(self, 'velocityFieldAsFunction') and self.velocityFieldAsFunction:
+        #     self.model.hasVelocityFieldAsFunction = True
+        #     self.model.velocityFieldAsFunction = self.velocityFieldAsFunction
+        # else:
+        #     self.model.hasVelocityFieldAsFunction = False
+
+        
 
     def preStep(self, t, firstStep=False):
+        # Debugging to confirm the type and attributes of self.model
+        print(f"preStep called with model: {type(self.model)}")
+        if not hasattr(self.model, 'hasVelocityFieldAsFunction'):
+            print("ERROR: 'hasVelocityFieldAsFunction' not found in LevelModel.")
+        else:
+            print(f"'hasVelocityFieldAsFunction' exists: {self.model.hasVelocityFieldAsFunction}")
+
         # SAVE OLD SOLUTION #
         self.model.u_dof_old[:] = self.model.u[0].dof
 
         # Restart flags for stages of taylor galerkin
         self.model.stage = 1
         self.model.auxTaylorGalerkinFlag = 1
-        
         # COMPUTE NEW VELOCITY (if given by user) #
-        if self.model.hasVelocityFieldAsFunction:
+        if getattr(self.model, 'hasVelocityFieldAsFunction', False):  # Safe check for the attribute
             self.model.updateVelocityFieldAsFunction()
+        
+        # # COMPUTE NEW VELOCITY (if given by user) #
+        # if self.model.hasVelocityFieldAsFunction:
+        #     self.model.updateVelocityFieldAsFunction()
 
         if self.checkMass:
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
@@ -588,6 +604,9 @@ class LevelModel(OneLevelTransport):
         self.diffusiveFluxBoundaryConditionsSetterDictDict = diffusiveFluxBoundaryConditionsSetterDictDict
         # determine whether  the stabilization term is nonlinear
         self.stabilizationIsNonlinear = False
+        #anb_add
+        self.hasVelocityFieldAsFunction = False
+
         # cek come back
         if self.stabilization is not None:
             for ci in range(self.nc):
@@ -969,6 +988,14 @@ class LevelModel(OneLevelTransport):
         if ('velocityFieldAsFunction') in dir(options):
             self.velocityFieldAsFunction = options.velocityFieldAsFunction
             self.hasVelocityFieldAsFunction = True
+        elif hasattr(coefficients, 'velocityFieldAsFunction'):
+            self.velocityFieldAsFunction = coefficients.velocityFieldAsFunction
+            self.hasVelocityFieldAsFunction = True
+        else:
+            self.hasVelocityFieldAsFunction = False
+        
+        # Add the debug print here
+        print(f"VelocityFieldAsFunction in LevelModel: {getattr(self, 'velocityFieldAsFunction', None)}")
 
         # For edge based methods
         self.ML = None  # lumped mass matrix
