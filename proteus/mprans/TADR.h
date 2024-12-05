@@ -164,7 +164,7 @@ inline
 	}
       else
 	{
-	  std::cerr << "warning, diffusion term with no boundary condition set, setting diffusive flux to 0.0" << std::endl;
+	  //std::cerr << "warning, diffusion term with no boundary condition set, setting diffusive flux to 0.0" << std::endl;
 	  flux = 0.0;
 	}
     }
@@ -307,7 +307,7 @@ inline
             }
           else
             {
-              std::cout<<"warning: TADR open boundary with no external trace, setting to zero for inflow"<<std::endl;
+              //std::cout<<"warning: TADR open boundary with no external trace, setting to zero for inflow"<<std::endl;
               flux = 0.0;
             }
 

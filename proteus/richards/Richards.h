@@ -418,7 +418,6 @@ namespace richards
 		if (isSeepageFace)
 		{
 			anb_seepage_flux += flux_ext * dS;
-			//std::cout<<"Seepage Flux by Arnob Barua is "<<anb_seepage_flux<<std::endl;		
 		}
 		//else{
 			//std::cout<<"No Seepage boundary "<<std::endl;
@@ -1995,6 +1994,7 @@ double computeIthLimitedFluxCorrection(int i,
       xt::pyarray<double>& sn = args.array<double>("sn");
 
 	  xt::pyarray<double>& anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
+	  xt::pyarray<double>& q_grad_psi = args.array<double>("q_grad_psi");
 	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
 
 	  //double anb_seepage_flux=0.0;
@@ -2144,6 +2144,11 @@ double computeIthLimitedFluxCorrection(int i,
 		      u_grad_test_dV[j*nSpace+I] = u_grad_trial[j*nSpace+I]*dV;//cek warning won't work for Petrov-Galerkin
 		    }
 		}
+		// Store the computed gradient for the current quadrature point
+		// for (int I = 0; I < nSpace; I++)
+		// {
+    	// q_grad_u[eN_k_nSpace + I] = grad_u[I];  // Store grad_u for this quadrature point
+		// }
                 
 	      //
 	      //calculate pde coefficients at quadrature points
@@ -2725,6 +2730,7 @@ double computeIthLimitedFluxCorrection(int i,
 	  // NOTE: Transport matrices already have the porosity considered. ---> Dissipation matrices as well.
 	  double soli = u_free_dof[i]; // solution at time tn for the ith DOF
 	  double solni = u_free_dof_old[i]; // solution at time tn for the ith DOF
+
 	  for (int I=0;I<nSpace;I++)
 	    {
 	      soli -= rho*gravity.data()[I]*mesh_dof.data()[i*3+I];
@@ -2738,6 +2744,9 @@ double computeIthLimitedFluxCorrection(int i,
 	  double dLii = 0.;
 	  double m,dm,f[nSpace],df[nSpace],a[nnz],da[nnz],as[nnz];
 	  double mn,dmn,fn[nSpace],dfn[nSpace],an[nnz],dan[nnz],asn[nnz];
+
+	  double grad_psi_k[nSpace] = {0.0}; // Initialize grad_psi for this DOF
+	  double K_grad_psi_k[nSpace] = {0.0}; // Initialize K * grad_psi for this DOF
 
 	  // loop over the sparsity pattern of the i-th DOF
 	  double Kr, dKr, Krn, dKrn;
@@ -2755,8 +2764,15 @@ double computeIthLimitedFluxCorrection(int i,
 		  solj -= rho*gravity.data()[I]*mesh_dof.data()[j*3+I];
 		  solnj -= rho*gravity.data()[I]*mesh_dof.data()[j*3+I];
 		}
+		        // Compute grad_psi contribution
+		        for (int I = 0; I < nSpace; I++)
+        {
+            grad_psi_k[I] += (solj - soli) * delta_x_ij.data()[offset * nSpace + I];
+        }
+		  
 	      double porosityj = 1.0;
 	      double dLowij, dLij, dEVij, dHij, fH,fL,fA;
+		  
 	      fH = -Theta*TransportMatrixConsistent[ij]*(solj-soli);
 	      ith_consistent_flux_term += fH;
 	      fA = fH;
@@ -2881,6 +2897,22 @@ double computeIthLimitedFluxCorrection(int i,
 		  //sum_abs_dt_times_fH_minus_fL += std::abs(dt_times_fH_minus_fL.data()[ij]);
 	      ij+=1;
 	    }
+		    // Normalize grad_psi by lumped mass (if required)
+    for (int I = 0; I < nSpace; I++)
+    {
+        grad_psi_k[I] /= ML.data()[i];
+    }
+	// // // Multiply grad_psi by K
+	// for (int I = 0; I < nSpace; I++) {
+    // for (int J = 0; J < nSpace; J++) {
+    //     K_grad_psi_k[I] += KWs.data()[elementMaterialTypes[0] * nSpace * nSpace + I * nSpace + J] * grad_psi_k[J];
+    // }
+	//}
+	    // Store grad_psi into the desired data structure (e.g., q_grad_psi)
+// Store K * grad_psi into q_grad_psi
+	for (int I = 0; I < nSpace; I++) {
+    q_grad_psi.data()[i * nSpace + I] = grad_psi_k[I];
+	}
 	  double mi = ML.data()[i];
 	  // compute edge_based_cfl
 	  //edge_based_cfl[i] = 2.*fabs(dLii)/mi;

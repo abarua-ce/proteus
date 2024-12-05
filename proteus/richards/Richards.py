@@ -402,6 +402,13 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                                                                c[('a',0,0)],
                                                                c[('da',0,0,0)],
                                                                vol_frac)
+         # Log grad(u) for debugging
+        if ('grad(u)', 0) in c:
+            logEvent(f"Richards grad(u): mean={c[('grad(u)', 0)].mean()}, min={c[('grad(u)', 0)].min()}, max={c[('grad(u)', 0)].max()}")
+        else:
+            logEvent("Warning: grad(u) is not available in Richards coefficients.")
+        
+        # Add logging for grad(u)
         # print "Picard---------------------------------------------------------------"
         # c[('df',0,0)][:] = 0.0
         # c[('da',0,0,0)][:] = 0.0
@@ -668,6 +675,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.ebqe['x'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,3),'d')
         self.q[('u',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element),'d')
         self.q[('grad(u)',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
+        self.q[('grad(u_v)',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
         self.q['velocity'] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
         self.q[('m',0)] = self.q[('u',0)].copy()
         self.q[('mt',0)] = self.q[('u',0)].copy()
@@ -1378,6 +1386,12 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         
 ######################################################################################        
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
+        argsDict["q_grad_psi"] = self.q[('grad(u_v)', 0)]
+        
+        #argsDict["q_grad_psi"] = self.q[('velocity', 0)]
+        
+        
+
         #print(anb_seepage_flux)
         #argsDict["anb_seepage_flux_n"] = self.coefficients.anb_seepage_flux_n
         #if np.sum(anb_seepage_flux_n)>0:

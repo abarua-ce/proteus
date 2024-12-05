@@ -414,6 +414,48 @@ class Coefficients(TC_base):
     def initializeMesh(self, mesh):
         self.eps = self.epsFact * mesh.h
         
+    # def attachModels(self, modelList):
+    #     # self
+    #     self.model = modelList[self.modelIndex]
+    #     # redistanced level set
+    #     if self.RD_modelIndex is not None:
+    #         self.rdModel = modelList[self.RD_modelIndex]
+    #     # level set
+    #     if self.LS_modelIndex is not None:
+    #         self.lsModel = modelList[self.LS_modelIndex]
+    #         self.q_phi = modelList[self.LS_modelIndex].q[('u', 0)]
+    #         self.ebqe_phi = modelList[self.LS_modelIndex].ebqe[('u', 0)]
+    #         if ('u', 0) in modelList[self.LS_modelIndex].ebq:
+    #             self.ebq_phi = modelList[self.LS_modelIndex].ebq[('u', 0)]
+    #     else:
+    #         self.ebqe_phi = np.zeros(self.model.ebqe[('u', 0)].shape, 'd') # cek hack, we don't need this
+    #     # flow model
+    #     if self.V_model is not None:
+    #         if ('velocity', 0) in modelList[self.V_model].q:
+    #             self.q_v = modelList[self.V_model].q[('velocity', 0)]
+    #             self.ebqe_v = modelList[self.V_model].ebqe[('velocity', 0)]
+    #         else:
+    #             self.q_v = modelList[self.V_model].q[('f', 0)]
+    #             self.ebqe_v = modelList[self.V_model].ebqe[('f', 0)]
+    #         if ('velocity', 0) in modelList[self.V_model].ebq:
+    #             self.ebq_v = modelList[self.V_model].ebq[('velocity', 0)]
+    #         else:
+    #             if ('f', 0) in modelList[self.V_model].ebq:
+    #                 self.ebq_v = modelList[self.V_model].ebq[('f', 0)]
+    #     else:
+    #         self.q_v = np.ones(self.model.q[('u',0)].shape+(self.model.nSpace_global,),'d')
+    #         self.ebqe_v = np.ones(self.model.ebqe[('u',0)].shape+(self.model.nSpace_global,),'d')
+    #     # VRANS
+    #     if self.V_model is not None:
+    #         self.flowCoefficients = modelList[self.V_model].coefficients
+    #     else:
+    #         self.flowCoefficients = None
+    #     # Log velocity fields
+    #     logEvent(f"Velocity field (q_v): mean={np.mean(self.q_v)}, min={np.min(self.q_v)}, max={np.max(self.q_v)}")
+    #     logEvent(f"Boundary velocity (ebqe_v): mean={np.mean(self.ebqe_v)}, min={np.min(self.ebqe_v)}, max={np.max(self.ebqe_v)}")
+    #     if self.ebq_v is not None:
+    #         logEvent(f"Edge velocity (ebq_v): mean={np.mean(self.ebq_v)}, min={np.min(self.ebq_v)}, max={np.max(self.ebq_v)}")
+
     def attachModels(self, modelList):
         # self
         self.model = modelList[self.modelIndex]
@@ -431,9 +473,9 @@ class Coefficients(TC_base):
             self.ebqe_phi = np.zeros(self.model.ebqe[('u', 0)].shape, 'd') # cek hack, we don't need this
         # flow model
         if self.V_model is not None:
-            if ('velocity', 0) in modelList[self.V_model].q:
-                self.q_v = modelList[self.V_model].q[('velocity', 0)]
-                self.ebqe_v = modelList[self.V_model].ebqe[('velocity', 0)]
+            if ('grad(u)', 0) in modelList[self.V_model].q:
+                self.q_v = modelList[self.V_model].q[('grad(u)', 0)]
+                self.ebqe_v = modelList[self.V_model].ebqe[('grad(u)', 0)]
             else:
                 self.q_v = modelList[self.V_model].q[('f', 0)]
                 self.ebqe_v = modelList[self.V_model].ebqe[('f', 0)]
@@ -450,8 +492,13 @@ class Coefficients(TC_base):
             self.flowCoefficients = modelList[self.V_model].coefficients
         else:
             self.flowCoefficients = None
-        
+        # Log velocity fields
+        logEvent(f"Velocity field (q_v): mean={np.mean(self.q_v)}, min={np.min(self.q_v)}, max={np.max(self.q_v)}")
+        logEvent(f"Boundary velocity (ebqe_v): mean={np.mean(self.ebqe_v)}, min={np.min(self.ebqe_v)}, max={np.max(self.ebqe_v)}")
+        if self.ebq_v is not None:
+            logEvent(f"Edge velocity (ebq_v): mean={np.mean(self.ebq_v)}, min={np.min(self.ebq_v)}, max={np.max(self.ebq_v)}")
 
+        
     def preStep(self, t, firstStep=False):
         # SAVE OLD SOLUTION #
         self.model.u_dof_old[:] = self.model.u[0].dof
@@ -459,11 +506,29 @@ class Coefficients(TC_base):
         # Restart flags for stages of taylor galerkin
         self.model.stage = 1
         self.model.auxTaylorGalerkinFlag = 1
+        # Skip velocity field as a function check
+        if hasattr(self.model, "updateVelocityFieldAsFunction"):
+            self.model.updateVelocityFieldAsFunction()
         
         # COMPUTE NEW VELOCITY (if given by user) #
-        if self.model.hasVelocityFieldAsFunction:
-            self.model.updateVelocityFieldAsFunction()
+#        if self.model.hasVelocityFieldAsFunction:
+#            self.model.updateVelocityFieldAsFunction()
+         # Explicitly update velocity if grad(u) is available
+        if ('grad(u_v)', 0) in self.model.q:
+            self.model.q[('velocity', 0)] = np.copy(self.model.q[('grad(u_v)', 0)])
+            logEvent(f"Velocity updated in preStep: mean={self.model.q[('grad(u_v)', 0)].mean()}, "
+                 f"min={self.model.q[('grad(u_v)', 0)].min()}, max={self.model.q[('grad(u_v)', 0)].max()}")
+            if not np.any(self.model.q[('grad(u_v)', 0)]):
+                logEvent("Warning: grad(u_v) is zero, velocity will also be zero!")
 
+         # Log coefficients velocity fields
+        logEvent(f"Coefficients velocity field (q_v): "
+                 f"mean={np.mean(self.q_v)}, min={np.min(self.q_v)}, max={np.max(self.q_v)}")
+        logEvent(f"Coefficients boundary velocity field (ebqe_v): "
+                 f"mean={np.mean(self.ebqe_v)}, min={np.min(self.ebqe_v)}, max={np.max(self.ebqe_v)}")
+        #if self.ebq_v is not None:
+        #    logEvent(f"Coefficients edge velocity field (ebq_v): "
+        #             f"mean={np.mean(self.ebq_v)}, min={np.min(self.ebq_v)}, max={np.max(self.ebq_v)}")
         if self.checkMass:
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
                                                     self.model.q[('m', 0)],
@@ -500,6 +565,8 @@ class Coefficients(TC_base):
             v = None
             phi = None
         if v is not None:
+            if not np.any(v):
+                logEvent("Warning: Velocity (v) is zero in evaluate!")
             c[('m',0)] = c[('u',0)]
             c[('dm',0,0)] = np.ones_like(c[('u',0)])
             c[('f',0)][:] = v*c[('u',0)]
