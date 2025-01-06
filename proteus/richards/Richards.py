@@ -1386,7 +1386,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         
 ######################################################################################        
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
-        argsDict["q_grad_psi"] = self.q[('grad(u_v)', 0)]
+        argsDict["q_velocity"] = self.q[('grad(u_v)', 0)]
         
         #argsDict["q_grad_psi"] = self.q[('velocity', 0)]
         

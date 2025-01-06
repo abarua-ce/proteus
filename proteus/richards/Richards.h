@@ -1994,7 +1994,9 @@ double computeIthLimitedFluxCorrection(int i,
       xt::pyarray<double>& sn = args.array<double>("sn");
 
 	  xt::pyarray<double>& anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
-	  xt::pyarray<double>& q_grad_psi = args.array<double>("q_grad_psi");
+	  //xt::pyarray<double>& q_grad_psi = args.array<double>("q_grad_psi");
+	  xt::pyarray<double>& q_velocity = args.array<double>("q_velocity");
+	  
 	  //STABILIZATION STABILIZATION_TYPE{args.scalar<int>("STABILIZATION_TYPE")};
 
 	  //double anb_seepage_flux=0.0;
@@ -2134,6 +2136,7 @@ double computeIthLimitedFluxCorrection(int i,
 		  grad_u[I] = 0.0;
 		  grad_un[I] =0.0;
 		}
+
 	      for (int j=0;j<nDOF_trial_element;j++)
 		{
 		  u_test_dV[j] = u_test_ref.data()[k*nDOF_trial_element+j]*dV;
@@ -2144,6 +2147,20 @@ double computeIthLimitedFluxCorrection(int i,
 		      u_grad_test_dV[j*nSpace+I] = u_grad_trial[j*nSpace+I]*dV;//cek warning won't work for Petrov-Galerkin
 		    }
 		}
+		// Darcy velocity calculation
+        for (int I = 0; I < nSpace; I++) { velocity[I] = 0.0; }
+        for (int I = 0; I < nSpace; I++) {
+            for (int J = 0; J < nSpace; J++) {
+                velocity[I] -= KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J]
+                               * (grad_u[J] + gravity[J]);
+            }
+        }
+		for (int I = 0; I < nSpace; I++) {
+            q_velocity.data()[eN_k_nSpace + I] = velocity[I];
+        }
+
+
+
 		// Store the computed gradient for the current quadrature point
 		// for (int I = 0; I < nSpace; I++)
 		// {
@@ -2736,6 +2753,8 @@ double computeIthLimitedFluxCorrection(int i,
 	      soli -= rho*gravity.data()[I]*mesh_dof.data()[i*3+I];
 	      solni -= rho*gravity.data()[I]*mesh_dof.data()[i*3+I];
 	    }
+
+
 	  double porosityi = 1.0;
 	  double ith_dissipative_term = 0;
 	  double ith_low_order_dissipative_term = 0;
@@ -2745,13 +2764,19 @@ double computeIthLimitedFluxCorrection(int i,
 	  double m,dm,f[nSpace],df[nSpace],a[nnz],da[nnz],as[nnz];
 	  double mn,dmn,fn[nSpace],dfn[nSpace],an[nnz],dan[nnz],asn[nnz];
 
-	  double grad_psi_k[nSpace] = {0.0}; // Initialize grad_psi for this DOF
-	  double K_grad_psi_k[nSpace] = {0.0}; // Initialize K * grad_psi for this DOF
+	  //double grad_psi_k[nSpace] = {0.0}; // Initialize grad_psi for this DOF
+	  //double K_grad_psi_k[nSpace] = {0.0}; // Initialize K * grad_psi for this DOF
+	  //for (int I = 0; I < nSpace; I++) {
+    	//grad_psi_k[I] = 0.0; // Initialize gradient for each spatial direction
+    	//K_grad_psi_k[I] = 0.0; // Initialize Darcy velocity components
+		//}
+
 
 	  // loop over the sparsity pattern of the i-th DOF
 	  double Kr, dKr, Krn, dKrn;
 	  double J_ii=0.0;
 	  int ii;
+
 	  for (int offset=csrRowIndeces_DofLoops.data()[i]; offset<csrRowIndeces_DofLoops.data()[i+1]; offset++)
 	    {
 	      int j = csrColumnOffsets_DofLoops.data()[offset];
@@ -2764,11 +2789,11 @@ double computeIthLimitedFluxCorrection(int i,
 		  solj -= rho*gravity.data()[I]*mesh_dof.data()[j*3+I];
 		  solnj -= rho*gravity.data()[I]*mesh_dof.data()[j*3+I];
 		}
-		        // Compute grad_psi contribution
-		        for (int I = 0; I < nSpace; I++)
-        {
-            grad_psi_k[I] += (solj - soli) * delta_x_ij.data()[offset * nSpace + I];
-        }
+		//         // Compute grad_psi contribution
+		//         for (int I = 0; I < nSpace; I++)
+        // {
+        //     grad_psi_k[I] += (solj - soli) * delta_x_ij.data()[offset * nSpace + I];
+        // }
 		  
 	      double porosityj = 1.0;
 	      double dLowij, dLij, dEVij, dHij, fH,fL,fA;
@@ -2898,21 +2923,21 @@ double computeIthLimitedFluxCorrection(int i,
 	      ij+=1;
 	    }
 		    // Normalize grad_psi by lumped mass (if required)
-    for (int I = 0; I < nSpace; I++)
-    {
-        grad_psi_k[I] /= ML.data()[i];
-    }
+    // for (int I = 0; I < nSpace; I++)
+    // {
+    //     grad_psi_k[I] /= ML.data()[i];
+    // }
 	// // // Multiply grad_psi by K
 	// for (int I = 0; I < nSpace; I++) {
     // for (int J = 0; J < nSpace; J++) {
     //     K_grad_psi_k[I] += KWs.data()[elementMaterialTypes[0] * nSpace * nSpace + I * nSpace + J] * grad_psi_k[J];
     // }
-	//}
+	// }
 	    // Store grad_psi into the desired data structure (e.g., q_grad_psi)
 // Store K * grad_psi into q_grad_psi
-	for (int I = 0; I < nSpace; I++) {
-    q_grad_psi.data()[i * nSpace + I] = grad_psi_k[I];
-	}
+	// for (int I = 0; I < nSpace; I++) {
+    // q_grad_psi.data()[i * nSpace + I] =  grad_psi_k[I];
+	// }
 	  double mi = ML.data()[i];
 	  // compute edge_based_cfl
 	  //edge_based_cfl[i] = 2.*fabs(dLii)/mi;
