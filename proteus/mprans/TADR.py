@@ -515,7 +515,8 @@ class Coefficients(TC_base):
 #            self.model.updateVelocityFieldAsFunction()
          # Explicitly update velocity if grad(u) is available
         if ('grad(u_v)', 0) in self.model.q:
-            self.model.q[('velocity', 0)] = np.copy(self.model.q[('grad(u_v)', 0)])
+            self.model.q[('velocity', 0)] = self.model.q[('grad(u_v)', 0)]
+            #self.model.q[('velocity', 0)] = np.copy(self.model.q[('grad(u_v)', 0)])
             logEvent(f"Velocity updated in preStep: mean={self.model.q[('grad(u_v)', 0)].mean()}, "
                  f"min={self.model.q[('grad(u_v)', 0)].min()}, max={self.model.q[('grad(u_v)', 0)].max()}")
             if not np.any(self.model.q[('grad(u_v)', 0)]):
@@ -1227,20 +1228,20 @@ class LevelModel(OneLevelTransport):
             self.numericalFlux.setDirichletValues(self.ebqe)
         # flux boundary conditions
         for t, g in list(self.fluxBoundaryConditionsObjectsDict[0].advectiveFluxBoundaryConditionsDict.items()):
-            print(f"Setting advective flux bc at boundary {t[0]}, point {t[1]}")
+            #print(f"Setting advective flux bc at boundary {t[0]}, point {t[1]}")
             self.ebqe[('advectiveFlux_bc', 0)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
             self.ebqe[('advectiveFlux_bc_flag', 0)][t[0], t[1]] = 1
-            print(f"  advective flux bc value: {self.ebqe[('advectiveFlux_bc', 0)][t[0], t[1]]}")
+            #print(f"  advective flux bc value: {self.ebqe[('advectiveFlux_bc', 0)][t[0], t[1]]}")
 
 
         # Flux boundary conditions for diffusive terms
         for ck, diffusiveFluxBoundaryConditionsDict in self.fluxBoundaryConditionsObjectsDict[0].diffusiveFluxBoundaryConditionsDictDict.items():
             #self.ebqe[('diffusiveFlux_bc_flag', ck, 0)] = np.zeros(self.ebqe[('diffusiveFlux_bc', ck, 0)].shape, 'i')
             for t, g in diffusiveFluxBoundaryConditionsDict.items():
-                logEvent(f"Setting diffusive flux bc at boundary {t[0]}, point {t[1]}")
+                #logEvent(f"Setting diffusive flux bc at boundary {t[0]}, point {t[1]}")
                 self.ebqe[('diffusiveFlux_bc', ck, 0)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
                 self.ebqe[('diffusiveFlux_bc_flag', ck, 0)][t[0], t[1]] = 1
-                logEvent(f"  diffusive flux bc value: {self.ebqe[('diffusiveFlux_bc', ck, 0)][t[0], t[1]]}")
+                #logEvent(f"  diffusive flux bc value: {self.ebqe[('diffusiveFlux_bc', ck, 0)][t[0], t[1]]}")
 
 
         if self.forceStrongConditions:
