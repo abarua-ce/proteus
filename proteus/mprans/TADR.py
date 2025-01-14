@@ -267,7 +267,10 @@ class Coefficients(TC_base):
     from proteus.cfemIntegrals import copyExteriorElementBoundaryValuesFromElementBoundaryValues
     
     def __init__(self,
-                 aOfX,
+                 #aOfX,
+                 alpha_L,
+                 alpha_T,
+                 Dm,
                  LS_model=None,
                  nd=2,
                  V_model=0,
@@ -324,7 +327,10 @@ class Coefficients(TC_base):
         self.movingDomain = movingDomain
         self.forceStrongConditions = forceStrongConditions
         self.nd=nd
-        self.aOfX = aOfX
+        #self.aOfX = aOfX
+        self.alpha_L= alpha_L
+        self.alpha_T= alpha_T
+        self.Dm= Dm        
         self.diagonal_conductivity = diagonal_conductivity
 
         if self.diagonal_conductivity:
@@ -457,6 +463,8 @@ class Coefficients(TC_base):
     #         logEvent(f"Edge velocity (ebq_v): mean={np.mean(self.ebq_v)}, min={np.min(self.ebq_v)}, max={np.max(self.ebq_v)}")
 
     def attachModels(self, modelList):
+        import pdb
+        pdb.set_trace()
         # self
         self.model = modelList[self.modelIndex]
         # redistanced level set
@@ -521,12 +529,47 @@ class Coefficients(TC_base):
                  f"min={self.model.q[('grad(u_v)', 0)].min()}, max={self.model.q[('grad(u_v)', 0)].max()}")
             if not np.any(self.model.q[('grad(u_v)', 0)]):
                 logEvent("Warning: grad(u_v) is zero, velocity will also be zero!")
-
          # Log coefficients velocity fields
         logEvent(f"Coefficients velocity field (q_v): "
                  f"mean={np.mean(self.q_v)}, min={np.min(self.q_v)}, max={np.max(self.q_v)}")
         logEvent(f"Coefficients boundary velocity field (ebqe_v): "
                  f"mean={np.mean(self.ebqe_v)}, min={np.min(self.ebqe_v)}, max={np.max(self.ebqe_v)}")
+        # Compute velocity and update q_a_mod
+        nElements_global, nQuadraturePoints_element, _ = self.q_v.shape  # Extract dimensions from q_v
+
+        # Update q_a_mod (diffusion tensor) if initialized
+        if hasattr(self, 'q_a_mod') and self.q_a_mod is not None:
+            logEvent("Updating diffusion tensor q_a_mod in preStep...")
+            a_rowptr = self.sdInfo[(0, 0)][0]
+            a_colind = self.sdInfo[(0, 0)][1]
+            for eN in range(nElements_global):  # Loop over elements
+                for k in range(nQuadraturePoints_element):  # Loop over valid quadrature points
+                    #if eN >= self.q_v.shape[0] or k >= self.q_v.shape[1]:
+                    #    raise IndexError(f"Index out of bounds: eN={eN}, k={k}, q_v shape={self.q_v.shape}")
+                    # Access velocity and position
+                    velocity = self.q_v[eN, k, :] if self.q_v is not None else np.zeros(self.nd)
+                    #logEvent(f"D is: mean={np.mean(velocity)}, min={np.min(velocity)}, max={np.max(velo)}")
+
+                    #logEvent("velocity is ", f"{np.mean(velocity)}")
+                    v_mag = np.linalg.norm(velocity) 
+                    if v_mag > 1e-8:
+                        v_unit = velocity / v_mag
+                    else:
+                        v_unit = np.zeros_like(velocity)
+                    # Compute dispersion tensor
+                    dispersion_tensor = (
+                        self.Dm * np.eye(self.nd)  # Molecular diffusion
+                        + self.alpha_L * np.outer(v_unit, v_unit) * v_mag  # Longitudinal dispersion
+                        + self.alpha_T * v_mag * (np.eye(self.nd) - np.outer(v_unit, v_unit))  # Transverse dispersion
+                    )
+                    # Map the diffusion tensor to the sparsity pattern
+                    a_val = np.array([dispersion_tensor[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
+                    if a_val.shape == (a_rowptr[-1],):
+                        self.q_a_mod[eN, k, :] = a_val
+                    else:
+                        raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({self.a_rowptr[-1]},)")
+                    #logEvent(f"D is: mean={np.mean(self.q_a_mod)}, min={np.min(self.q_a_mod)}, max={np.max(self.q_a_mod)}")
+
         #if self.ebq_v is not None:
         #    logEvent(f"Coefficients edge velocity field (ebq_v): "
         #             f"mean={np.mean(self.ebq_v)}, min={np.min(self.ebq_v)}, max={np.max(self.ebq_v)}")
@@ -549,10 +592,12 @@ class Coefficients(TC_base):
         return copyInstructions
 
     def evaluate(self, t, c):
+        import pdb
+        pdb.set_trace()
+
         if c[('f', 0)].shape == self.q_v.shape:
             v = self.q_v
             phi = self.q_phi
-
 
         elif c[('f', 0)].shape == self.ebqe_v.shape:
             v = self.ebqe_v
@@ -575,9 +620,29 @@ class Coefficients(TC_base):
             #c[('a',0,0)][:] = self.physicalDiffusion 
             nd = self.nd
             for i in range(len(c[('r', 0)].flat)):
-                x_i = c['x'].flat[3*i:3*(i+1)]
-                c[('a', 0, 0)].flat[nd*nd*i:nd*nd*(i+1)] = self.aOfX[0](x_i).flat
-                #print(c[('a', 0, 0)])
+                #x_i = c['x'].flat[3*i:3*(i+1)]
+                velocity = v.flat[nd*i:nd*(i+1)] 
+                #c[('a', 0, 0)].flat[nd*nd*i:nd*nd*(i+1)] = self.aOfX[0](x_i).flat
+            ## Add dispersion
+                v_mag = np.linalg.norm(velocity)  # Magnitude of the velocity vector
+
+                if v_mag > 1e-8:  # Avoid division by zero
+                    v_unit = velocity / v_mag  # Unit vector of velocity
+                else:
+                    v_unit = np.zeros_like(velocity)
+
+                # Dispersion-diffusion tensor D
+                dispersion_tensor = (
+                    self.phi * self.D_m * np.eye(nd)  # Molecular diffusion
+                    + self.alpha_L * np.outer(v_unit, v_unit) * v_mag  # Longitudinal dispersion
+                    + self.alpha_T * v_mag * (np.eye(nd) - np.outer(v_unit, v_unit))  # Transverse dispersion
+                )
+
+                # Assign the dispersion tensor to the coefficient matrix
+                c[('a', 0, 0)].flat[nd*nd*i:nd*nd*(i+1)] = dispersion_tensor.flat
+                    #print(c[('a', 0, 0)])
+                    # Store the dispersion tensor in the coefficient dictionary
+            #c[('dispersion_tensor', 0)] = dispersion_tensor
             
             # Compute diffusion coefficients at each quadrature point
             #for i in range(len(c['x'])):
@@ -806,17 +871,12 @@ class LevelModel(OneLevelTransport):
         self.q[('numDiff', 0, 0)] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element), 'd')
         ###################################################
         self.q[('a',0,0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
-        nd = self.coefficients.nd
-
-        
-        
+        nd = self.coefficients.nd      
         self.q[('r',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element),'d')
-
+        # Attach `q` to `coefficients`
+        self.coefficients.q_a_mod = self.q[('a',0,0)] 
         ###################################################
         #self.calculateQuadrature()
-
-
-
         self.ebqe[('u', 0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global, self.nElementBoundaryQuadraturePoints_elementBoundary), 'd')
         self.ebqe[('grad(u)', 0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,
                                                  self.nElementBoundaryQuadraturePoints_elementBoundary, self.nSpace_global), 'd')
@@ -883,30 +943,29 @@ class LevelModel(OneLevelTransport):
         a_rowptr = self.coefficients.sdInfo[(0, 0)][0]
         a_colind = self.coefficients.sdInfo[(0, 0)][1]
 
-         #########Dealing with element diffusion coefficient
-        for eN in range(self.mesh.nElements_global):
-            for k in range(self.nQuadraturePoints_element):
-                x = self.q['x'][eN, k, :]
-                a_full = self.coefficients.aOfX[0](x)
-                a_val = np.array([a_full[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
+        # for eN in range(self.mesh.nElements_global):
+        #     for k in range(self.nQuadraturePoints_element):
+        #         x = self.q['x'][eN, k, :]
+        #         a_full = self.coefficients.aOfX[0](x)
+        #         a_val = np.array([a_full[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
 
-                if a_val.shape == (a_rowptr[-1],):
-                    self.q[('a', 0, 0)][eN, k, :] = a_val
-                else:
-                    raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({a_rowptr[-1]},)")
-        #self.ebqe[('a',0,0)] = np.zeros((,,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
+        #         if a_val.shape == (a_rowptr[-1],):
+        #             self.q[('a', 0, 0)][eN, k, :] = a_val
+        #         else:
+        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({a_rowptr[-1]},)")
+        # self.ebqe[('a',0,0)] = np.zeros((,,self.coefficients.sdInfo[(0,0)][0][-1]),'d')
         
-        #########Dealing with boundary diffusion coefficient       
+        # #########Dealing with boundary diffusion coefficient       
         
-        for ebNE in range(self.mesh.nExteriorElementBoundaries_global):
-            for kb in range(self.nElementBoundaryQuadraturePoints_elementBoundary):
-                x = self.ebqe['x'][ebNE, kb, :]
-                a_full = self.coefficients.aOfX[0](x)
-                a_val = np.array([a_full[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
-                if a_val.shape == (a_rowptr[-1],):
-                    self.ebqe[('a', 0, 0)][ebNE, kb, :] = a_val
-                else:
-                    raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({a_rowptr[-1]},)")
+        # for ebNE in range(self.mesh.nExteriorElementBoundaries_global):
+        #     for kb in range(self.nElementBoundaryQuadraturePoints_elementBoundary):
+        #         x = self.ebqe['x'][ebNE, kb, :]
+        #         a_full = self.coefficients.aOfX[0](x)
+        #         a_val = np.array([a_full[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
+        #         if a_val.shape == (a_rowptr[-1],):
+        #             self.ebqe[('a', 0, 0)][ebNE, kb, :] = a_val
+        #         else:
+        #             raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({a_rowptr[-1]},)")
 
 
 
@@ -1094,7 +1153,6 @@ class LevelModel(OneLevelTransport):
                                                                self.dirichletConditions[0].global2freeGlobal_free_dofs,
                                                                self.timeIntegration.u,
                                                                limited_solution)
-
     def updateVelocityFieldAsFunction(self):
         import pdb
         X = {0: self.q[('x')][:, :, 0],
@@ -1291,7 +1349,8 @@ class LevelModel(OneLevelTransport):
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
         argsDict["q_u"] = self.q[('u', 0)]
         ###########################################
-        argsDict["q_a"] = self.q[('a',0,0)]
+        #argsDict["q_a"] = self.q[('a',0,0)]
+        argsDict["q_a"] = self.coefficients.q_a_mod #q[('a',0,0)]
         argsDict["q_r"] = self.q[('r',0)]
 
         argsDict["ebq_a"] = self.ebqe[('a',0,0)]
@@ -1475,7 +1534,8 @@ class LevelModel(OneLevelTransport):
     
         argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
         argsDict["a_colind"] = sdInfo[(0, 0)][1]
-        argsDict["q_a"] = self.q[('a',0,0)]
+        argsDict["q_a"] = self.coefficients.q_a_mod
+        #argsDict["q_a"] = self.q[('a',0,0)]
         argsDict["eb_adjoint_sigma"] = self.numericalFlux.boundaryAdjoint_sigma
         argsDict["ebqe_penalty_ext"] = self.ebqe['penalty']
 
