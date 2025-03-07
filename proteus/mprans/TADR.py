@@ -1424,6 +1424,12 @@ class LevelModel(OneLevelTransport):
     
         argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
         argsDict["a_colind"] = sdInfo[(0, 0)][1]
+        
+        argsDict["alpha_L"] = self.coefficients.alpha_L  # Longitudinal dispersion coefficient
+        argsDict["alpha_T"] = self.coefficients.alpha_T  # Transverse dispersion coefficient
+        argsDict["Dm"] = self.coefficients.Dm           # Molecular diffusion coefficient
+
+
 
         #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
@@ -1541,6 +1547,9 @@ class LevelModel(OneLevelTransport):
 
         #argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         #argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
+        argsDict["alpha_L"] = self.coefficients.alpha_L  # Longitudinal dispersion coefficient
+        argsDict["alpha_T"] = self.coefficients.alpha_T  # Transverse dispersion coefficient
+        argsDict["Dm"] = self.coefficients.Dm    
 
         self.adr.calculateJacobian(argsDict)
 

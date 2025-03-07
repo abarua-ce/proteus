@@ -96,32 +96,88 @@ namespace proteus
     }
 
     inline
-void evaluateCoefficients(const int rowptr[nSpace],
-				                      const int colind[nnz],
-                              const double v[nSpace],
-                              const double* q_a,
-                              const double& u,
-                              double& m,
-                              double& dm,
-                              double f[nSpace],
-                              double df[nSpace], 
-                              double a[nnz],
-                              double da[nnz])
-    {
-      m = u;
-      dm= 1.0;
-      for (int I=0; I < nSpace; I++)
-        {
-          f[I] = v[I]*u;
-          df[I] = v[I];
-           for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++)
-        {
-            a[ii] = q_a[ii];
-            da[ii] = 0.0;
-        }
+// void evaluateCoefficients(const int rowptr[nSpace],
+// 				                      const int colind[nnz],
+//                               const double v[nSpace],
+//                               const double* q_a,
+//                               const double& u,
+//                               double& m,
+//                               double& dm,
+//                               double f[nSpace],
+//                               double df[nSpace], 
+//                               double a[nnz],
+//                               double da[nnz])
+//     {
+//       m = u;
+//       dm= 1.0;
+//       for (int I=0; I < nSpace; I++)
+//         {
+//           f[I] = v[I]*u;
+//           df[I] = v[I];
+//            for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++)
+//         {
+//             a[ii] = q_a[ii];
+//             da[ii] = 0.0;
+//         }
 
-        } 
+//         } 
+//     }
+
+
+void evaluateCoefficients(const int rowptr[nSpace], 
+      const int colind[nnz],
+      const double v[nSpace],
+      const double alpha_L,
+      const double alpha_T,
+      const double Dm, // Molecular diffusion term
+      //const double* q_a,
+      const double& u,
+      double& m,
+      double& dm,
+      double f[nSpace],
+      double df[nSpace], 
+      double a[nnz],
+      double da[nnz])
+{
+    m = u;
+    dm = 1.0;
+
+// Compute velocity magnitude
+    double v_mag = 0.0;
+    for (int I = 0; I < nSpace; I++) {
+    v_mag += v[I] * v[I];
     }
+    v_mag = std::sqrt(v_mag);
+
+// Compute unit velocity vector
+    double v_unit[nSpace] = {0.0};
+    if (v_mag > 1e-10) { // Avoid division by zero
+      for (int I = 0; I < nSpace; I++) {
+          v_unit[I] = v[I] / v_mag;
+            }
+      }
+
+    for (int I = 0; I < nSpace; I++) {
+    f[I] = v[I] * u;
+    df[I] = v[I];
+
+    for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
+    int J = colind[ii]; // Column index
+    double deltaIJ = (I == J) ? 1.0 : 0.0;
+
+    // Compute dispersion tensor elements, incorporating molecular diffusion (Dm)
+    double dispersion_ij = 
+    Dm * deltaIJ +  // Molecular diffusion (isotropic contribution)
+    alpha_L * v_unit[I] * v_unit[J] * v_mag +  // Longitudinal dispersion
+    alpha_T * v_mag * (deltaIJ - v_unit[I] * v_unit[J]);  // Transverse dispersion
+
+    a[ii] = dispersion_ij;
+    da[ii] = 0.0; // Assuming no dependency of dispersion on u
+      }
+      }
+    }
+
+
 
 inline
     void exteriorNumericalDiffusiveFlux(int* rowptr,
@@ -489,7 +545,11 @@ inline
       //////////////////////////////////////////////////////////////////////////
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
       const double eb_adjoint_sigma = args.scalar<double>("eb_adjoint_sigma");
-      
+      // Extract alpha_L, alpha_T, and Dm from args
+      const double alphaL_val = args.scalar<double>("alpha_L"); // Longitudinal dispersion coefficient
+      const double alphaT_val = args.scalar<double>("alpha_T"); // Transverse dispersion coefficient
+      const double Dm_val = args.scalar<double>("Dm");         // Molecular diffusion coefficient
+
       double meanEntropy = 0., meanOmega = 0., maxEntropy = -1E10, minEntropy = 1E10;
       maxVel.resize(nElements_global, 0.0);
       maxEntRes.resize(nElements_global, 0.0);
@@ -649,11 +709,12 @@ inline
               //
               //calculate pde coefficients at quadrature points
 
-              const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
+              //const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
+                                   alphaL_val, alphaT_val, Dm_val, 
+                                   //q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    u,
                                    m,
                                    dm,
@@ -670,7 +731,8 @@ inline
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
+                                   alphaL_val, alphaT_val, Dm_val, 
+                                   //q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    un,
                                    mn,
                                    dmn,
@@ -1095,7 +1157,8 @@ inline
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                   qb_a_ptr, //&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
+                                   alphaL_val, alphaT_val, Dm_val, 
+                                   //qb_a_ptr, //&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
                                    u_ext,
                                    m_ext,
                                    dm_ext,
@@ -1107,7 +1170,8 @@ inline
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                   qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
+                                   alphaL_val, alphaT_val, Dm_val, 
+                                   //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
                                    bc_u_ext,
                                    bc_m_ext,
                                    bc_dm_ext,
@@ -1487,13 +1551,18 @@ inline
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
       xt::pyarray<double>& q_a = args.array<double>("q_a");
       xt::pyarray<double>& ebqe_a = args.array<double>("ebq_a");
+      
+      // Extract alpha_L, alpha_T, and Dm from args
+      const double alphaL_val = args.scalar<double>("alpha_L"); // Longitudinal dispersion coefficient
+      const double alphaT_val = args.scalar<double>("alpha_T"); // Transverse dispersion coefficient
+      const double Dm_val = args.scalar<double>("Dm");         // Molecular diffusion coefficient
 
 
       double Ct_sge = 4.0;
 
 
 
-            /////////////////////////////////////////////////////////////////////////
+      /////////////////////////////////////////////////////////////////////////
       xt::pyarray<int>& a_rowptr = args.array<int>("a_rowptr");
       xt::pyarray<int>& a_colind = args.array<int>("a_colind");
       //xt::pyarray<double>& D = args.array<double>("D");
@@ -1582,11 +1651,12 @@ inline
               //calculate pde coefficients and derivatives at quadrature points
               //
               
-              const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
+              //const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   q_a_ptr, //&q_a.data()[eN * nQuadraturePoints_element * nnz + k * nnz],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
+                                   alphaL_val, alphaT_val, Dm_val, 
+                                   //q_a_ptr, //&q_a.data()[eN * nQuadraturePoints_element * nnz + k * nnz],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    u,
                                    m,
                                    dm,
@@ -1842,7 +1912,8 @@ inline
                   evaluateCoefficients(a_rowptr.data(),
                                        a_colind.data(),
                                        &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                       qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
+                                       alphaL_val, alphaT_val, Dm_val, 
+                                       //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
                                        u_ext,
                                        m_ext,
                                        dm_ext,
@@ -1855,7 +1926,8 @@ inline
                   evaluateCoefficients(a_rowptr.data(),
                                        a_colind.data(),
                                        &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                       qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
+                                       alphaL_val, alphaT_val, Dm_val, 
+                                       //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
                                        bc_u_ext,
                                        bc_m_ext,
                                        bc_dm_ext,
