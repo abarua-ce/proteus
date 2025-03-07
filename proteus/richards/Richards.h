@@ -142,17 +142,17 @@ namespace richards
 	  vBar2 = vBar*vBar;
 	  DvBar_DpsiC = -alpha*(n_vg-1.0)*pcBar_nM2*sBar - pcBar_nM1*DsBar_DpsiC;
 
-	  thetaW = thetaS;//thetaSR*sBar + thetaR;
-	  DthetaW_DpsiC = 0.0;// thetaSR * DsBar_DpsiC;
+	  thetaW = thetaSR*sBar + thetaR; //thetaS;//
+	  DthetaW_DpsiC = thetaSR * DsBar_DpsiC; //0.0;// 
 
 	  sqrt_sBar = sqrt(sBar);
 	  sqrt_sBarStar = sqrt_sBar;
 	  if (sqrt_sBar < 1.0e-8)
 	    sqrt_sBarStar = 1.0e-8;
-	  KWr= 1.0;//sqrt_sBar*vBar2;
-	  DKWr_DpsiC= 0.0;// ((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
-		       //+
-		       //2.0*sqrt_sBar*vBar*DvBar_DpsiC);
+	  KWr= sqrt_sBar*vBar2; //1.0;//
+	  DKWr_DpsiC= ((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
+		       +
+		       2.0*sqrt_sBar*vBar*DvBar_DpsiC); //0.0;// 
 	}
       else
 	{
@@ -173,9 +173,9 @@ namespace richards
 	  for (int ii=rowptr[I]; ii < rowptr[I+1]; ii++)
 	    {
 	      f[I]  += rho2*KWr*KWs[ii]*gravity[colind[ii]];
-	      df[I] += 0.0;//-rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]];
+	      df[I] += -rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]]; //0.0;//
 	      a[ii]  = rho*KWr*KWs[ii];
-	      da[ii] = 0.0;//-rho*DKWr_DpsiC*KWs[ii];
+	      da[ii] = -rho*DKWr_DpsiC*KWs[ii]; //0.0;//
 	      as[ii]  = rho*KWs[ii];
 	      kr = KWr;
 	      dkr=0.0;//mod picard DKWr_DpsiC;
@@ -2147,17 +2147,7 @@ double computeIthLimitedFluxCorrection(int i,
 		      u_grad_test_dV[j*nSpace+I] = u_grad_trial[j*nSpace+I]*dV;//cek warning won't work for Petrov-Galerkin
 		    }
 		}
-		// Darcy velocity calculation
-        for (int I = 0; I < nSpace; I++) { velocity[I] = 0.0; }
-        for (int I = 0; I < nSpace; I++) {
-            for (int J = 0; J < nSpace; J++) {
-                velocity[I] -= KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J]
-                               * (grad_u[J] + gravity[J]);
-            }
-        }
-		for (int I = 0; I < nSpace; I++) {
-            q_velocity.data()[eN_k_nSpace + I] = velocity[I];
-        }
+
 
 
 
@@ -2211,6 +2201,18 @@ double computeIthLimitedFluxCorrection(int i,
 				   as,
 				   Kr,
 				   dKr);
+
+		// Darcy velocity calculation
+        for (int I = 0; I < nSpace; I++) { velocity[I] = 0.0; }
+        for (int I = 0; I < nSpace; I++) {
+            for (int J = 0; J < nSpace; J++) {
+                velocity[I] -= Kr* KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J]
+                               * (grad_u[J] + gravity[J]);
+            }
+        }
+		for (int I = 0; I < nSpace; I++) {
+            q_velocity.data()[eN_k_nSpace + I] = velocity[I];
+        }
 		
 
 	      //
