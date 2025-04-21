@@ -223,6 +223,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  gravity,
                  density,
                  beta,
+                 storavity,
                  diagonal_conductivity=True,
                  getSeepageFace=None,
                 # FOR EDGE BASED EV
@@ -240,6 +241,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  cK=1.0,
                  # OUTPUT quantDOFs
                  outputQuantDOFs=False,
+
                   ):
         self.anb_seepage_flux= 0.00
         #self.anb_seepage_flux_n =0.0
@@ -266,6 +268,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.materialTypes_ebqe  = None
         self.nd = nd
         self.nMaterialTypes = len(thetaR_types)
+        #Theis Add
+        self.storavity = storavity
         self.q = {}; self.ebqe = {}; self.ebq = {}; self.ebq_global={}
         #try to allow some flexibility in input of permeability/conductivity tensor
         self.diagonal_conductivity = diagonal_conductivity
@@ -1453,7 +1457,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
         argsDict["anb_seepage_flux"] = self.anb_seepage_flux
         argsDict["q_velocity"] = self.q[('grad(u_v)', 0)]
-        
+######################################################################################        
+        #Theis case
+        argsDict["Storavity"]= self.coefficients.storavity
         #argsDict["q_grad_psi"] = self.q[('velocity', 0)]
         
         
@@ -2047,6 +2053,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0,0)]
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         #argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
+        argsDict["Storavity"]= self.coefficients.storavity
+
 
         self.calculateJacobian(argsDict)
         if self.forceStrongConditions:

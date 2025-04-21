@@ -92,7 +92,8 @@ namespace richards
 			      double da[nnz],
 			      double as[nnz],
 			      double& kr,
-			      double& dkr)
+			      double& dkr, 
+				  const double S)
     {
       const int nSpace2 = nSpace * nSpace;
       double psiC;
@@ -142,17 +143,17 @@ namespace richards
 	  vBar2 = vBar*vBar;
 	  DvBar_DpsiC = -alpha*(n_vg-1.0)*pcBar_nM2*sBar - pcBar_nM1*DsBar_DpsiC;
 
-	  thetaW = thetaSR*sBar + thetaR; //thetaS;//
-	  DthetaW_DpsiC = thetaSR * DsBar_DpsiC; //0.0;// 
+	  thetaW = thetaS; //thetaSR*sBar + thetaR; //thetaS;//
+	  DthetaW_DpsiC = 0.0; //thetaSR * DsBar_DpsiC; //0.0;// 
 
-	  sqrt_sBar = sqrt(sBar);
-	  sqrt_sBarStar = sqrt_sBar;
-	  if (sqrt_sBar < 1.0e-8)
-	    sqrt_sBarStar = 1.0e-8;
-	  KWr= sqrt_sBar*vBar2; //1.0;//
-	  DKWr_DpsiC= ((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
-		       +
-		       2.0*sqrt_sBar*vBar*DvBar_DpsiC); //0.0;// 
+	//   sqrt_sBar = sqrt(sBar);
+	//   sqrt_sBarStar = sqrt_sBar;
+	//   if (sqrt_sBar < 1.0e-8)
+	//     sqrt_sBarStar = 1.0e-8;
+	  KWr= 1.0; //sqrt_sBar*vBar2; //1.0;//
+	  DKWr_DpsiC= 0.0 ; //((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
+		    //    +
+		    //    2.0*sqrt_sBar*vBar*DvBar_DpsiC); //0.0;// 
 	}
       else
 	{
@@ -162,10 +163,10 @@ namespace richards
 	  DKWr_DpsiC    = 0.0;
 	}
       //slight compressibility
-      rhom = rho*exp(beta*u);
-      drhom = beta*rhom;
-      m = rhom*thetaW;
-      dm = -rhom*DthetaW_DpsiC+drhom*thetaW;
+      //rhom = rho*exp(beta*u);
+      //drhom = beta*rhom;
+      m = 1+ S*u; //rhom*thetaW;
+      dm = S ; //-rhom*DthetaW_DpsiC+drhom*thetaW;
       for (int I=0;I<nSpace;I++)
 	{
 	  f[I] = 0.0;
@@ -173,9 +174,9 @@ namespace richards
 	  for (int ii=rowptr[I]; ii < rowptr[I+1]; ii++)
 	    {
 	      f[I]  += rho2*KWr*KWs[ii]*gravity[colind[ii]];
-	      df[I] += -rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]]; //0.0;//
+	      df[I] += 0.0; //-rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]]; //0.0;//
 	      a[ii]  = rho*KWr*KWs[ii];
-	      da[ii] = -rho*DKWr_DpsiC*KWs[ii]; //0.0;//
+	      da[ii] = 0.0; //-rho*DKWr_DpsiC*KWs[ii]; //0.0;//
 	      as[ii]  = rho*KWs[ii];
 	      kr = KWr;
 	      dkr=0.0;//mod picard DKWr_DpsiC;
@@ -726,7 +727,9 @@ double computeIthLimitedFluxCorrection(int i,
 	  
 	  xt::pyarray<double>& anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
 
-
+	  // Added for Theis solution
+	  const double Storavity = args.scalar<double>("Storavity"); // Longitudinal dispersion coefficient
+      
 	  //double anb_seepage_flux=0.0;
 	  double & anb_seepage_flux (args.scalar<double>("anb_seepage_flux")) ;
 	  //double anb_seepage_flux = args.scalar<double>("anb_seepage_flux_n");
@@ -837,7 +840,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   da,
 				   as,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 	      //
 	      //calculate time derivative at quadrature points
 	      //
@@ -1040,7 +1044,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   da_ext,
 				   as_ext,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 	      evaluateCoefficients(a_rowptr.data(),
 				   a_colind.data(),
 				   rho,
@@ -1060,7 +1065,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   bc_da_ext,
 				   bc_as_ext,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 	      //
 	      //calculate the numerical fluxes
 	      //
@@ -1171,6 +1177,8 @@ double computeIthLimitedFluxCorrection(int i,
       xt::pyarray<double>& ebqe_bc_flux_ext = args.array<double>("ebqe_bc_flux_ext");
       xt::pyarray<int>& csrColumnOffsets_eb_u_u = args.array<int>("csrColumnOffsets_eb_u_u");
       int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
+	  //Added for Theis solution
+	  const double Storavity = args.scalar<double>("Storavity"); //Storavity
       assert(a_rowptr.data()[nSpace] == nnz);
       assert(a_rowptr.data()[nSpace] == nSpace);
       double Ct_sge = 4.0;
@@ -1277,7 +1285,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   da,
 				   as,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 	      //
 	      //calculate time derivatives
 	      //
@@ -1477,7 +1486,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   da_ext,
 				   as_ext,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 	      evaluateCoefficients(a_rowptr.data(),
 				   a_colind.data(),
 				   rho,
@@ -1497,7 +1507,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   bc_da_ext,
 				   bc_as_ext,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 	      //
 	      //calculate the flux jacobian
 	      //
@@ -2002,6 +2013,11 @@ double computeIthLimitedFluxCorrection(int i,
 	  //double anb_seepage_flux=0.0;
 	  double & anb_seepage_flux (args.scalar<double>("anb_seepage_flux")) ;
 	  //double anb_seepage_flux = args.scalar<double>("anb_seepage_flux_n");
+	  //Added for Theis solution
+	  const double Storavity = args.scalar<double>("Storavity"); //Theis
+      
+
+	  
 	  
 	  //double anb_seepage_flux=0.0;
 	  anb_seepage_flux=0.0;
@@ -2170,7 +2186,9 @@ double computeIthLimitedFluxCorrection(int i,
 				   dan,
 				   asn,
 				   Krn,
-				   dKrn);
+				   dKrn,
+				   Storavity);
+
 	      evaluateCoefficients(a_rowptr.data(),
 				   a_colind.data(),
 				   rho,
@@ -2190,7 +2208,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   da,
 				   as,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 
 		// Darcy velocity calculation
         for (int I = 0; I < nSpace; I++) { velocity[I] = 0.0; }
@@ -2440,7 +2459,9 @@ double computeIthLimitedFluxCorrection(int i,
 				   da_ext,
 				   as_ext,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
+
 	      	   evaluateCoefficients(a_rowptr.data(),
 				   a_colind.data(),
 				   rho,
@@ -2460,7 +2481,18 @@ double computeIthLimitedFluxCorrection(int i,
 				   bc_da_ext,
 				   bc_as_ext,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
+
+	      	   //cek todo, fix boundary conditions
+	      	   //std::cout<<"flux_ext "<<flux_ext<<std::endl;
+	      		//std::cout<<"dS "<< dS <<std::endl;		
+	      		//std::cout<<"ebNE_kb "<< ebNE_kb <<std::endl;
+	      		//std::cout<<"ebNE "<< ebNE <<std::endl;
+	      		//std::cout<<"ebN_local_kb "<< ebN_local_kb <<std::endl;
+	      		//std::cout<<"ebN_local "<< ebN_local <<std::endl;
+	      		//std::cout<<"eN "<< eN <<std::endl;
+	      		//std::cout<<"eN_nDOF_trial_element "<< eN_nDOF_trial_element <<std::endl;
 
 
 			   exteriorNumericalFlux(ebqe_bc_flux_ext[ebNE_kb],
@@ -2780,7 +2812,9 @@ double computeIthLimitedFluxCorrection(int i,
 				       da,
 				       as,
 				       Kr,
-				       dKr);
+				       dKr,
+					   Storavity);
+
 		  fL=Theta*Kr*fmax(0.0, -TransportMatrix[ij])*(solj - soli);
 		  if (i!=j)
 		    {
@@ -2811,7 +2845,9 @@ double computeIthLimitedFluxCorrection(int i,
 				       da,
 				       as,
 				       Kr,
-				       dKr);
+				       dKr,
+					   Storavity);
+
 		  fL = Theta*Kr*fmax(0.0, -TransportMatrix[ij])*(solj - soli);
 		  if (i!=j)
 		    {
@@ -2845,7 +2881,9 @@ double computeIthLimitedFluxCorrection(int i,
 				       da,
 				       as,
 				       Kr,
-				       dKr);
+				       dKr,
+					   Storavity);
+
 		  fL=(1-Theta)*Kr*fmax(0.0, -TransportMatrixn[ij])*(solnj - solni);
 		  ith_flux_term += fL;
 		  fA -= fL;
@@ -2871,7 +2909,9 @@ double computeIthLimitedFluxCorrection(int i,
 				       da,
 				       as,
 				       Kr,
-				       dKr);
+				       dKr,
+					   Storavity);
+
 		  fL = (1-Theta)*Kr*fmax(0.0, -TransportMatrixn[ij])*(solnj - solni);
 		  ith_flux_term += fL;
 		  fA -= fL;
@@ -2924,7 +2964,9 @@ double computeIthLimitedFluxCorrection(int i,
 			       da,
 			       as,
 			       Kr,
-			       dKr);
+			       dKr,
+				   Storavity);
+
 	  evaluateCoefficients(a_rowptr.data(),
 			       a_colind.data(),
 			       rho,
@@ -2944,7 +2986,9 @@ double computeIthLimitedFluxCorrection(int i,
 			       dan,
 			       asn,
 			       Krn,
-			       dKrn);
+			       dKrn,
+				   Storavity);
+
 	  sn.data()[i] = mn;
 	  sLow.data()[i] = m;
 	  if (STABILIZATION_TYPE == STABILIZATION::Implicit_FCT)
@@ -3270,6 +3314,8 @@ double computeIthLimitedFluxCorrection(int i,
       xt::pyarray<double>& ebqe_bc_flux_ext = args.array<double>("ebqe_bc_flux_ext");
       xt::pyarray<int>& csrColumnOffsets_eb_u_u = args.array<int>("csrColumnOffsets_eb_u_u");
       int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
+	  //Theis Solution
+	  const double Storavity = args.scalar<double>("Storavity"); 
       //std::cout<<"ndjaco  address "<<q_numDiff_u_last<<std::endl;
       double Ct_sge = 4.0;
       //
@@ -3374,7 +3420,8 @@ double computeIthLimitedFluxCorrection(int i,
 				   da,
 				   as,
 				   Kr,
-				   dKr);
+				   dKr,
+				   Storavity);
 	      //
 	      //moving mesh
 	      //
