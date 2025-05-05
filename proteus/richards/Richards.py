@@ -1679,6 +1679,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["sLow"] = self.sLow
         argsDict["sn"] = self.sn
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
+        argsDict["Storavity"]= self.coefficients.storavity
     
         # FCT-only args
         if isFCT:

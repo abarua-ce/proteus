@@ -93,7 +93,7 @@ namespace richards
 			      double as[nnz],
 			      double& kr,
 			      double& dkr, 
-				  const double S)
+				    const double S)
     {
       const int nSpace2 = nSpace * nSpace;
       double psiC;
@@ -112,7 +112,7 @@ namespace richards
       double DvBar_DpsiC;
       double KWr;
       double DKWr_DpsiC;
-      double rho2 = rho * rho;
+      double rho2 = 1.0; //rho * rho;
       double thetaS;
       double rhom;
       double drhom;
@@ -123,7 +123,6 @@ namespace richards
       psiC = -u;
       m_vg = 1.0 - 1.0 / n_vg;
       thetaS = thetaR + thetaSR;
-	  //std::cout<< "Thetas"<<thetaS<<std::endl;//arnob trying to debug
       if (psiC > 0.0)
 	{
 	  pcBar = alpha * psiC;
@@ -143,17 +142,17 @@ namespace richards
 	  vBar2 = vBar*vBar;
 	  DvBar_DpsiC = -alpha*(n_vg-1.0)*pcBar_nM2*sBar - pcBar_nM1*DsBar_DpsiC;
 
-	  thetaW = thetaS; //thetaSR*sBar + thetaR; //thetaS;//
-	  DthetaW_DpsiC = 0.0; //thetaSR * DsBar_DpsiC; //0.0;// 
+	  thetaW = thetaS;// thetaSR*sBar + thetaR; //
+	  DthetaW_DpsiC =0.0;//  thetaSR * DsBar_DpsiC; // 
 
-	//   sqrt_sBar = sqrt(sBar);
-	//   sqrt_sBarStar = sqrt_sBar;
-	//   if (sqrt_sBar < 1.0e-8)
-	//     sqrt_sBarStar = 1.0e-8;
-	  KWr= 1.0; //sqrt_sBar*vBar2; //1.0;//
-	  DKWr_DpsiC= 0.0 ; //((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
-		    //    +
-		    //    2.0*sqrt_sBar*vBar*DvBar_DpsiC); //0.0;// 
+	   sqrt_sBar = sqrt(sBar);
+	   sqrt_sBarStar = sqrt_sBar;
+	   if (sqrt_sBar < 1.0e-8)
+	     sqrt_sBarStar = 1.0e-8;
+	  KWr= 1.0;//sqrt_sBar*vBar2; //
+	  DKWr_DpsiC= 0.0; //((0.5/sqrt_sBarStar)*DsBar_DpsiC*vBar2
+		        //+
+		        //2.0*sqrt_sBar*vBar*DvBar_DpsiC); //0.0;// 
 	}
       else
 	{
@@ -173,11 +172,11 @@ namespace richards
 	  df[I] = 0.0;
 	  for (int ii=rowptr[I]; ii < rowptr[I+1]; ii++)
 	    {
-	      f[I]  += rho2*KWr*KWs[ii]*gravity[colind[ii]];
+	      f[I]  += KWr*KWs[ii]*gravity[colind[ii]];//rho2*KWr*KWs[ii]*gravity[colind[ii]];
 	      df[I] += 0.0; //-rho2*DKWr_DpsiC*KWs[ii]*gravity[colind[ii]]; //0.0;//
-	      a[ii]  = rho*KWr*KWs[ii];
-	      da[ii] = 0.0; //-rho*DKWr_DpsiC*KWs[ii]; //0.0;//
-	      as[ii]  = rho*KWs[ii];
+	      a[ii]  = KWr*KWs[ii];//rho*KWr*KWs[ii];
+	      da[ii] = 0.0; // -rho*DKWr_DpsiC*KWs[ii]; //0.0;//
+	      as[ii]  = KWs[ii];//rho*KWs[ii];
 	      kr = KWr;
 	      dkr=0.0;//mod picard DKWr_DpsiC;
 	    }
@@ -201,7 +200,8 @@ namespace richards
 				     const double f[nSpace],
 				     const double df[nSpace],
 				     const double a[nnz],
-				     const double da[nnz])
+				     const double da[nnz],
+             		 const double S)
      {
     double 
 	psiC,
@@ -210,19 +210,21 @@ namespace richards
 	thetaW,
 	thetaS,
 	m_vg;
-      m_vg = 1.0 - 1.0/n_vg;
-      thetaS = thetaR + thetaSR;
-      thetaW = m/rho;
-	  if (thetaW> thetaR && thetaW < thetaS)
-	  {
+  
+//      m_vg = 1.0 - 1.0/n_vg;
+//      thetaS = thetaR + thetaSR;
+//      thetaW = m/rho;
+//	  if (thetaW> thetaR && thetaW < thetaS)
+//	  {
 		      //sBar = (fmax(thetaR+1.0e-8, fmin(thetaS, thetaW)) - thetaR)/thetaSR;
-      	sBar = (thetaW - thetaR)/thetaSR;
-      	pcBar_n = pow(sBar, -1.0/m_vg) - 1.0;
-      	pcBar = pow(pcBar_n, 1.0/n_vg);
-      	psiC = pcBar/alpha;
-		u= -psiC;
+//      	sBar = (thetaW - thetaR)/thetaSR;
+//      	pcBar_n = pow(sBar, -1.0/m_vg) - 1.0;
+//      	pcBar = pow(pcBar_n, 1.0/n_vg);
+//      	psiC = pcBar/alpha;
+//		u= -psiC;
 		//std::cout<<"inverse FCT"<< -psiC<<std::endl;
-	  }
+//	  }
+   u = (m - 1.0) / S;
     //   if (thetaW > thetaS+0.001 || thetaW < thetaR-0.001)
 	// { u=u;
 	//   //cek debug
@@ -3044,7 +3046,8 @@ double computeIthLimitedFluxCorrection(int i,
 				      f,
 				      df,
 				      a,
-				      da);
+				      da,
+					  Storavity);
 	    }
 	  //uLow.data()[i] = u_dof_old.data()[i] - dt/mi*(ith_flux_term
 	  //						  + boundary_integral[i]
@@ -3138,6 +3141,7 @@ double computeIthLimitedFluxCorrection(int i,
 			int numDOFs = args.scalar<int>("numDOFs");
 			//bool isFCT = args.scalar<bool>("isFCT");
 			bool isFCT = args.scalar<int>("isFCT") != 0;
+			const double Storavity = args.scalar<double>("Storavity"); //Theis
 	
 			// Select inputs
 			xt::pyarray<double>* input_solution;
@@ -3183,7 +3187,8 @@ double computeIthLimitedFluxCorrection(int i,
 										f, 
 										df, 
 										a, 
-										da);
+										da,
+									    Storavity);
 	
 			}
 	}
