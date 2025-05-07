@@ -3166,10 +3166,10 @@ double computeIthLimitedFluxCorrection(int i,
 				double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
 				double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
 	
-				if ((*input_solution).data()[i] < mMin - 0.001 || (*input_solution).data()[i] > mMax + 0.001)
-				{
-				std::cout << "mass out of bounds " << mMin << '\t' << (*input_solution).data()[i] << '\t' << mMax << std::endl;
-				}
+				//if ((*input_solution).data()[i] < mMin - 0.001 || (*input_solution).data()[i] > mMax + 0.001)
+				//{
+				//std::cout << "mass out of bounds " << mMin << '\t' << (*input_solution).data()[i] << '\t' << mMax << std::endl;
+				//}
 	
 				evaluateInverseCoefficients(a_rowptr.data(),
 										a_colind.data(),
