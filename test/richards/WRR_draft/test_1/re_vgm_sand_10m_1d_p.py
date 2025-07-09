@@ -13,11 +13,11 @@ density       = 998.2   #kg/m^3
 gravity       = 9.8     #m/s^2
 beta          = 0.0#density*gravity*4.524e-10
 m_per_s_by_m_per_d = 1.1574074e-5
-permeability  = (0.00922*m_per_s_by_m_per_d)*viscosity/(gravity*density)  #m^2
+permeability  = (7.967*m_per_s_by_m_per_d)*viscosity/(gravity*density)  #0.00922#m^2
 thetaS        = 0.368   #-
-thetaR        = 0.102   #-
-mvg_alpha     = 0.0335    #1/m
-mvg_n         = 1.694
+thetaR        = 0.102  #-
+mvg_alpha     = 3.35    #1/m
+mvg_n         = 2.0
 mvg_m         = 1.0 - 1.0/mvg_n
 lengthScale   = 1.0     #m
 timeScale     = 1.0     #d #1.0/sqrt(g*lengthScale)
@@ -25,9 +25,11 @@ timeScale     = 1.0     #d #1.0/sqrt(g*lengthScale)
 dimensionless_conductivity  = (timeScale*density*gravity*permeability/(viscosity*lengthScale))/m_per_s_by_m_per_d
 dimensionless_density  = 1.0
 dimensionless_gravity  = numpy.array([-1.0,
-                                       0.0,
-                                       0.0])
+                                      0.0,
+                                      0.0])
+
 dimensionless_alpha    = mvg_alpha*lengthScale
+
 satRichards = False
 optRichards = True
 nMediaTypes  = 1
@@ -65,10 +67,10 @@ coefficients = Richards.Coefficients(nd,
                                      density=dimensionless_density,
                                      beta=beta,
                                      diagonal_conductivity=True,
-                                     STABILIZATION_TYPE=0,
-                                     ENTROPY_TYPE=1,
+                                     STABILIZATION_TYPE=2,
+                                     ENTROPY_TYPE=0,
                                      LUMPED_MASS_MATRIX=False,
-                                     FCT=False,
+                                     FCT= False,
                                      MONOLITHIC=False,
                                      num_fct_iter=1,
                                          # FOR ENTROPY VISCOSITY
@@ -140,5 +142,5 @@ advectiveFluxBoundaryConditions =  {0:flux}
 
 diffusiveFluxBoundaryConditions = {0:{}}
 
-T = 1/24/timeScale
-#T = 0.35/timeScale
+#T = 1/24/timeScale
+T = 1.0/timeScale

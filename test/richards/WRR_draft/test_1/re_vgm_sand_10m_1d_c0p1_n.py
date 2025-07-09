@@ -9,9 +9,19 @@ useGustafsson = False#True#
 atol_u[0] = 1.0e-5
 rtol_u[0] = 1.0e-5
 #DT = 1.0e-6#None#0.025#1.0e-1/timeScale
-tnList = [0.0]; nDTout = 1000#cek don't have stability worked out yet, blows up for large time steps
+tnList = [0.0]; 
+
+nDTout = 1000#cek don't have stability worked out yet, blows up for large time steps
 for i in range(nDTout):
     tnList.append(0.0+(i+1)*(T)/float(nDTout))
+
+#DT = 12.0 / 1440.0  # days (12 min ÷ 1440 min/day)
+#T = 1.0 / 24.0            # total time = 1 hour = 1/24 days
+#nDTout = 200 #int(T / DT)
+
+#tnList = [i * DT for i in range(nDTout + 1)]
+
+
 if useFLCBDF:
     timeIntegration = FLCBDF
     stepController  = FLCBDF_controller
@@ -42,7 +52,7 @@ else:
 
 if not galerkin:
     timeIntegration = Richards.ThetaScheme
-#    timeIntegration = Richards.RKEV
+#    timeIntegration = BackwardEuler #Richards.RKEV
 timeOrder = 1
 stepController = FixedStep
 #systemStepControllerType = SplitOperator.Sequential_FixedStep
