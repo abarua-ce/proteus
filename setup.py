@@ -215,6 +215,16 @@ EXTENSIONS_TO_BUILD = [
         language='c++',
         extra_compile_args=PROTEUS_OPT+['-std=c++14'],
     ),
+
+    Extension(
+        'mphase_co2.cmphase_co2',
+        sources=['proteus/mphase_co2/cmphase_co2.cpp'],
+        depends=['proteus/mphase_co2/mphase_co2.h', 'proteus/mprans/ArgumentsDict.h' ,'proteus/ModelFactory.h', 'proteus/CompKernel.h'],
+        include_dirs=get_xtensor_include(),
+        language='c++',
+        extra_compile_args=PROTEUS_OPT+['-std=c++14'],
+    ),
+
     Extension(
         'elastoplastic.cElastoPlastic',
         sources=['proteus/elastoplastic/cElastoPlastic.cpp'],
@@ -822,6 +832,7 @@ def setup_given_extensions(extensions):
                       'proteus.fenton',
                       'proteus.mprans',
                       'proteus.richards',
+                      'proteus.mphase_co2',
                       'proteus.elastoplastic',
                       'proteus.mbd',
                       'proteus.test_utils',
