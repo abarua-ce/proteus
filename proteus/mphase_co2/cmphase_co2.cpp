@@ -18,7 +18,7 @@ inline void define_allocators()
 namespace py = pybind11;
 using proteus::mphase_co2::Mphase_co2_base;
 
-PYBIND11_MODULE(cRichards, m)
+PYBIND11_MODULE(cmphase_co2, m)
 {
   xt::import_numpy();
 
