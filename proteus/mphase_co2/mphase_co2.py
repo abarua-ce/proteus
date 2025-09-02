@@ -828,9 +828,13 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             self.ebqe[('advectiveFlux_bc',ci)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
             self.ebqe[('advectiveFlux',ci)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
             self.ebqe[('penalty')] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
-
-        self.q['velocity'] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
-        self.ebqe['velocity'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
+            self.q[('velocity',ci)]   = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element,self.nSpace_global), 'd')
+            self.ebqe[('velocity', ci) ] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
+    
+    
+    
+    #         self.q['velocity'] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
+    #    self.ebqe['velocity'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
         
         
         
@@ -917,18 +921,15 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.coefficients.FCT:
             valid_stabilization_types = {1, 2}  # Only allow FCT for STABILIZATION_TYPE 1 (EV_Stab) and 2 (EntropyViscosity)
             if self.coefficients.STABILIZATION_TYPE not in valid_stabilization_types:
-                raise ValueError("Use FCT only with STABILIZATION_TYPE 1 (EV_Stab) or 2 (EntropyViscosity).")
-
-
-
-        
+                raise ValueError("Use FCT only with STABILIZATION_TYPE 1 (EV_Stab) or 2 (EntropyViscosity).")        
         if self.coefficients.FCT == True:
             cond = self.coefficients.STABILIZATION_TYPE > 0, "Use FCT just with STABILIZATION_TYPE>0; i.e., edge based stabilization"
         # # END OF ASSERTS
-        self.ML = {ci: None for ci in range(self.nc)}                # lumped mass per phase
-        self.MC_global = {ci: None for ci in range(self.nc)}         # consistent mass per phase
-        self.cterm_global = {ci: None for ci in range(self.nc)}      # C (hamiltonian-like) per phase
-        self.cterm_transpose_global = {ci: None for ci in range(self.nc)}  # C^T (advection-like) per phase
+      # cek adding empty data member for low order numerical viscosity structures here for now
+        self.ML = None  # lumped mass matrix
+        self.MC_global = None  # consistent mass matrix
+        self.cterm_global = None      # C (hamiltonian-like) per phase
+        self.cterm_transpose_global = None  # C^T (advection-like) per phase
 
         self.residualComputed = False  # TMP
 
@@ -954,15 +955,34 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             self.min_m_bc[ci]     = np.full(self.u[0].dof.shape,  1.0e10, 'd')
             self.max_m_bc[ci]     = np.full(self.u[0].dof.shape, -1.0e10, 'd')
 
-
-
         self.quantDOFs = np.zeros(self.u[0].dof.shape, 'd')
         self.anb_seepage_flux_n = np.zeros(self.u[0].dof.shape, 'd')
 
-        self.ML_water = self.ML.get(0, None)
-        self.ML_air   = self.ML.get(1, None)
-        self.MC_global_water = self.MC_global.get(0, None)
-        self.MC_global_air = self.MC_global.get(1, None)
+        #self.ML_water = self.ML.get(0, None)
+        #self.ML_air   = self.ML.get(1, None)
+        #self.MC_global_water = self.MC_global.get(0, None)
+        #self.MC_global_air = self.MC_global.get(1, None)
+        self.mLow_water = self.mLow.get(0)
+        self.mLow_air = self.mLow.get(1)
+        self.mHigh_water       = self.mHigh.get(0)
+        self.mHigh_air         = self.mHigh.get(1)
+        self.mDotLow_water     = self.mDotLow.get(0)
+        self.mDotLow_air       = self.mDotLow.get(1)
+        self.mDotHigh_water    = self.mDotHigh.get(0)
+        self.mDotHigh_air      = self.mDotHigh.get(1)
+        self.fluxCorrection_w  = self.fluxCorrection.get(0)
+        self.fluxCorrection_a  = self.fluxCorrection.get(1)
+        self.mn_water          = self.mn.get(0)
+        self.mn_air            = self.mn.get(1)
+        self.min_m_bc_water    = self.min_m_bc.get(0)
+        self.min_m_bc_air      = self.min_m_bc.get(1)
+        self.max_m_bc_water    = self.max_m_bc.get(0)
+        self.max_m_bc_air      = self.max_m_bc.get(1)
+        self.fluxMatrix_water  = self.fluxMatrix.get(0)
+        self.fluxMatrix_air    = self.fluxMatrix.get(1)
+        
+
+        
         
         
         
@@ -1049,19 +1069,11 @@ class LevelModel(proteus.Transport.OneLevelTransport):
 
         if hasattr(self.numericalFlux,'setDirichletValues'):
             self.numericalFlux.setDirichletValues(self.ebqe)
-        if not hasattr(self.numericalFlux,'isDOFBoundary'):
-            self.numericalFlux.isDOFBoundary = {0:np.zeros(self.ebqe[('u',0)].shape,'i')}
-        else:
-            for ci in range(self.nc):
-            if ci not in self.numericalFlux.isDOFBoundary:
-                self.numericalFlux.isDOFBoundary[ci] = np.zeros(self.ebqe[('u', 0)].shape, 'i')
-
-        if not hasattr(self.numericalFlux,'ebqe'):
-            self.numericalFlux.ebqe = {('u',0):np.zeros(self.ebqe[('u',0)].shape,'d')}
-        else:
-            for ci in range(self.nc):
-                if ('u', ci) not in self.numericalFlux.ebqe:
-                    self.numericalFlux.ebqe[('u', ci)] = np.zeros(self.ebqe[('u', 0)].shape, 'd')
+        # Ensure per-component buffers exist (only if your flux class doesn’t set them)
+        if not hasattr(self.numericalFlux, 'isDOFBoundary'):
+            self.numericalFlux.isDOFBoundary = { ci: np.zeros(self.ebqe[('u', ci)].shape, 'i') for ci in range(self.nc)}
+        if not hasattr(self.numericalFlux, 'ebqe'):
+            self.numericalFlux.ebqe = {('u', ci): np.zeros(self.ebqe[('u', ci)].shape, 'd') for ci in range(self.nc)}
         #TODO how to handle redistancing calls for calculateCoefficients,calculateElementResidual etc
         self.globalResidualDummy = None
         compKernelFlag=0
@@ -1090,24 +1102,39 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         limited_solution = np.zeros((len(rowptr) - 1),'d')
         argsDict = cArgumentsDict.ArgumentsDict()
-        argsDict["bc_mask"] = self.bc_mask
+        argsDict["bc_mask_water"] = self.bc_mask_water
+        argsDict["bc_mask_air"] = self.bc_mask_air
         argsDict["NNZ"] = self.nnz 
         argsDict["numDOFs"] = len(rowptr) - 1  # num of DOFs
         argsDict["dt"] = self.timeIntegration.dt
         argsDict["ML"] = self.ML
-        argsDict["mn"] = self.mn
-        argsDict["mHigh"] = self.mHigh
-        argsDict["mLow"] = self.mLow
-        argsDict["mDotHigh"] = self.mDotHigh
-        argsDict["fluxCorrection"] = self.fluxCorrection
-        argsDict["mDotLow"] = self.mDotLow
-        argsDict["limited_solution"] = limited_solution
         argsDict["csrRowIndeces_DofLoops"] = rowptr
         argsDict["csrColumnOffsets_DofLoops"] = colind
         argsDict["MC"] = MassMatrix
-        argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL
-        argsDict["min_m_bc"] = self.min_m_bc
-        argsDict["max_m_bc"] = self.max_m_bc
+        
+        
+        argsDict["mn_water"] = self.mn[0]
+        argsDict["mHigh_water"] = self.mHigh[0]
+        argsDict["mLow_water"] = self.mLow[0]
+        argsDict["mDotHigh_water"] = self.mDotHigh[0]
+        argsDict["fluxCorrection_water"] = self.fluxCorrection[0]
+        argsDict["mDotLow_water"] = self.mDotLow[0]
+        argsDict["limited_solution_water"] = limited_solution       
+        argsDict["dt_times_fH_minus_fL_water"] = self.dt_times_dC_minus_dL_water
+        argsDict["min_m_bc_water"] = self.min_m_bc[0]
+        argsDict["max_m_bc_water"] = self.max_m_bc[0]
+
+        argsDict["mn_air"] = self.mn[1]
+        argsDict["mHigh_air"] = self.mHigh[1]
+        argsDict["mLow_air"] = self.mLow[1]
+        argsDict["mDotLow_air"] = self.mDotLow[1]
+        argsDict["mDotHigh_air"] = self.mDotHigh[1]
+        argsDict["fluxCorrection_air"] = self.fluxCorrection[1]
+        argsDict["limited_solution_air"] = limited_solution
+        argsDict["dt_times_fH_minus_fL_air"] = self.dt_times_dC_minus_dL_air
+        argsDict["min_m_bc_air"] = self.min_m_bc[1]
+        argsDict["max_m_bc_air"] = self.max_m_bc[1]
+
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["MONOLITHIC"] =0#cek hack self.coefficients.MONOLITHIC
         argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
@@ -1179,9 +1206,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                                        self.jacobian)
         if self.u_dof_old is None:
             # Pass initial condition to u_dof_old
-            self.u_dof_old = np.copy(self.u[0].dof)
-        self.u_dof_old_water = np.copy(self.u[0].dof)  # water
-        self.u_dof_old_air   = np.copy(self.u[1].dof)  # air
+            self.u_dof_old_water = np.copy(self.u[0].dof)
+            self.u_dof_old_air   = np.copy(self.u[1].dof)  # air
         rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
         nnz = nzval.shape[-1]  # number of non-zero entries in sparse matrix
         r.fill(0.0)
@@ -1356,21 +1382,19 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             CTz = np.zeros(CTx.shape, 'd')
 
         # This is dummy. I just care about the csr structure of the sparse matrix
-        self.dLow = np.zeros(Cx.shape, 'd')
-        self.fluxMatrix = np.zeros(Cx.shape, 'd')
-        self.dt_times_dC_minus_dL = np.zeros(Cx.shape, 'd')
+        self.dLow_water = np.zeros(Cx.shape, 'd')
+        self.fluxMatrix_water = np.zeros(Cx.shape, 'd')
+        self.dt_times_dC_minus_dL_water = np.zeros(Cx.shape, 'd')
 
         self.dLow_air = np.zeros(Cx.shape, 'd')                  # 2PH: per-air low-order diffusion
         self.fluxMatrix_air = np.zeros(Cx.shape, 'd')            # 2PH: per-air flux corr matrix
         self.dt_times_dC_minus_dL_air = np.zeros(Cx.shape, 'd')  # 2PH: per-air dt*(C^H-C^L)
 
-
-
         nFree = len(rowptr)-1
-        self.min_m_bc = np.ones(nFree, 'd')
-        self.min_m_bc *= 1.0e10
-        self.max_m_bc = np.ones(nFree, 'd')
-        self.max_m_bc *= -1.0e10
+        self.min_m_bc_water = np.ones(nFree, 'd')
+        self.min_m_bc_water *= 1.0e10
+        self.max_m_bc_water = np.ones(nFree, 'd')
+        self.max_m_bc_water *= -1.0e10
 
         if self.nc > 1:
             self.min_m_bc_air = np.ones(nFree, 'd'); self.min_m_bc_air *= 1.0e10   # 2PH
@@ -1479,9 +1503,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
         
         ##################################################
-        argsDict["a_rowptr_air"] = self.coefficients.sdInfo[(1,1)][0]
-        argsDict["a_colind_air"] = self.coefficients.sdInfo[(1,1)][1]
-
+        # Per phase density and compressibility
+        ##################################################
         argsDict["rho_water"] = self.coefficients.rho_water
         argsDict["rho_water"] = self.coefficients.rho_water
         argsDict["beta_water"] = self.coefficients.beta_water
@@ -1507,47 +1530,85 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["sc_uref"] = 1.0
         argsDict["sc_alpha"] = 2.0
 
-        argsDict["u_l2g"] = self.u[0].femSpace.dofMap.l2g
-        argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
-        ######################################################
-
-        argsDict["u_l2g_air"] = self.u[1].femSpace.dofMap.l2g             # 2PH
-        argsDict["r_l2g_air"] = self.l2g[1]['freeGlobal']                  # 2PH
+        ##local to global
+        argsDict["u_l2g_water"] = self.u[0].femSpace.dofMap.l2g
+        argsDict["r_l2g_water"] = self.l2g[0]['freeGlobal']
+        argsDict["u_l2g_air"] = self.u[1].femSpace.dofMap.l2g             # might be same for same FEM
+        argsDict["r_l2g_air"] = self.l2g[1]['freeGlobal']                  # might be same for same FEM
 
         argsDict["elementDiameter"] = self.mesh.elementDiametersArray
         argsDict["degree_polynomial"] = degree_polynomial
 
 
-        argsDict["u_dof"] = self.u[0].dof
-        argsDict["u_dof_old"] = self.u_dof_old
+        argsDict["u_dof_water"] = self.u[0].dof
+        argsDict["u_dof_old_water"] = self.u_dof_old
         
         argsDict["u_dof_air"] = self.u[1].dof
         argsDict["u_dof_old"] = self.u_dof_old_air
         
 
-        argsDict["velocity"] = self.q['velocity']
+        argsDict["velocity_water"] = self.q['velocity', 0]
+        argsDict["velocity_air"] = self.q['velocity', 1]
+        
 
-        argsDict["q_m"] = self.timeIntegration.m_tmp[0]
-        argsDict["q_u"] = self.q[('u',0)]
-        argsDict["q_dV"] = self.q[('dV_u',0)]
-        argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
-        argsDict["cfl"] = self.q[('cfl',0)]
+        argsDict["q_m_water"] = self.timeIntegration.m_tmp[0]
+        argsDict["q_m_air"] = self.timeIntegration.m_tmp[1]
+        
+        argsDict["q_u_water"] = self.q[('u',0)]
+        argsDict["q_u_air"] = self.q[('u',1)]
+        
+        argsDict["q_dV_water"] = self.q[('dV_u',0)]
+        argsDict["q_dV_air"] = self.q[('dV_u',1)]
+
+        argsDict["q_m_betaBDF_water"] = self.timeIntegration.beta_bdf[0]       
+        argsDict["q_m_betaBDF_air"] = self.timeIntegration.beta_bdf[1]
+
+        argsDict["cfl_water"] = self.q[('cfl',0)]
+        argsDict["cfl_air"] = self.q[('cfl',1)]
+        
+
         argsDict["q_numDiff_u"] = self.q[('numDiff',0,0)]
-        #argsDict["q_numDiff_u_last"] = self.q[('numDiff_last',0,0)]
-        argsDict["q_numDiff_u_last"] = self.numDiff_star
-        argsDict["offset_u"] = self.offset[0]
-        argsDict["stride_u"] = self.stride[0]
+        argsDict["q_numDiff_u_air"] = self.q[('numDiff',1,1)]
+        
+        argsDict["q_numDiff_u_last"] = self.q[('numDiff_last',0,0)]
+        argsDict["q_numDiff_u_last"] = self.q[('numDiff_last',1,1)]
+        ## Later:: anb
+
+        #argsDict["q_numDiff_u_last"] = self.numDiff_star
+        
+        argsDict["offset_u_water"] = self.offset[0]
+        argsDict["offset_u"] = self.offset[1]
+        
+        argsDict["stride_u"] = self.stride[0]        
+        argsDict["stride_u"] = self.stride[1]
+
         argsDict["globalResidual"] = r
+
         argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
         argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
-        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity']
-        argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
-        argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',0)]
-        argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]
-        argsDict["ebqe_bc_flux_ext"] = self.ebqe[('advectiveFlux_bc',0)]
+        
+        
+        argsDict["ebqe_velocity_ext_water"] = self.ebqe['velocity', 0]
+        argsDict["ebqe_velocity_ext_air"] = self.ebqe['velocity', 1]
+        
+        
+        argsDict["isDOFBoundary_u_water"] = self.numericalFlux.isDOFBoundary[0]
+        argsDict["isDOFBoundary_u_air"] = self.numericalFlux.isDOFBoundary[1]
+        
+        
+        argsDict["ebqe_bc_u_ext_water"] = self.numericalFlux.ebqe[('u',0)]
+        argsDict["ebqe_bc_u_ext_air"] = self.numericalFlux.ebqe[('u',1)]
+        
+        argsDict["isFluxBoundary_u_water"] = self.ebqe[('advectiveFlux_bc_flag',0)]
+        argsDict["isFluxBoundary_u_air"] = self.ebqe[('advectiveFlux_bc_flag',0)]
+
+        argsDict["ebqe_bc_flux_ext_water"] = self.ebqe[('advectiveFlux_bc',0)]
+        argsDict["ebqe_bc_flux_ext_air"] = self.ebqe[('advectiveFlux_bc',1)]
+        
         argsDict["ebqe_phi"] = self.ebqe[('u',0)]
+
         argsDict["epsFact"] = 0.0
         argsDict["ebqe_u"] = self.ebqe[('u',0)]
         argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux',0)]
@@ -1588,25 +1649,48 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["STABILIZATTION_TYPE"] = self.coefficients.STABILIZATION_TYPE
         argsDict["ENTROPY_TYPE"] = self.coefficients.ENTROPY_TYPE
+        argsDict["PSK_TYPE"] = self.coefficients.PSK_TYPE
         # FLUX CORRECTED TRANSPORT
-        argsDict["dLow"] = self.dLow
-        argsDict["fluxMatrix"] = self.fluxMatrix
-        argsDict["mDotLow"] = self.mDotLow
-        argsDict["mDotHigh"] = self.mDotHigh
-        argsDict["fluxCorrection"] = self.fluxCorrection
+        argsDict["dLow_water"] = self.dLow_water
+        argsDict["fluxMatrix_water"] = self.fluxMatrix_water
+        argsDict["mDotLow_water"] = self.mDotLow[0]
+        argsDict["mDotHigh_water"] = self.mDotHigh[0]
+        argsDict["fluxCorrection_water"] = self.fluxCorrection[0]
         limited_solution = np.zeros((len(rowptr) - 1),'d')
-        argsDict["limited_solution"] = limited_solution
+        argsDict["limited_solution_water"] = limited_solution
         argsDict["MONOLITHIC"] =0
-        argsDict["mLow"] = self.mLow
-        argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL
-        argsDict["min_m_bc"] = self.min_m_bc
-        argsDict["max_m_bc"] = self.max_m_bc
+        argsDict["mLow_water"] = self.mLow[0]
+        argsDict["dt_times_fH_minus_fL_water"] = self.dt_times_dC_minus_dL_water
+        argsDict["min_m_bc_water"] = self.min_m_bc[0]
+        argsDict["max_m_bc_water"] = self.max_m_bc[0]
         argsDict["quantDOFs"] = self.quantDOFs
-        argsDict["mn"] = self.mn
+        argsDict["mn_water"] = self.mn[0]
         argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
 ######################################################################################
-        argsDict["pn"] = self.u[0].dof
-        argsDict["mHigh"] = self.mHigh
+        argsDict["pn_water"] = self.u[0].dof
+        argsDict["mHigh_water"] = self.mHigh[0]
+        
+        argsDict["dLow_air"] = self.dLow_air
+        argsDict["fluxMatrix_air"] = self.fluxMatrix[1]
+        argsDict["mDotLow_air"] = self.mDotLow[1]
+        argsDict["mDotHigh_air"] = self.mDotHigh[1]
+        argsDict["fluxCorrection_air"] = self.fluxCorrection[1]
+        limited_solution = np.zeros((len(rowptr) - 1),'d')
+        argsDict["limited_solution_air"] = limited_solution
+        argsDict["MONOLITHIC"] =0
+        argsDict["mLow_air"] = self.mLow[1]
+        argsDict["dt_times_fH_minus_fL_air"] = self.dt_times_dC_minus_dL_air
+        argsDict["min_m_bc_air"] = self.min_m_bc[1]
+        argsDict["max_m_bc_air"] = self.max_m_bc[1]
+        #argsDict["quantDOFs"] = self.quantDOFs
+        argsDict["mn_air"] = self.mn[1]
+        #argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
+######################################################################################
+        argsDict["pn_air"] = self.u[1].dof
+        argsDict["mHigh_air"] = self.mHigh[1]
+
+
+
 
         rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         argsDict["MassMatrix"] = MassMatrix
@@ -1622,7 +1706,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
 
         
         ######################################################
-        argsDict['PSK_TYPE'] = self.coefficients.PSK_TYPE
+        #argsDict['PSK_TYPE'] = self.coefficients.PSK_TYPE
         argsDict["BC_entry_head"]= self.coefficients.BC_entry_head
         argsDict['BC_lambda'] = self.coefficients.BC_lambda
         
@@ -1759,13 +1843,18 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
         argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-        argsDict["rho"] = self.coefficients.rho
-        argsDict["beta"] = self.coefficients.beta
+
+        argsDict["rho_water"] = self.coefficients.rho_water
+        argsDict["beta_water"] = self.coefficients.beta_water
+        argsDict["rho_air"] = self.coefficients.rho_air
+        argsDict["beta_air"] = self.coefficients.beta_air
+
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
         argsDict["n"] = self.coefficients.vgm_n_types
         argsDict["thetaR"] = self.coefficients.thetaR_types
         argsDict["thetaSR"] = self.coefficients.thetaSR_types
+
         argsDict["KWs"] = self.coefficients.Ksw_types
         argsDict["useMetrics"] = 0.0
         argsDict["alphaBDF"] = self.timeIntegration.alpha_bdf
@@ -1773,36 +1862,73 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["shockCapturingDiffusion"] = self.coefficients.SC
         argsDict["sc_uref"] = 1.0
         argsDict["sc_alpha"] = 2.0
-        argsDict["u_l2g"] = self.u[0].femSpace.dofMap.l2g
-        argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
+
+        argsDict["u_l2g_water"] = self.u[0].femSpace.dofMap.l2g
+        argsDict["r_l2g_water"] = self.l2g[0]['freeGlobal']
+
+        argsDict["u_l2g_air"] = self.u[1].femSpace.dofMap.l2g
+        argsDict["r_l2g_air"] = self.l2g[1]['freeGlobal']
+
         argsDict["elementDiameter"] = self.mesh.elementDiametersArray
         argsDict["degree_polynomial"] = degree_polynomial
-        argsDict["u_dof"] = self.u[0].dof
-        argsDict["u_dof_old"] = self.u[0].dof
-        argsDict["velocity"] = self.q['velocity']
-        argsDict["q_m"] = self.timeIntegration.m_tmp[0]
-        argsDict["q_u"] = self.q[('u',0)]
-        argsDict["q_dV"] = self.q[('dV_u',0)]
-        argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
-        argsDict["cfl"] = self.q[('cfl',0)]
-        argsDict["q_numDiff_u"] = self.q[('numDiff',0,0)]
-        argsDict["q_numDiff_u_last"] = self.q[('numDiff_last',0,0)]
-        argsDict["q_numDiff_u_last"] = self.numDiff_star
-        argsDict["offset_u"] = self.offset[0]
-        argsDict["stride_u"] = self.stride[0]
+        
+        argsDict["u_dof_water"] = self.u[0].dof
+        argsDict["u_dof_old_water"] = self.u[0].dof
+        argsDict["velocity_water"] = self.q['velocity', 0]
+        argsDict["q_m_water"] = self.timeIntegration.m_tmp[0]
+        argsDict["q_u_water"] = self.q[('u',0)]
+        argsDict["q_dV_water"] = self.q[('dV_u',0)]
+        argsDict["q_m_betaBDF_water"] = self.timeIntegration.beta_bdf[0]
+        argsDict["cfl_water"] = self.q[('cfl',0)]
+        argsDict["q_numDiff_u_water"] = self.q[('numDiff',0,0)]
+        argsDict["q_numDiff_u_last_water"] = self.q[('numDiff_last',0,0)]
+        argsDict["q_numDiff_u_last_water"] = self.numDiff_star
+        argsDict["offset_u_water"] = self.offset[0]
+        argsDict["stride_u_water"] = self.stride[0]
+
+
+        argsDict["u_dof_air"] = self.u[1].dof
+        argsDict["u_dof_old_air"] = self.u[1].dof
+        argsDict["velocity_air"] = self.q['velocity', 1]
+        argsDict["q_m_air"] = self.timeIntegration.m_tmp[1]
+        argsDict["q_u_air"] = self.q[('u',1)]
+        argsDict["q_dV_air"] = self.q[('dV_u',1)]
+        argsDict["q_m_betaBDF_air"] = self.timeIntegration.beta_bdf[1]
+        argsDict["cfl_air"] = self.q[('cfl',1)]
+        argsDict["q_numDiff_u_air"] = self.q[('numDiff',1,1)]
+        argsDict["q_numDiff_u_last_air"] = self.q[('numDiff_last',1,1)]
+#        argsDict["q_numDiff_u_last_air"] = self.numDiff_star
+        argsDict["offset_u_air"] = self.offset[1]
+        argsDict["stride_u_air"] = self.stride[1]
+
         argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
         argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
-        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity']
-        argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
-        argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',0)]
-        argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]
-        argsDict["ebqe_bc_flux_ext"] = self.ebqe[('advectiveFlux_bc',0)]
-        argsDict["ebqe_phi"] = self.ebqe[('u',0)]
+ 
+        argsDict["ebqe_velocity_ext_water"] = self.ebqe['velocity', 0]
+        argsDict["isDOFBoundary_u_water"] = self.numericalFlux.isDOFBoundary[0]
+        argsDict["ebqe_bc_u_ext_water"] = self.numericalFlux.ebqe[('u',0)]
+        argsDict["isFluxBoundary_u_water"] = self.ebqe[('advectiveFlux_bc_flag',0)]
+        argsDict["ebqe_bc_flux_ext_water"] = self.ebqe[('advectiveFlux_bc',0)]
+        argsDict["ebqe_phi_water"] = self.ebqe[('u',0)]
+        
+
+        argsDict["ebqe_velocity_ext_air"] = self.ebqe['velocity', 1]
+        argsDict["isDOFBoundary_u_air"] = self.numericalFlux.isDOFBoundary[1]
+        argsDict["ebqe_bc_u_ext_air"] = self.numericalFlux.ebqe[('u',1)]
+        argsDict["isFluxBoundary_u_air"] = self.ebqe[('advectiveFlux_bc_flag',1)]
+        argsDict["ebqe_bc_flux_ext_air"] = self.ebqe[('advectiveFlux_bc',1)]
+        argsDict["ebqe_phi_air"] = self.ebqe[('u',1)]
+
         argsDict["epsFact"] = 0.0
-        argsDict["ebqe_u"] = self.ebqe[('u',0)]
-        argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux',0)]
+
+        argsDict["ebqe_u_water"] = self.ebqe[('u',0)]
+        argsDict["ebqe_u_air"] = self.ebqe[('u',1)]
+        
+        argsDict["ebqe_flux_water"] = self.ebqe[('advectiveFlux',0)]
+        argsDict["ebqe_flux_air"] = self.ebqe[('advectiveFlux',1)]
+
         argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
         argsDict["cE"] = self.coefficients.cE
         argsDict["cK"] = self.coefficients.cK
@@ -1825,19 +1951,27 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["delta_x_ij"] = self.delta_x_ij
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["ENTROPY_TYPE"] = self.coefficients.ENTROPY_TYPE
-        argsDict["dLow"] = self.dLow
-        argsDict["fluxMatrix"] = self.fluxMatrix
-        argsDict["mDotLow"] = self.mDotLow
-        argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL
-        argsDict["min_m_bc"] = self.min_m_bc
-        argsDict["max_m_bc"] = self.max_m_bc
-        argsDict["quantDOFs"] = self.quantDOFs
-        argsDict["mn"] = self.mn
-        argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
-        argsDict["limited_solution"] = u
-        argsDict["mLow"] = self.u[0].dof
 
-        ######################################################
+     # FLUX CORRECTED TRANSPORT
+        argsDict["dLow_water"] = self.dLow_water
+        argsDict["fluxMatrix_water"] = self.fluxMatrix_water
+        argsDict["mDotLow_water"] = self.mDotLow[0]
+        argsDict["mDotHigh_water"] = self.mDotHigh[0]
+        argsDict["fluxCorrection_water"] = self.fluxCorrection[0]
+        limited_solution = np.zeros((len(rowptr) - 1),'d')
+        argsDict["limited_solution_water"] = limited_solution
+        argsDict["mLow_water"] = self.mLow[0]
+        
+        argsDict["dLow_air"] = self.dLow_air
+        argsDict["fluxMatrix_air"] = self.fluxMatrix[1]
+        argsDict["mDotLow_air"] = self.mDotLow[1]
+        argsDict["mDotHigh_air"] = self.mDotHigh[1]
+        argsDict["fluxCorrection_air"] = self.fluxCorrection[1]
+        limited_solution = np.zeros((len(rowptr) - 1),'d')
+        argsDict["limited_solution_air"] = limited_solution
+        argsDict["mLow_air"] = self.mLow[1]
+
+    ######################################################
         argsDict['PSK_TYPE'] = self.coefficients.PSK_TYPE
         argsDict["BC_entry_head"]= self.coefficients.BC_entry_head
         argsDict['BC_lambda'] = self.coefficients.BC_lambda
@@ -1884,8 +2018,12 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
         argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-        argsDict["rho"] = self.coefficients.rho
-        argsDict["beta"] = self.coefficients.beta
+
+        argsDict["rho_water"] = self.coefficients.rho_water
+        argsDict["beta_water"] = self.coefficients.beta_water
+        argsDict["rho_air"] = self.coefficients.rho_air
+        argsDict["beta_air"] = self.coefficients.beta_air
+
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
         argsDict["n"] = self.coefficients.vgm_n_types
@@ -1896,16 +2034,34 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["alphaBDF"] = self.timeIntegration.alpha_bdf
         argsDict["lag_shockCapturing"] = 0
         argsDict["shockCapturingDiffusion"] = 0.1
-        argsDict["u_l2g"] = self.u[0].femSpace.dofMap.l2g
-        argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
+
+        argsDict["u_l2g_water"] = self.u[0].femSpace.dofMap.l2g
+        argsDict["r_l2g_water"] = self.l2g[0]['freeGlobal']
+
+        argsDict["u_l2g_air"] = self.u[1].femSpace.dofMap.l2g
+        argsDict["r_l2g_air"] = self.l2g[1]['freeGlobal']
+        #argsDict["u_l2g"] = self.u[0].femSpace.dofMap.l2g
+        #argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
         argsDict["elementDiameter"] = self.mesh.elementDiametersArray
         argsDict["degree_polynomial"] = degree_polynomial
-        argsDict["u_dof"] = self.u[0].dof
-        argsDict["velocity"] = self.q['velocity']
-        argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
-        argsDict["cfl"] = self.q[('cfl',0)]
-        argsDict["q_numDiff_u"] = self.q[('numDiff',0,0)]
-        argsDict["q_numDiff_u_last"] = self.q[('numDiff',0,0)]
+
+        argsDict["u_dof_water"] = self.u[0].dof
+        argsDict["velocity_water"] = self.q['velocity', 0]
+        argsDict["q_m_betaBDF_water"] = self.timeIntegration.beta_bdf[0]
+        argsDict["cfl_water"] = self.q[('cfl',0)]
+        argsDict["q_numDiff_u_water"] = self.q[('numDiff',0,0)]
+        argsDict["q_numDiff_u_last_water"] = self.q[('numDiff_last',0,0)]
+
+        argsDict["u_dof_air"] = self.u[1].dof
+        argsDict["velocity_air"] = self.q['velocity', 1]
+        argsDict["q_m_betaBDF_air"] = self.timeIntegration.beta_bdf[1]
+        argsDict["cfl_air"] = self.q[('cfl',1)]
+        argsDict["q_numDiff_u_air"] = self.q[('numDiff',1,1)]
+        argsDict["q_numDiff_u_last_air"] = self.q[('numDiff_last',1,1)]
+
+
+
+
         argsDict["csrRowIndeces_u_u"] = self.csrRowIndeces[(0,0)]
         argsDict["csrColumnOffsets_u_u"] = self.csrColumnOffsets[(0,0)]
         argsDict["globalJacobian"] = jacobian.getCSRrepresentation()[2]
@@ -1914,11 +2070,21 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
         argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
-        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity']
-        argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
-        argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',0)]
-        argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]
-        argsDict["ebqe_bc_flux_ext"] = self.ebqe[('advectiveFlux_bc',0)]
+        
+        argsDict["ebqe_velocity_ext_water"] = self.ebqe['velocity', 0]
+        argsDict["isDOFBoundary_u_water"] = self.numericalFlux.isDOFBoundary[0]
+        argsDict["ebqe_bc_u_ext_water"] = self.numericalFlux.ebqe[('u',0)]
+        argsDict["isFluxBoundary_u_water"] = self.ebqe[('advectiveFlux_bc_flag',0)]
+        argsDict["ebqe_bc_flux_ext_water"] = self.ebqe[('advectiveFlux_bc',0)]
+        
+        argsDict["ebqe_velocity_ext_air"] = self.ebqe['velocity', 1]
+        argsDict["isDOFBoundary_u_air"] = self.numericalFlux.isDOFBoundary[1]
+        argsDict["ebqe_bc_u_ext_air"] = self.numericalFlux.ebqe[('u',1)]
+        argsDict["isFluxBoundary_u_air"] = self.ebqe[('advectiveFlux_bc_flag',1)]
+        argsDict["ebqe_bc_flux_ext_air"] = self.ebqe[('advectiveFlux_bc',1)]
+        
+        
+        
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0,0)]
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["VMS"] = self.coefficients.VMS

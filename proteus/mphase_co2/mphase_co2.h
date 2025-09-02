@@ -2895,8 +2895,8 @@ void kth_FCT_step(arguments_dict &args)
       } //kb
       for (int i = 0; i < nDOF_test_element; i++) {
           int eN_i = eN * nDOF_test_element + i;
-          globalResidual_water.data()[offset_u + stride_u * u_l2g.data()[eN_i]] += elementResidual_u_water[i];
-          globalResidual_air.data()[offset_u + stride_u * u_l2g.data()[eN_i]] += elementResidual_u_air[i];
+          globalResidual.data()[offset_u_water + stride_u_water * u_l2g.data()[eN_i]] += elementResidual_u_water[i];
+          globalResidual.data()[offset_u_air + stride_u_air * u_l2g.data()[eN_i]] += elementResidual_u_air[i];
           
       }//i
     } //ebNE
