@@ -1537,9 +1537,13 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
     int                  numDOFs                   = args.scalar<int>("numDOFs"); //number of DOFs
     double               dt                        = args.scalar<double>("dt");
-    xt::pyarray<int>    &csrRowIndeces_DofLoops    = args.array<int>("csrRowIndeces_DofLoops");    //csr row indeces
-    xt::pyarray<int>    &csrColumnOffsets_DofLoops = args.array<int>("csrColumnOffsets_DofLoops"); //csr column offsets
-     //flags
+    xt::pyarray<int>    &csrRowIndeces_DofLoops_water    = args.array<int>("csrRowIndeces_DofLoops_water");    //csr row indeces
+    xt::pyarray<int>    &csrColumnOffsets_DofLoops_water = args.array<int>("csrColumnOffsets_DofLoops_water"); //csr column offsets
+    xt::pyarray<int>    &csrRowIndeces_DofLoops_air    = args.array<int>("csrRowIndeces_DofLoops_water");    //csr row indeces
+    xt::pyarray<int>    &csrColumnOffsets_DofLoops_air = args.array<int>("csrColumnOffsets_DofLoops_air"); //csr column offsets
+
+
+    //flags
     int                  LUMPED_MASS_MATRIX        = args.scalar<int>("LUMPED_MASS_MATRIX");
     int                  MONOLITHIC                = args.scalar<int>("MONOLITHIC");
 
@@ -1578,8 +1582,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
       double Pposi = 0, Pnegi = 0;
       // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_water.data()[i]; offset < csrRowIndeces_DofLoops_water.data()[i + 1]; offset++) {
+        int j = csrColumnOffsets_DofLoops_water.data()[offset];
         ////////////////////////
         // COMPUTE THE BOUNDS //
         ////////////////////////
@@ -1640,8 +1644,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       double ith_Limiter_times_FluxCorrectionMatrix = 0.;
       double alpha_fA, alpha_dot, beta_ij = 1.0;
       // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_water.data()[i]; offset < csrRowIndeces_DofLoops_water.data()[i + 1]; offset++) {
+        int j = csrColumnOffsets_DofLoops_water.data()[offset];
         alpha_fA     = ((FluxCorrectionMatrix_water[ij] > 0) ? fmin(Rpos_water[i], Rneg_water[j]) : fmin(Rneg_water[i], Rpos_water[j])) * FluxCorrectionMatrix_water[ij];
         alpha_dot    = fmin(1.0, beta_ij * fabs(alpha_fA) / MC_water.data()[ij] / fmax(1.0e-8, fabs(mDot_water[i] - mDot_water[j])));
         if (MONOLITHIC == 0) {
@@ -1708,8 +1712,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
       double Pposi = 0, Pnegi = 0;
       // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_air.data()[i]; offset < csrRowIndeces_DofLoops_air.data()[i + 1]; offset++) {
+        int j = csrColumnOffsets_DofLoops_air.data()[offset];
         ////////////////////////
         // COMPUTE THE BOUNDS //
         ////////////////////////
@@ -1770,8 +1774,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       double ith_Limiter_times_FluxCorrectionMatrix_air = 0.;
       double alpha_fA, alpha_dot, beta_ij = 1.0;
       // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_air.data()[i]; offset < csrRowIndeces_DofLoops_air.data()[i + 1]; offset++) {
+        int j = csrColumnOffsets_DofLoops_air.data()[offset];
         alpha_fA     = ((FluxCorrectionMatrix_air[ij] > 0) ? fmin(Rpos_air[i], Rneg_air[j]) : fmin(Rneg_air[i], Rpos_air[j])) * FluxCorrectionMatrix_air[ij];
         alpha_dot    = fmin(1.0, beta_ij * fabs(alpha_fA) / MC_air.data()[ij] / fmax(1.0e-8, fabs(mDot_air[i] - mDot_air[j])));
         if (MONOLITHIC == 0) {
@@ -2212,8 +2216,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     // PARAMETERS FOR EDGE VISCOSITY
     int               numDOFs                       = args.scalar<int>("numDOFs");
     int               NNZ                           = args.scalar<int>("NNZ");
-    xt::pyarray<int> &csrRowIndeces_DofLoops        = args.array<int>("csrRowIndeces_DofLoops");
-    xt::pyarray<int> &csrColumnOffsets_DofLoops     = args.array<int>("csrColumnOffsets_DofLoops");
+    xt::pyarray<int> &csrRowIndeces_DofLoops_water        = args.array<int>("csrRowIndeces_DofLoops_water");
+    xt::pyarray<int> &csrColumnOffsets_DofLoops_water     = args.array<int>("csrColumnOffsets_DofLoops_water");
+
+    xt::pyarray<int> &csrRowIndeces_DofLoops_air        = args.array<int>("csrRowIndeces_DofLoops_air");
+    xt::pyarray<int> &csrColumnOffsets_DofLoops_air     = args.array<int>("csrColumnOffsets_DofLoops_air");
+    
     xt::pyarray<int> &csrRowIndeces_CellLoops       = args.array<int>("csrRowIndeces_CellLoops");
     xt::pyarray<int> &csrColumnOffsets_CellLoops    = args.array<int>("csrColumnOffsets_CellLoops");
     xt::pyarray<int> &csrColumnOffsets_eb_CellLoops = args.array<int>("csrColumnOffsets_eb_CellLoops");
@@ -2992,8 +3000,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       }
       // for smoothness indicator //
       double alpha_numerator_pos = 0., alpha_numerator_neg = 0., alpha_denominator_pos = 0., alpha_denominator_neg = 0.;
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) { // First loop in j (sparsity pattern)
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_water.data()[i]; offset < csrRowIndeces_DofLoops_water.data()[i + 1]; offset++) { // First loop in j (sparsity pattern)
+        int j = csrColumnOffsets_DofLoops_water.data()[offset];
         if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) //EV Stabilization
         {
           // COMPUTE ETA MIN AND ETA MAX //
@@ -3037,8 +3045,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
       // Now that I have the gi vectors, I can use them for the current i-th DOF
       double SumPos = 0., SumNeg = 0.;
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) { // second loop in j (sparsity pattern)
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_water.data()[i]; offset < csrRowIndeces_DofLoops_water.data()[i + 1]; offset++) { // second loop in j (sparsity pattern)
+        int j = csrColumnOffsets_DofLoops_water.data()[offset];
         // compute xj
         double xj[nSpace];
         for (int I = 0; I < nSpace; I++) xj[I] = mesh_dof.data()[j * 3 + I];
@@ -3085,8 +3093,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       }
       // for smoothness indicator //
       double alpha_numerator_pos = 0., alpha_numerator_neg = 0., alpha_denominator_pos = 0., alpha_denominator_neg = 0.;
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) { // First loop in j (sparsity pattern)
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_air.data()[i]; offset < csrRowIndeces_DofLoops_air.data()[i + 1]; offset++) { // First loop in j (sparsity pattern)
+        int j = csrColumnOffsets_DofLoops_air.data()[offset];
         if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) //EV Stabilization
         {
           // COMPUTE ETA MIN AND ETA MAX //
@@ -3130,8 +3138,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
       // Now that I have the gi vectors, I can use them for the current i-th DOF
       double SumPos = 0., SumNeg = 0.;
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) { // second loop in j (sparsity pattern)
-        int j = csrColumnOffsets_DofLoops.data()[offset];
+      for (int offset = csrRowIndeces_DofLoops_air.data()[i]; offset < csrRowIndeces_DofLoops_air.data()[i + 1]; offset++) { // second loop in j (sparsity pattern)
+        int j = csrColumnOffsets_DofLoops_air.data()[offset];
         // compute xj
         double xj[nSpace];
         for (int I = 0; I < nSpace; I++) xj[I] = mesh_dof.data()[j * 3 + I];
@@ -3185,8 +3193,8 @@ for (int i = 0; i < numDOFs; i++) {
   }
 
   // loop over the sparsity pattern of the i-th DOF
-  for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-    int j = csrColumnOffsets_DofLoops.data()[offset];
+  for (int offset = csrRowIndeces_DofLoops_water.data()[i]; offset < csrRowIndeces_DofLoops_water.data()[i + 1]; offset++) {
+    int j = csrColumnOffsets_DofLoops_water.data()[offset];
     if (i == j) ii = ij;
     double phi_j  = u_free_dof_water[j], phin_j = u_free_dof_old_water[j];
 
@@ -3382,8 +3390,8 @@ for (int i = 0; i < numDOFs; i++) {
 ij = 0;
 for (int i = 0; i < numDOFs; i++) {
   mDotHigh_water[i] = cflux_water[i];
-  for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-    int j = csrColumnOffsets_DofLoops.data()[offset];
+  for (int offset = csrRowIndeces_DofLoops_water.data()[i]; offset < csrRowIndeces_DofLoops_water.data()[i + 1]; offset++) {
+    int j = csrColumnOffsets_DofLoops_water.data()[offset];
     mDotHigh_water[i] -= MC_water.data()[ij]*cflux_water[j]/ML_water.data()[j];
     ij +=1;
   }
@@ -3419,8 +3427,8 @@ for (int i = 0; i < numDOFs; i++) {
     phin_i -= rho_air * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
   }
 
-  for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-    int j = csrColumnOffsets_DofLoops.data()[offset];
+  for (int offset = csrRowIndeces_DofLoops_air.data()[i]; offset < csrRowIndeces_DofLoops_air.data()[i + 1]; offset++) {
+    int j = csrColumnOffsets_DofLoops_air.data()[offset];
     if (i == j) ii = ij;
     double phi_j  = u_free_dof_air[j], phin_j = u_free_dof_old_air[j];
 
@@ -3606,8 +3614,8 @@ for (int i = 0; i < numDOFs; i++) {
                          BC_entry_head.data()[elementMaterialTypes.data()[0]],
                          BC_lambda.data()[elementMaterialTypes.data()[0]]); 
 
-    globalResidual_air.data()[i] += bc_mask_air.data()[i] * (MLi * (m_a - mn_a) / dt - ith_flux_term);
-    globalJacobian_air.data()[ii] += bc_mask_air.data()[i] * (MLi * dm_a / dt + J_ii) + (1.0 - bc_mask_air.data()[i]);
+    globalResidual.data()[i] += bc_mask_air.data()[i] * (MLi * (m_a - mn_a) / dt - ith_flux_term);
+    globalJacobian.data()[ii] += bc_mask_air.data()[i] * (MLi * dm_a / dt + J_ii) + (1.0 - bc_mask_air.data()[i]);
   }
 }
 
@@ -3615,8 +3623,8 @@ for (int i = 0; i < numDOFs; i++) {
 ij = 0;
 for (int i = 0; i < numDOFs; i++) {
   mDotHigh_air[i] = cflux_air[i];
-  for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-    int j = csrColumnOffsets_DofLoops.data()[offset];
+  for (int offset = csrRowIndeces_DofLoops_air.data()[i]; offset < csrRowIndeces_DofLoops_air.data()[i + 1]; offset++) {
+    int j = csrColumnOffsets_DofLoops_air.data()[offset];
     mDotHigh_air[i] -= MC_air.data()[ij]*cflux_air[j]/ML_air.data()[j];
     ij +=1;
   }
@@ -3625,7 +3633,7 @@ for (int i = 0; i < numDOFs; i++) {
 if (STABILIZATION_TYPE == STABILIZATION::Implicit_FCT) {
   FCTStep(args);
   for (int i = 0; i < numDOFs; i++) {
-    globalResidual_air.data()[i] += fluxCorrection_air.data()[i];
+    globalResidual.data()[i] += fluxCorrection_air.data()[i];
   }
 }
 }
@@ -3700,7 +3708,7 @@ void invert(arguments_dict &args)
       n.data()[elementMaterialTypes.data()[0]],
       thetaR.data()[elementMaterialTypes.data()[0]], 
       thetaSR.data()[elementMaterialTypes.data()[0]],
-      &KWs.data()[elementMaterialTypes.data()[0] * nnz],
+      &KWs.data()[elementMaterialTypes.data()[0]] * nnz],
       uw, ua,                       // in/out
       mIn_water.data()[i], 
       mIn_air.data()[i],

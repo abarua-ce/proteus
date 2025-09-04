@@ -304,7 +304,6 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                 (0,0): (srow, scol),
                 (1,1): (srow, scol),
             }
-
             assert len(Ksw_types.shape) in [1,2], \
             "if diagonal conductivity true then Ksw_types scalar or vector of diagonal entries"
             # allow scalar input Ks
@@ -433,6 +432,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
 #        for k in range(self.q_shape[1]):
 #            cq['Ks'][:,k] = self.Ksw_types[self.elementMaterialTypes,0]
         self.q[('vol_frac',0)] = np.zeros(self.q_shape,'d')
+        self.q[('vol_frac',1)] = np.zeros(self.q_shape,'d')
+        
     def initializeElementBoundaryQuadrature(self,t,cebq,cebq_global):
         self.materialTypes_ebq = np.zeros(cebq[('u',0)].shape[0:2],'i')
         self.ebq_shape = cebq[('u',0)].shape
@@ -805,6 +806,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.edge_based_cfl = np.zeros(self.u[0].dof.shape)+100
         #mesh
         #self.q['x'] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,3),'d')
+
         self.q[('dV_u', 0)] = (1.0/ self.mesh.nElements_global) * np.ones((self.mesh.nElements_global, self.nQuadraturePoints_element), 'd')
         self.ebqe['x'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,3),'d')
         for ci in range(self.nc):
@@ -1107,7 +1109,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["NNZ"] = self.nnz 
         argsDict["numDOFs"] = len(rowptr) - 1  # num of DOFs
         argsDict["dt"] = self.timeIntegration.dt
-        argsDict["ML"] = self.ML
+        argsDict["ML_water"] = self.ML
+        argsDict["ML_air"] = self.ML
+        
         argsDict["csrRowIndeces_DofLoops"] = rowptr
         argsDict["csrColumnOffsets_DofLoops"] = colind
         argsDict["MC"] = MassMatrix
@@ -1143,7 +1147,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         old_dof = self.u[0].dof.copy()
         self.invert(u=limited_solution, ulow=self.u[0].dof)
         #print("FCT - low",np.linalg.norm(self.u[0].dof- old_dof))
-        self.timeIntegration.u[:] = self.u[0].dof
+        self.timeIntegration.u[0][:] = self.u[0].dof
+        self.timeIntegration.u[1][:] = self.u[1].dof
+        
     # def kth_FCT_step(self):
     #     #import pdb
     #     #pdb.set_trace()
@@ -1633,7 +1639,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["ebqe_bc_flux_ext_air"] = self.ebqe[('advectiveFlux_bc',1)]
         
         argsDict["ebqe_phi_water"] = self.ebqe[('u',0)]
-        argsDict["ebqe_phi_air"] = self.ebqe[('u',0)]
+        argsDict["ebqe_phi_air"] = self.ebqe[('u',1)]
 
         argsDict["epsFact"] = 0.0
 
@@ -1645,9 +1651,6 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         
         argsDict['STABILIZATION_TYPE'] = self.coefficients.STABILIZATION_TYPE
 
-
-
-
         # ENTROPY VISCOSITY and ARTIFICIAL COMRPESSION
         argsDict["cE"] = self.coefficients.cE
         argsDict["cK"] = self.coefficients.cK
@@ -1658,11 +1661,25 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["numDOFs"] = len(rowptr) - 1  # num of DOFs
         argsDict["NNZ"] = self.nnz 
         argsDict["Cx"] = len(Cx)  # num of non-zero entries in the sparsity pattern
-        argsDict["csrRowIndeces_DofLoops"] = rowptr  # Row indices for Sparsity Pattern (convenient for DOF loops)
-        argsDict["csrColumnOffsets_DofLoops"] = colind  # Column indices for Sparsity Pattern (convenient for DOF loops)
-        argsDict["csrRowIndeces_CellLoops"] = self.csrRowIndeces[(0, 0)]  # row indices (convenient for element loops)
-        argsDict["csrColumnOffsets_CellLoops"] = self.csrColumnOffsets[(0, 0)]  # column indices (convenient for element loops)
-        argsDict["csrColumnOffsets_eb_CellLoops"] = self.csrColumnOffsets_eb[(0, 0)]  # indices for boundary terms
+        argsDict["csrRowIndeces_DofLoops_water"]    = rowptr
+        argsDict["csrColumnOffsets_DofLoops_water"]  = colind
+        argsDict["csrRowIndeces_DofLoops_air"]    = rowptr
+        argsDict["csrColumnOffsets_DofLoops_air"]  = colind
+
+        # Cell-loop sparsity: block-diagonal only (w_w and a_a)
+        argsDict["csrRowIndeces_CellLoops_water_water"]           = self.csrRowIndeces.get((0, 0), self.csrRowIndeces[(0, 0)])
+        argsDict["csrColumnOffsets_CellLoops_water_water"]        = self.csrColumnOffsets.get((0, 0), self.csrColumnOffsets[(0, 0)])
+        argsDict["csrColumnOffsets_eb_CellLoops_water_water"]     = self.csrColumnOffsets_eb.get((0, 0), self.csrColumnOffsets_eb[(0, 0)])
+
+        argsDict["csrRowIndeces_CellLoops_air_air"]           = self.csrRowIndeces.get((1, 1), self.csrRowIndeces[(0, 0)])
+        argsDict["csrColumnOffsets_CellLoops_air_air"]        = self.csrColumnOffsets.get((1, 1), self.csrColumnOffsets[(0, 0)])
+        argsDict["csrColumnOffsets_eb_CellLoops_air_air"]     = self.csrColumnOffsets_eb.get((1, 1), self.csrColumnOffsets_eb[(0, 0)])
+
+        # argsDict["csrRowIndeces_DofLoops"] = rowptr  # Row indices for Sparsity Pattern (convenient for DOF loops)
+        # argsDict["csrColumnOffsets_DofLoops"] = colind  # Column indices for Sparsity Pattern (convenient for DOF loops)
+        # argsDict["csrRowIndeces_CellLoops"] = self.csrRowIndeces[(0, 0)]  # row indices (convenient for element loops)
+        # argsDict["csrColumnOffsets_CellLoops"] = self.csrColumnOffsets[(0, 0)]  # column indices (convenient for element loops)
+        # argsDict["csrColumnOffsets_eb_CellLoops"] = self.csrColumnOffsets_eb[(0, 0)]  # indices for boundary terms
         argsDict["globalJacobian"] = self.jacobian.getCSRrepresentation()[2]
         # C matrices
         argsDict["Cx"] = Cx
@@ -1681,6 +1698,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["STABILIZATTION_TYPE"] = self.coefficients.STABILIZATION_TYPE
         argsDict["ENTROPY_TYPE"] = self.coefficients.ENTROPY_TYPE
         argsDict["PSK_TYPE"] = self.coefficients.PSK_TYPE
+
         # FLUX CORRECTED TRANSPORT
         argsDict["dLow_water"] = self.dLow_water
         argsDict["fluxMatrix_water"] = self.fluxMatrix_water
@@ -1822,7 +1840,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         import numpy as np
         import copy
     
-        self.mHigh[:] = u
+        #self.mHigh[:] = u
     
         rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
         nnz = nzval.shape[-1]
@@ -1961,11 +1979,27 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["uR"] = self.coefficients.uR
         argsDict["numDOFs"] = len(rowptr) - 1
         argsDict["NNZ"] = self.nnz
+
+        argsDict["csrRowIndeces_DofLoops_water"]    = rowptr
+        argsDict["csrColumnOffsets_DofLoops_water"]  = colind
+        argsDict["csrRowIndeces_DofLoops_air"]    = rowptr
+        argsDict["csrColumnOffsets_DofLoops_air"]  = colind
+
+        # Cell-loop sparsity: block-diagonal only (w_w and a_a)
+        argsDict["csrRowIndeces_CellLoops_water_water"]           = self.csrRowIndeces.get((0, 0), self.csrRowIndeces[(0, 0)])
+        argsDict["csrColumnOffsets_CellLoops_water_water"]        = self.csrColumnOffsets.get((0, 0), self.csrColumnOffsets[(0, 0)])
+        argsDict["csrColumnOffsets_eb_CellLoops_water_water"]     = self.csrColumnOffsets_eb.get((0, 0), self.csrColumnOffsets_eb[(0, 0)])
+
+        argsDict["csrRowIndeces_CellLoops_air_air"]           = self.csrRowIndeces.get((1, 1), self.csrRowIndeces[(0, 0)])
+        argsDict["csrColumnOffsets_CellLoops_air_air"]        = self.csrColumnOffsets.get((1, 1), self.csrColumnOffsets[(0, 0)])
+        argsDict["csrColumnOffsets_eb_CellLoops_air_air"]     = self.csrColumnOffsets_eb.get((1, 1), self.csrColumnOffsets_eb[(0, 0)])
+
         argsDict["csrRowIndeces_DofLoops"] = rowptr
         argsDict["csrColumnOffsets_DofLoops"] = colind
         argsDict["csrRowIndeces_CellLoops"] = self.csrRowIndeces[(0, 0)]
         argsDict["csrColumnOffsets_CellLoops"] = self.csrColumnOffsets[(0, 0)]
         argsDict["csrColumnOffsets_eb_CellLoops"] = self.csrColumnOffsets_eb[(0, 0)]
+
         argsDict["Cx"] = Cx
         argsDict["Cy"] = Cy
         argsDict["Cz"] = Cz
@@ -2002,7 +2036,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict['BC_lambda'] = self.coefficients.BC_lambda
         
 
-        self.richards.invert(argsDict)
+        self.mphase_co2.invert(argsDict)
      
     def getJacobian(self,jacobian):
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
