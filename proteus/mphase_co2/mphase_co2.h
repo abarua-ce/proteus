@@ -63,7 +63,7 @@ public:
   virtual void calculateJacobian(arguments_dict &args)                   = 0;
   virtual void invert(arguments_dict &args)                              = 0;
   virtual void FCTStep(arguments_dict &args)                             = 0;
-  virtual void kth_FCT_step(arguments_dict &args)                        = 0;
+//  virtual void kth_FCT_step(arguments_dict &args)                        = 0;
   virtual void calculateResidual_entropy_viscosity(arguments_dict &args) = 0;
   virtual void calculateMassMatrix(arguments_dict &args)                 = 0;
 };
@@ -122,21 +122,23 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
   double    m_vg;
   double    pcBarStar;
   double    sqrt_sBarStar;
+  double Se;
+  double dSe_dpsic;
 
    thetaS = thetaR + thetaSR;
-   psic = (rho_air / rho_water) * u_air - u_water;
+   psiC = (rho_air / rho_water) * u_air - u_water;
    const double dpsic_duw = -1.0;
    const double dpsic_dua = (rho_air / rho_water);
 
-   double Se = 1.0, dSe_dpsic = 0.0;
-  double thetaW = thetaS, dthetaW_dpsic = 0.0;
-  double krw = 1.0, dkrw_dpsic = 0.0;
+   Se = 1.0, dSe_dpsic = 0.0;
+   thetaW = thetaS, DthetaW_DpsiC = 0.0;
+   double krw = 1.0, dkrw_dpsic = 0.0;
 
   if (PSK_TYPE == PSK::VG_PSK) {
     const double m_vg = 1.0 - 1.0 / n_vg;
 
-    if (psic > 0.0) {
-      const double pcBar = alpha * psic;
+    if (psiC > 0.0) {
+      const double pcBar = alpha * psiC;
       const double pcBarStar = (pcBar < 1.0e-8) ? 1.0e-8 : pcBar;
 
       const double pc_nM2 = std::pow(pcBarStar, n_vg - 2.0);
@@ -153,7 +155,7 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
       const double dV_dpsi = -alpha * (n_vg - 1.0) * pc_nM2 * Se - pc_nM1 * dSe_dpsic;
 
       thetaW        = thetaR + thetaSR * Se;
-      dthetaW_dpsic = thetaSR * dSe_dpsic;
+      DthetaW_DpsiC = thetaSR * dSe_dpsic;
 
       krw        = sqrtSe * vBar2;
       dkrw_dpsic = (0.5 / std::max(sqrtSe, 1.0e-8)) * dSe_dpsic * vBar2
@@ -161,7 +163,7 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
     } else {
       // Saturated plateau
       Se = 1.0; dSe_dpsic = 0.0;
-      thetaW = thetaS; dthetaW_dpsic = 0.0;
+      thetaW = thetaS; DthetaW_DpsiC = 0.0;
       krw = 1.0; dkrw_dpsic = 0.0;
     }
   } else {
@@ -169,24 +171,24 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
     const double hb  = (BC_entry_head > 1e-12) ? BC_entry_head : 1e-12;
     const double lam = (BC_lambda     > 1e-12) ? BC_lambda     : 1.0e-12;
 
-    if (psic > 0.0) {
-      if (psic >= hb) {
-        Se         = std::pow(hb / psic, lam);
-        dSe_dpsic  = -lam * Se / psic;
+    if (psiC > 0.0) {
+      if (psiC >= hb) {
+        Se         = std::pow(hb / psiC, lam);
+        dSe_dpsic  = -lam * Se / psiC;
         thetaW        = thetaR + thetaSR * Se;
-        dthetaW_dpsic = thetaSR * dSe_dpsic;
+        DthetaW_DpsiC = thetaSR * dSe_dpsic;
 
         const double expo = 3.0 + 2.0 / lam;  // Mualem–BC
         krw        = std::pow(Se, expo);
         dkrw_dpsic = expo * std::pow(Se, expo - 1.0) * dSe_dpsic;
       } else {
         Se = 1.0; dSe_dpsic = 0.0;
-        thetaW = thetaS; dthetaW_dpsic = 0.0;
+        thetaW = thetaS; DthetaW_DpsiC = 0.0;
         krw = 1.0; dkrw_dpsic = 0.0;
       }
     } else {
       Se = 1.0; dSe_dpsic = 0.0;
-      thetaW = thetaS; dthetaW_dpsic = 0.0;
+      thetaW = thetaS; DthetaW_DpsiC = 0.0;
       krw = 1.0; dkrw_dpsic = 0.0;
     }
   }
@@ -224,7 +226,7 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
   Sair_out   = Sg;
 
   const double thetaA        = thetaS - thetaW;
-  const double dthetaA_dpsic = -dthetaW_dpsic;
+  const double dthetaA_dpsic = -DthetaW_DpsiC;
 
 
   const double rho_w  = rho_water * std::exp(beta_water * u_water);
@@ -233,8 +235,8 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
   const double rho_a  = rho_air   * std::exp(beta_air * u_air);
   const double drho_a = beta_air  * rho_a;
 
-  const double dthetaW_duw = dthetaW_dpsic * dpsic_duw;
-  const double dthetaW_dua = dthetaW_dpsic * dpsic_dua;
+  const double dthetaW_duw = DthetaW_DpsiC * dpsic_duw;
+  const double dthetaW_dua = DthetaW_DpsiC * dpsic_dua;
   const double dthetaA_duw = dthetaA_dpsic * dpsic_duw;   // = -dthetaW_duw
   const double dthetaA_dua = dthetaA_dpsic * dpsic_dua;   // = -dthetaW_dua
 
@@ -317,7 +319,8 @@ inline void evaluateInverseCoefficients_2ph(const int rowptr[nSpace], const int 
                                             const double &m_water, const double &m_air,       // IN: masses for both phases
                                             const double Y_water, const double Y_air,         // mass fractions
                                             const PSK PSK_TYPE,
-                                            const double BC_entry_head, const double BC_lambda)
+                                            const double BC_entry_head, 
+                                            const double BC_lambda)
 {
   const double eps    = 1.0e-12;
   const double thetaS = thetaR + thetaSR;
@@ -342,20 +345,20 @@ inline void evaluateInverseCoefficients_2ph(const int rowptr[nSpace], const int 
   Se = std::fmin(std::fmax(Se, eps), 1.0 - eps);
 
   // --- Invert PSK to capillary head ψc ---
-  double psic = 0.0;
+  double psiC = 0.0;
   if (PSK_TYPE == PSK::VG_PSK) {
     const double m_vg = 1.0 - 1.0 / n_vg;
     const double pc_n = std::pow(Se, -1.0 / m_vg) - 1.0;
     const double pc   = std::pow(std::fmax(pc_n, 0.0), 1.0 / n_vg);
-    psic = pc / std::fmax(alpha, eps);
+    psiC = pc / std::fmax(alpha, eps);
   } else {
     const double hb  = (BC_entry_head > eps) ? BC_entry_head : eps;
     const double lam = (BC_lambda     > eps) ? BC_lambda     : eps;
-    psic = hb * std::pow(Se, -1.0 / lam);
+    psiC = hb * std::pow(Se, -1.0 / lam);
   }
 
-  double uw_new = (rho_air / rho_water) * u_air - psic;     // update water from previous air
-  double ua_new = (psic + uw_new) * (rho_water / rho_air);  // then air from updated water
+  double uw_new = (rho_air / rho_water) * u_air - psiC;     // update water from previous air
+  double ua_new = (psiC + uw_new) * (rho_water / rho_air);  // then air from updated water
 
   u_water = uw_new;
   u_air   = ua_new;
@@ -400,7 +403,7 @@ inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int coli
       const double hb  = (BC_entry_head > 1e-12) ? BC_entry_head : 1e-12;
       const double lam = (BC_lambda     > 1e-12) ? BC_lambda     : 1.0e-12;
       // psi_c = h_b * S_e^{-1/λ}   (for 0<S_e<1)
-      const double Se_clamped = std:fmax(std::fmin(sBar, 1.0-1e-12), 1e-12);
+      const double Se_clamped = std::fmax(std::fmin(sBar, 1.0-1e-12), 1e-12);
       psiC = hb * std::pow(Se_clamped, -1.0/lam);
       u    = -psiC;
     }
@@ -574,7 +577,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &a_rowptr                                   = args.array<int>("a_rowptr");
     xt::pyarray<int>    &a_colind                                   = args.array<int>("a_colind");
     xt::pyarray<double> &gravity                                    = args.array<double>("gravity");
-    
+    xt::pyarray<double> &alpha                                      = args.array<double>("alpha");
+    xt::pyarray<double> &n                                          = args.array<double>("n");
     xt::pyarray<double> &thetaR                                     = args.array<double>("thetaR");
     xt::pyarray<double> &thetaSR                                    = args.array<double>("thetaSR");
     xt::pyarray<double> &KWs                                        = args.array<double>("KWs");
@@ -637,8 +641,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         // mass fraction
     double Y_air                                                    = args.scalar<double>("Y_air");     // e.g. 1.0
     double Y_water                                                  = args.scalar<double>("Y_water");   // e.g. 1.0
-    xt::pyarray<int>    &u_l2g                                      = args.array<int>("u_l2g");
-    //xt::pyarray<int>    &u_l2g_air                                  = args.array<int>("u_l2g_air");   
+    xt::pyarray<int>    &u_l2g_water                                = args.array<int>("u_l2g_water");
+    xt::pyarray<int>    &u_l2g_air                                  = args.array<int>("u_l2g_air");   
     xt::pyarray<double> &u_dof_water                                = args.array<double>("u_dof_water");
     xt::pyarray<double> &u_dof_air                                  = args.array<double>("u_dof_air");
     xt::pyarray<double> &u_dof_old_water                            = args.array<double>("u_dof_old_water");
@@ -649,8 +653,10 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<double> &q_m_air                                    = args.array<double>("q_m_air");
     xt::pyarray<double> &q_u_water                                  = args.array<double>("q_u_water");
     xt::pyarray<double> &q_u_air                                    = args.array<double>("q_u_air");
-    xt::pyarray<double> &q_dV_water                                 = args.array<double>("q_dV_water");
-    xt::pyarray<double> &q_dV_air                                   = args.array<double>("q_dV_air");
+    xt::pyarray<double> &q_dV                                       = args.array<double>("q_dV");
+    
+ //   xt::pyarray<double> &q_dV_water                                 = args.array<double>("q_dV_water");
+ //   xt::pyarray<double> &q_dV_air                                   = args.array<double>("q_dV_air");
     xt::pyarray<double> &q_m_betaBDF_water                          = args.array<double>("q_m_betaBDF_water");
     xt::pyarray<double> &q_m_betaBDF_air                            = args.array<double>("q_m_betaBDF_air");
     xt::pyarray<double> &q_numDiff_u_water                          = args.array<double>("q_numDiff_u_water");    
@@ -661,8 +667,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     int                  offset_u_air                               = args.scalar<int>("offset_u_air");
     int                  stride_u_water                             = args.scalar<int>("stride_u_water");
     int                  stride_u_air                               = args.scalar<int>("stride_u_air");
-    xt::pyarray<double> &globalResidual_water                       = args.array<double>("globalResidual_water");
-    xt::pyarray<double> &globalResidual_air                         = args.array<double>("globalResidual_air");
+    xt::pyarray<double> &globalResidual                       = args.array<double>("globalResidual");
+    // xt::pyarray<double> &globalResidual_water                       = args.array<double>("globalResidual_water");
+    // xt::pyarray<double> &globalResidual_air                         = args.array<double>("globalResidual_air");
     xt::pyarray<double> &ebqe_velocity_ext_water                    = args.array<double>("ebqe_velocity_ext_water");
     xt::pyarray<double> &ebqe_velocity_ext_air                      = args.array<double>("ebqe_velocity_ext_air");
     xt::pyarray<int>    &isDOFBoundary_u_water                      = args.array<int>("isDOFBoundary_u_water");
@@ -743,8 +750,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         double f_water[nSpace], df_water[nSpace];
         double a_water[nnz],   da_water[nnz],   as_water[nnz];
         double Kr_water=0.0, dKr_water=0.0;
-        double pdeRes_water=0.0, Lstar_water[nDOF_test_element], subgrid_water=0.0;
         double tau_water=0.0, tau0_water=0.0, tau1_water=0.0, numDiff0_water=0.0, numDiff1_water=0.0;
+        double pdeResidual_u_water = 0.0, Lstar_u_water[nDOF_test_element], subgridError_u_water = 0.0;
 
         // fill water, assemble to elementResidual_u_water[...]
 
@@ -754,7 +761,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         double f_air[nSpace], df_air[nSpace];
         double a_air[nnz],   da_air[nnz],   as_air[nnz];
         double Kr_air=0.0, dKr_air=0.0;
-        double pdeRes_air=0.0, Lstar_air[nDOF_test_element], subgrid_air=0.0;
+        double pdeResidual_u_air = 0.0, Lstar_u_air[nDOF_test_element], subgridError_u_air = 0.0;
         double tau_air=0.0, tau0_air=0.0, tau1_air=0.0, numDiff0_air=0.0, numDiff1_air=0.0;
 
         // double u_water = 0.0, grad_u_water[nSpace], grad_u_old_water[nSpace], m_water = 0.0, dm_water = 0.0, f_water[nSpace], df_water[nSpace], a_water[nnz], da_water[nnz], as_water[nnz], m_t_water = 0.0, dm_t_water = 0.0, pdeResidual_u_water = 0.0, Lstar_u_water[nDOF_test_element], subgridError_u_water = 0.0, tau_water = 0.0, tau0_water = 0.0, tau1_water = 0.0, numDiff0_water = 0.0, numDiff1_water = 0.0, jac_water[nSpace * nSpace], jacDet_water, jacInv_water[nSpace * nSpace], u_grad_trial_water[nDOF_trial_element * nSpace], u_test_dV_water[nDOF_trial_element], u_grad_test_dV_water[nDOF_test_element * nSpace], dV, x, y, z, xt, yt, zt, G[nSpace * nSpace], G_dd_G, tr_G, norm_Rv;
@@ -774,23 +781,23 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         
         //get the solution for both phase
         ck.valFromDOF(u_dof_water.data(),                             // DOFs for WATER
-                      &u_l2g.data()[eN_nDOF_trial_element],     // map for WATER
+                      &u_l2g_water.data()[eN_nDOF_trial_element],     // map for WATER
                       &u_trial_ref.data()[k * nDOF_trial_element],
                       u_water);
         ck.valFromDOF(u_dof_air.data(),                             // DOFs for AIR
-                      &u_l2g.data()[eN_nDOF_trial_element],     // map for AIR
+                      &u_l2g_air.data()[eN_nDOF_trial_element],     // map for AIR
                       &u_trial_ref.data()[k * nDOF_trial_element],
                       u_air);
                         
         //get the solution gradient for both phases
 
         ck.gradFromDOF(u_dof_water.data(),
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_water.data()[eN_nDOF_trial_element], 
                        u_grad_trial, 
                        grad_u_water);
 
         ck.gradFromDOF(u_dof_air.data(),
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_air.data()[eN_nDOF_trial_element], 
                        u_grad_trial, 
                        grad_u_air);
         //get the solution
@@ -814,7 +821,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
        //                      thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                             rho_water, rho_air, 
-                            beta_water, beta_air 
+                            beta_water, beta_air, 
                             gravity.data(), 
                             alpha.data()[elementMaterialTypes.data()[eN]], 
                             n.data()[elementMaterialTypes.data()[eN]], 
@@ -827,7 +834,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                             dm_water, dm_air,
                             f_water, f_air,
                             df_water, df_air,
-                            a_water, a_air
+                            a_water, a_air,
                             da_water, da_air, 
                             as_water, as_air,
                             Kr_water, Kr_air,
@@ -877,11 +884,11 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //phase water
         ck.calculateNumericalDiffusion(shockCapturingDiffusion, elementDiameter[eN], pdeResidual_u_water, grad_u_water, numDiff0_water);
         ck.calculateNumericalDiffusion(shockCapturingDiffusion, sc_uref, sc_alpha, G, G_dd_G, pdeResidual_u_water, grad_u_water, numDiff1_water);
-        q_numDiff_u[eN_k] = useMetrics * numDiff1_water + (1.0 - useMetrics) * numDiff0_water;
+        q_numDiff_u_water[eN_k] = useMetrics * numDiff1_water + (1.0 - useMetrics) * numDiff0_water;
         //phase air
         ck.calculateNumericalDiffusion(shockCapturingDiffusion, elementDiameter[eN], pdeResidual_u_air, grad_u_air, numDiff0_air);
         ck.calculateNumericalDiffusion(shockCapturingDiffusion, sc_uref, sc_alpha, G, G_dd_G, pdeResidual_u_air, grad_u_air, numDiff1_air);
-        q_numDiff_u[eN_k] = useMetrics * numDiff1_air + (1.0 - useMetrics) * numDiff0_air;        
+        q_numDiff_u_air[eN_k] = useMetrics * numDiff1_air + (1.0 - useMetrics) * numDiff0_air;        
         
         //
         //update element residual
@@ -897,15 +904,15 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         q_u_water.data()[eN_k] = u_water;
         //phase air
         q_m_air.data()[eN_k] = m_air;
-        q_u.data()[eN_k] = u_air;
+        q_u_air.data()[eN_k] = u_air;
       }
       //
       //load element into global residual and save element residual
       //
       for (int i = 0; i < nDOF_test_element; i++) {
         int eN_i = eN * nDOF_test_element + i;
-        globalResidual_water.data()[offset_u_water + stride_u_water * u_l2g.data()[eN_i]] += elementResidual_u_water[i];
-        globalResidual_air.data()[offset_u_air + stride_u_air * u_l2g.data()[eN_i]] += elementResidual_u_air[i];
+        globalResidual.data()[offset_u_water + stride_u_water * u_l2g_water.data()[eN_i]] += elementResidual_u_water[i];
+        globalResidual.data()[offset_u_air + stride_u_air * u_l2g_air.data()[eN_i]] += elementResidual_u_air[i];
       } //i
     } //elements
     //
@@ -922,7 +929,10 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       for (int i = 0; i < nDOF_test_element; i++) { elementResidual_u_air[i] = 0.0; }
       for (int kb = 0; kb < nQuadraturePoints_elementBoundary; kb++) {
         int    ebNE_kb = ebNE * nQuadraturePoints_elementBoundary + kb, ebNE_kb_nSpace = ebNE_kb * nSpace, ebN_local_kb = ebN_local * nQuadraturePoints_elementBoundary + kb, ebN_local_kb_nSpace = ebN_local_kb * nSpace;
-        double jac_ext[nSpace * nSpace], jacDet_ext_water, jacInv_ext_water[nSpace * nSpace], boundaryJac_water[nSpace * (nSpace - 1)];       
+        double jac_ext[nSpace * nSpace], jacDet_ext, jacInv_ext[nSpace * nSpace], boundaryJac[nSpace * (nSpace - 1)], metricTensor[(nSpace - 1) * (nSpace - 1)], metricTensorDetSqrt;// metricTensor, metricTensorDetSqrt;   
+        double normal[3], x_ext , y_ext, z_ext,  xt_ext, yt_ext, zt_ext, integralScaling;    
+        double dS, u_test_dS[nDOF_test_element], u_grad_trial_trace[nDOF_trial_element * nSpace], G[nSpace * nSpace], G_dd_G, tr_G;
+               //fluxJacobian_u_u[nDOF_trial_element], bfluxJacobian_u_u[nDOF_trial_element], fluxJacobian_un_un[nDOF_trial_element];
         double u_ext_water = 0.0, grad_u_ext_water[nSpace], m_ext_water = 0.0, dm_ext_water = 0.0, 
                f_ext_water[nSpace], df_ext_water[nSpace], a_ext_water[nnz], da_ext_water[nnz], as_ext_water[nnz], flux_ext_water = 0.0,
                //anb_seepage_flux=0.0, // for flux calculation
@@ -939,7 +949,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //calculate the solution and gradients at quadrature points
         //
         //compute information about mapping from reference element to physical element
-        ck.calculateMapping_elementBoundary(eN, ebN_local, kb, ebN_local_kb, mesh_dof.data(), mesh_l2g.data(), mesh_trial_trace_ref.data(), mesh_grad_trial_trace_ref.data(), boundaryJac_ref.data(), jac_ext, jacDet_ext, jacInv_ext, boundaryJac, metricTensor, metricTensorDetSqrt,
+        ck.calculateMapping_elementBoundary(eN, ebN_local, kb, ebN_local_kb, mesh_dof.data(), mesh_l2g.data(), mesh_trial_trace_ref.data(), mesh_grad_trial_trace_ref.data(), 
+                                            boundaryJac_ref.data(), jac_ext, jacDet_ext, jacInv_ext, boundaryJac, metricTensor, metricTensorDetSqrt,
                                             normal_ref.data(), normal, x_ext, y_ext, z_ext);
         ck.calculateMappingVelocity_elementBoundary(eN, ebN_local, kb, ebN_local_kb, mesh_velocity_dof.data(), mesh_l2g.data(), mesh_trial_trace_ref.data(), xt_ext, yt_ext, zt_ext, normal, boundaryJac, metricTensor, integralScaling);
         dS = ((1.0 - MOVING_DOMAIN) * metricTensorDetSqrt + MOVING_DOMAIN * integralScaling) * dS_ref.data()[kb];
@@ -951,21 +962,21 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         ck.gradTrialFromRef(&u_grad_trial_trace_ref.data()[ebN_local_kb_nSpace * nDOF_trial_element], jacInv_ext, u_grad_trial_trace);
         //solution 
         ck.valFromDOF(u_dof_water.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_water.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       u_ext_water);
         ck.valFromDOF(u_dof_air.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_air.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       u_ext_air);
         
         //Gradient
         ck.gradFromDOF(u_dof_water.data(), 
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_water.data()[eN_nDOF_trial_element], 
                        u_grad_trial_trace, 
                        grad_u_ext_water);
         ck.gradFromDOF(u_dof_air.data(), 
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_air.data()[eN_nDOF_trial_element], 
                        u_grad_trial_trace, 
                        grad_u_ext_air);
                
@@ -975,19 +986,20 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //load the boundary values
         //
         bc_u_ext_water = isDOFBoundary_u_water.data()[ebNE_kb] * ebqe_bc_u_ext_water.data()[ebNE_kb] + (1 - isDOFBoundary_u_water.data()[ebNE_kb]) * u_ext_water;
-        bc_u_ext_air = isDOFBoundary_u_air.data()[ebNE_kb] * ebqe_bc_u_ext_air.data()[ebNE_kb] + (1 - isDOFBoundary_u_air.data()[ebNE_kb]) * u_ext;
+        bc_u_ext_air = isDOFBoundary_u_air.data()[ebNE_kb] * ebqe_bc_u_ext_air.data()[ebNE_kb] + (1 - isDOFBoundary_u_air.data()[ebNE_kb]) * u_ext_air;
       
         //
         //calculate the pde coefficients using the solution and the boundary values for the solution
         //
-        double Kr_water, dKr_water;
-        double Kr_air, dKr_air;
+        double Kr_water, dKr_water, Kr_air, dKr_air;
         double Sw_ext=0.0;
         double Sg_ext =0.0;
-
+        double bc_Kr_water, bc_dKr_water ,bc_Kr_ext_water, bc_dKr_ext_water, bc_Krn_water, bc_dKrn_water;
+        double bc_Kr_air, bc_dKr_air ,bc_Kr_ext_air, bc_dKr_ext_air, bc_Krn_air, bc_dKrn_air;
+        
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air, 
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -1000,7 +1012,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              dm_ext_water, dm_ext_air,
                              f_ext_water, f_ext_air,
                              df_ext_water, df_ext_air,
-                             a_ext_water, a_ext_air
+                             a_ext_water, a_ext_air,
                              da_ext_water, da_ext_air, 
                              as_ext_water, as_ext_air,
                              Kr_water, Kr_air,
@@ -1012,7 +1024,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air, 
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -1028,7 +1040,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              bc_a_ext_water, bc_a_ext_air, 
                              bc_da_ext_water, bc_da_ext_air, 
                              bc_as_ext_water, bc_as_ext_air,
-                             bc_Kr_water, Kr_air
+                             bc_Kr_water, Kr_air,
                              dKr_water, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw_ext, Sg_ext,
@@ -1060,8 +1072,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
         //anb_seepage_flux             = seepagefluxcalculator(anb_seepage_flux, isSeepageFace.data()[ebNE], dS, flux_ext);
         //anb_seepage_flux_n.data()[0] = anb_seepage_flux;
-        ebqe_u.data_water()[ebNE_kb]     = u_ext_water;
-        ebqe_u.data_air()[ebNE_kb]       = u_ext_air;
+        ebqe_u_water.data()[ebNE_kb]     = u_ext_water;
+        ebqe_u_air.data()[ebNE_kb]       = u_ext_air;
         
         //
         //update residuals
@@ -1078,8 +1090,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       //
       for (int i = 0; i < nDOF_test_element; i++) {
         int eN_i = eN * nDOF_test_element + i;
-        globalResidual_water.data()[offset_u_water + stride_u_water * u_l2g.data()[eN_i]] += elementResidual_u_water[i];
-        globalResidual_air.data()[offset_u_air + stride_u_air * u_l2g.data()[eN_i]] += elementResidual_u_air[i];        
+        globalResidual.data()[offset_u_water + stride_u_water * u_l2g_water.data()[eN_i]] += elementResidual_u_water[i];
+        globalResidual.data()[offset_u_air + stride_u_air * u_l2g_water.data()[eN_i]] += elementResidual_u_air[i];        
       } //i
     } //ebNE
   }
@@ -1142,8 +1154,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     double               beta_air                                   = args.scalar<double>("beta_air");
     double Y_air                                                    = args.scalar<double>("Y_air");     // e.g. 1.0
     double Y_water                                                  = args.scalar<double>("Y_water");   // e.g. 1.0   
-    xt::pyarray<int>    &u_l2g                                      = args.array<int>("u_l2g");
-   // xt::pyarray<int>    &u_l2g_air                                  = args.array<int>("u_l2g_air");   
+    xt::pyarray<int>    &u_l2g_water                                = args.array<int>("u_l2g_water");
+    xt::pyarray<int>    &u_l2g_air                                  = args.array<int>("u_l2g_air");   
     xt::pyarray<double> &u_dof_water                                = args.array<double>("u_dof_water");
     xt::pyarray<double> &u_dof_air                                  = args.array<double>("u_dof_air");
     xt::pyarray<double> &velocity_water                             = args.array<double>("velocity_water");
@@ -1181,9 +1193,14 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     //loop over elements to compute volume integrals and load them into the element Jacobians and global Jacobian
     //
     for (int eN = 0; eN < nElements_global; eN++) {
-      double elementJacobian_u_u[nDOF_test_element][nDOF_trial_element];
+      double elementJacobian_u_u_water[nDOF_test_element][nDOF_trial_element];
+      double elementJacobian_u_u_air[nDOF_test_element][nDOF_trial_element];
+
       for (int i = 0; i < nDOF_test_element; i++) {
-        for (int j = 0; j < nDOF_trial_element; j++) { elementJacobian_u_u[i][j] = 0.0; }
+        for (int j = 0; j < nDOF_trial_element; j++) { 
+          elementJacobian_u_u_water[i][j] = 0.0;
+          elementJacobian_u_u_air[i][j] = 0.0;
+         }
       }
       for (int k = 0; k < nQuadraturePoints_element; k++) {
         int eN_k                  = eN * nQuadraturePoints_element + k, //index to a scalar at a quadrature point
@@ -1194,7 +1211,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         double  dV, x, y, z, xt, yt, zt;
         double  jac[nSpace * nSpace], jacDet, jacInv[nSpace * nSpace];
         double  G[nSpace * nSpace], G_dd_G, tr_G;
-        double  u_grad_trial[nDOF_trial_element * nSpace], u_test_dV[nDOF_test_element], u_grad_test_dV[nDOF_test_element * nSpace]
+        double  u_grad_trial[nDOF_trial_element * nSpace], u_test_dV[nDOF_test_element], u_grad_test_dV[nDOF_test_element * nSpace];
         double  u_water = 0.0, grad_u_water[nSpace], m_water = 0.0, dm_water = 0.0, 
                 f_water[nSpace], df_water[nSpace], a_water[nnz], da_water[nnz], as_water[nnz], m_t_water = 0.0, dm_t_water = 0.0, 
                 dpdeResidual_u_u_water[nDOF_trial_element], Lstar_u_water[nDOF_test_element], dsubgridError_u_u_water[nDOF_trial_element], 
@@ -1216,23 +1233,23 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         ck.gradTrialFromRef(&u_grad_trial_ref.data()[k * nDOF_trial_element * nSpace], jacInv, u_grad_trial);
         //get the solution for both phases
         ck.valFromDOF(u_dof_water.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_water.data()[eN_nDOF_trial_element], 
                       &u_trial_ref.data()[k * nDOF_trial_element], 
                       u_water);
         
         ck.valFromDOF(u_dof_air.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_air.data()[eN_nDOF_trial_element], 
                       &u_trial_ref.data()[k * nDOF_trial_element], 
                       u_air);
         
         //get the solution gradients for both phases
         ck.gradFromDOF(u_dof_water.data(),
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_water.data()[eN_nDOF_trial_element], 
                        u_grad_trial, 
                        grad_u_water);
 
         ck.gradFromDOF(u_dof_air.data(),
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_air.data()[eN_nDOF_trial_element], 
                        u_grad_trial, 
                        grad_u_air);
 
@@ -1248,12 +1265,13 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         double Kr_water, dKr_water;
         double Kr_air, dKr_air;
+        double Sw=0.0, Sg=0.0;
         // evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
         //                      thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
         
          evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air, 
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -1266,7 +1284,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              dm_water, dm_air,
                              f_water, f_air,
                              df_water, df_air,
-                             a_water, a_air
+                             a_water, a_air,
                              da_water, da_air, 
                              as_water, as_air,
                              Kr_water, Kr_air,
@@ -1382,23 +1400,23 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         ck.gradTrialFromRef(&u_grad_trial_trace_ref.data()[ebN_local_kb_nSpace * nDOF_trial_element], jacInv_ext, u_grad_trial_trace);
         //solution for both phases
         ck.valFromDOF(u_dof_water.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_water.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       u_ext_water);
         
         ck.valFromDOF(u_dof_air.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_air.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       u_ext_air);
 
 
         // Gradient for both phases
         ck.gradFromDOF(u_dof_water.data(), 
-                        &u_l2g.data()[eN_nDOF_trial_element], 
+                        &u_l2g_water.data()[eN_nDOF_trial_element], 
                         u_grad_trial_trace, 
                         grad_u_ext_water);
         ck.gradFromDOF(u_dof_air.data(), 
-                        &u_l2g.data()[eN_nDOF_trial_element], 
+                        &u_l2g_air.data()[eN_nDOF_trial_element], 
                         u_grad_trial_trace, 
                         grad_u_ext_air);
 
@@ -1416,12 +1434,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         double Kr_water, dKr_water;
         double Kr_air, dKr_air;
-        double Sw=0.0, Sg=0.0;
+        double Sw_ext=0.0, Sg_ext=0.0;
         
  
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air, 
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -1434,7 +1452,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              dm_ext_water, dm_ext_air,
                              f_ext_water, f_ext_air,
                              df_ext_water, df_ext_air,
-                             a_ext_water, a_ext_air
+                             a_ext_water, a_ext_air,
                              da_ext_water, da_ext_air, 
                              as_ext_water, as_ext_air,
                              Kr_water, Kr_air,
@@ -1446,7 +1464,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air, 
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -1462,7 +1480,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              bc_a_ext_water, bc_a_ext_air, 
                              bc_da_ext_water, bc_da_ext_air, 
                              bc_as_ext_water, bc_as_ext_air,
-                             Kr_water, Kr_air
+                             Kr_water, Kr_air,
                              dKr_water, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw_ext, Sg_ext,
@@ -1513,7 +1531,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
   void FCTStep(arguments_dict &args)
   {
-    xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
+    xt::pyarray<double> &bc_mask_water              = args.array<double>("bc_mask_water");
+    xt::pyarray<double> &bc_mask_air                = args.array<double>("bc_mask_air");
+    
     int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
     int                  numDOFs                   = args.scalar<int>("numDOFs"); //number of DOFs
     double               dt                        = args.scalar<double>("dt");
@@ -1608,8 +1628,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       ///////////////////////
       // COMPUTE R VECTORS //
       ///////////////////////
-      Rpos[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
-      Rneg[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
+      Rpos_water[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
+      Rneg_water[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
     } // i DOFs
 
     //////////////////////
@@ -1622,7 +1642,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
       for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
         int j = csrColumnOffsets_DofLoops.data()[offset];
-        alpha_fA     = ((FluxCorrectionMatrix[ij] > 0) ? fmin(Rpos[i], Rneg[j]) : fmin(Rneg[i], Rpos[j])) * FluxCorrectionMatrix[ij];
+        alpha_fA     = ((FluxCorrectionMatrix_water[ij] > 0) ? fmin(Rpos_water[i], Rneg_water[j]) : fmin(Rneg_water[i], Rpos_water[j])) * FluxCorrectionMatrix_water[ij];
         alpha_dot    = fmin(1.0, beta_ij * fabs(alpha_fA) / MC_water.data()[ij] / fmax(1.0e-8, fabs(mDot_water[i] - mDot_water[j])));
         if (MONOLITHIC == 0) {
           ith_Limiter_times_FluxCorrectionMatrix += alpha_fA;
@@ -1634,8 +1654,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       
       }
 
-      fluxCorrection_water.data()[i] = -ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i]/dt;
-      limited_solution_water.data()[i] = mLow_water[i] + 1. / ML_water.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask[i];
+      fluxCorrection_water.data()[i] = -ith_Limiter_times_FluxCorrectionMatrix*bc_mask_water[i]/dt;
+      limited_solution_water.data()[i] = mLow_water[i] + 1. / ML_water.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask_water[i];
 
       //cek todo: double check that the below is not necesary. The limted_solution should already be within the bounds
       //Calculate the min and max mass bounds
@@ -1668,13 +1688,13 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     double               Rpos_air[numDOFs], Rneg_air[numDOFs];
     double               FluxCorrectionMatrix_air[NNZ];
     double               mDot_air[numDOFs];
-    double               mDot_air[numDOFs];
+//    double               mDot_air[numDOFs];
     
 
     //////////////////
     // LOOP in DOFs //
     //////////////////
-    int ij = 0;
+    ij = 0;
     for (int i = 0; i < numDOFs; i++) {
       mDot_air[i] = (mLow_air.data()[i] - mn_air.data()[i])/dt;
       //cek todo: add boundary data--these are just initialized
@@ -1738,8 +1758,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       ///////////////////////
       // COMPUTE R VECTORS //
       ///////////////////////
-      Rpos[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
-      Rneg[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
+      Rpos_air[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
+      Rneg_air[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
     } // i DOFs
 
     //////////////////////
@@ -1747,311 +1767,315 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     //////////////////////
     ij = 0;
     for (int i = 0; i < numDOFs; i++) {
-      double ith_Limiter_times_FluxCorrectionMatrix = 0.;
+      double ith_Limiter_times_FluxCorrectionMatrix_air = 0.;
       double alpha_fA, alpha_dot, beta_ij = 1.0;
       // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
       for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
         int j = csrColumnOffsets_DofLoops.data()[offset];
-        alpha_fA     = ((FluxCorrectionMatrix[ij] > 0) ? fmin(Rpos[i], Rneg[j]) : fmin(Rneg[i], Rpos[j])) * FluxCorrectionMatrix[ij];
+        alpha_fA     = ((FluxCorrectionMatrix_air[ij] > 0) ? fmin(Rpos_air[i], Rneg_air[j]) : fmin(Rneg_air[i], Rpos_air[j])) * FluxCorrectionMatrix_air[ij];
         alpha_dot    = fmin(1.0, beta_ij * fabs(alpha_fA) / MC_air.data()[ij] / fmax(1.0e-8, fabs(mDot_air[i] - mDot_air[j])));
         if (MONOLITHIC == 0) {
-          ith_Limiter_times_FluxCorrectionMatrix += alpha_fA;
+          ith_Limiter_times_FluxCorrectionMatrix_air += alpha_fA;
         } else {
-          ith_Limiter_times_FluxCorrectionMatrix += alpha_fA + (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * alpha_dot * MC_air.data()[ij] * (mDot_air[i] - mDot_air[j]);
+          ith_Limiter_times_FluxCorrectionMatrix_air += alpha_fA + (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * alpha_dot * MC_air.data()[ij] * (mDot_air[i] - mDot_air[j]);
         }
         ij += 1;
 
       }     
-      fluxCorrection_air.data()[i] = -ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i]/dt;
-      limited_solution_air.data()[i] = mLow_air[i] + 1. / ML_air.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask[i];
+      fluxCorrection_air.data()[i] = -ith_Limiter_times_FluxCorrectionMatrix_air *bc_mask_air[i]/dt;
+      limited_solution_air.data()[i] = mLow_air[i] + 1. / ML_air.data()[i] * ith_Limiter_times_FluxCorrectionMatrix_air * bc_mask_air[i];
   }
 }
-void kth_FCT_step(arguments_dict &args)
-{
-  int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
-  int                  numDOFs                   = args.scalar<int>("numDOFs"); //number of DOFs
-  int                  num_fct_iter              = args.scalar<int>("num_fct_iter");
-  double               dt                        = args.scalar<double>("dt");
-  xt::pyarray<int>    &csrRowIndeces_DofLoops    = args.array<int>("csrRowIndeces_DofLoops");    //csr row indeces
-  xt::pyarray<int>    &csrColumnOffsets_DofLoops = args.array<int>("csrColumnOffsets_DofLoops"); //csr column offsets
-  int                  LUMPED_MASS_MATRIX        = args.scalar<int>("LUMPED_MASS_MATRIX");
-  int                  MONOLITHIC                = args.scalar<int>("MONOLITHIC");
+// void kth_FCT_step(arguments_dict &args)
+// {
+//   int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
+//   int                  numDOFs                   = args.scalar<int>("numDOFs"); //number of DOFs
+//   int                  num_fct_iter              = args.scalar<int>("num_fct_iter");
+//   double               dt                        = args.scalar<double>("dt");
+//   xt::pyarray<int>    &csrRowIndeces_DofLoops    = args.array<int>("csrRowIndeces_DofLoops");    //csr row indeces
+//   xt::pyarray<int>    &csrColumnOffsets_DofLoops = args.array<int>("csrColumnOffsets_DofLoops"); //csr column offsets
+//   int                  LUMPED_MASS_MATRIX        = args.scalar<int>("LUMPED_MASS_MATRIX");
+//   int                  MONOLITHIC                = args.scalar<int>("MONOLITHIC");
 
-  // ============================
-  // ========= WATER ============
-  // ============================
-  xt::pyarray<double> &lumped_mass_matrix_water = args.array<double>("lumped_mass_matrix_water");
-  xt::pyarray<double> &soln_water               = args.array<double>("soln_water");
-  xt::pyarray<double> &pn_water                 = args.array<double>("pn_water");
-  xt::pyarray<double> &solH_water               = args.array<double>("solH_water");
-  xt::pyarray<double> &uLow_water               = args.array<double>("uLow_water");
-  xt::pyarray<double> &uDotLow_water            = args.array<double>("uDotLow_water");
-  xt::pyarray<double> &dLow_water               = args.array<double>("dLow_water");
-  xt::pyarray<double> &solLim_water             = args.array<double>("limited_solution_water");
-  xt::pyarray<double> &MC_water                 = args.array<double>("MC_water");
-  xt::pyarray<double> &ML_water                 = args.array<double>("ML_water");
-  xt::pyarray<double> &FluxMatrix_water         = args.array<double>("FluxMatrix_water");
-  xt::pyarray<double> &limitedFlux_water        = args.array<double>("limited_Flux_water");
-  xt::pyarray<double> &MassMatrix_water         = args.array<double>("MassMatrix_water");
-  xt::pyarray<double> &dt_times_fH_minus_fL_water = args.array<double>("dt_times_fH_minus_fL_water");
-  xt::pyarray<double> &min_m_bc_water           = args.array<double>("min_m_bc_water");
-  xt::pyarray<double> &max_m_bc_water           = args.array<double>("max_m_bc_water");
+//   // ============================
+//   // ========= WATER ============
+//   // ============================
+//   xt::pyarray<double> &lumped_mass_matrix_water = args.array<double>("lumped_mass_matrix_water");
+//   xt::pyarray<double> &soln_water               = args.array<double>("soln_water");
+//   xt::pyarray<double> &pn_water                 = args.array<double>("pn_water");
+//   xt::pyarray<double> &solH_water               = args.array<double>("solH_water");
+//   xt::pyarray<double> &uLow_water               = args.array<double>("uLow_water");
+//   xt::pyarray<double> &uDotLow_water            = args.array<double>("uDotLow_water");
+//   xt::pyarray<double> &dLow_water               = args.array<double>("dLow_water");
+//   xt::pyarray<double> &solLim_water             = args.array<double>("limited_solution_water");
+//   xt::pyarray<double> &MC_water                 = args.array<double>("MC_water");
+//   xt::pyarray<double> &ML_water                 = args.array<double>("ML_water");
+//   xt::pyarray<double> &FluxMatrix_water         = args.array<double>("FluxMatrix_water");
+//   xt::pyarray<double> &limitedFlux_water        = args.array<double>("limited_Flux_water");
+//   xt::pyarray<double> &MassMatrix_water         = args.array<double>("MassMatrix_water");
+//   xt::pyarray<double> &dt_times_fH_minus_fL_water = args.array<double>("dt_times_fH_minus_fL_water");
+//   xt::pyarray<double> &min_m_bc_water           = args.array<double>("min_m_bc_water");
+//   xt::pyarray<double> &max_m_bc_water           = args.array<double>("max_m_bc_water");
 
-  double Rpos_water[numDOFs], Rneg_water[numDOFs];
-  int    ij = 0;
+//   double Rpos_water[numDOFs], Rneg_water[numDOFs];
+//   int    ij = 0;
 
-  //////////////////////////////////////////////////////
-  // ********** COMPUTE LOW ORDER SOLUTION ********** //
-  //////////////////////////////////////////////////////
-  if (num_fct_iter == 0) { // No FCT for global bounds
-    for (int i = 0; i < numDOFs; i++) { solLim_water.data()[i] = uLow_water.data()[i]; }
-  } else { // do FCT iterations (with global bounds) on low order solution
-    for (int iter = 0; iter < num_fct_iter; iter++) {
-      ij = 0;
-      for (int i = 0; i < numDOFs; i++) {
-        double maxi = 1.0, Pposi = 0;
-        for (int offset = csrRowIndeces_DofLoops.data()[i];
-             offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-          int j = csrColumnOffsets_DofLoops.data()[offset];
-          // compute Flux correction
-          double Fluxij = FluxMatrix_water.data()[ij] - limitedFlux_water.data()[ij];
-          Pposi += Fluxij * ((Fluxij > 0) ? 1. : 0.);
-          // update ij
-          ij += 1;
-        }
-        // compute Q vectors
-        double mi      = ML_water.data()[i];
-        double solLimi = solLim_water.data()[i];
-        double Qposi   = mi * (maxi - solLimi);
-        // compute R vectors
-        Rpos_water[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
-      }
-      ij = 0;
-      for (int i = 0; i < numDOFs; i++) {
-        double ith_Limiter_times_FluxCorrectionMatrix = 0.;
-        double Rposi                                  = Rpos_water[i];
-        for (int offset = csrRowIndeces_DofLoops.data()[i];
-             offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-          int j = csrColumnOffsets_DofLoops.data()[offset];
-          // Flux Correction
-          double Fluxij = FluxMatrix_water.data()[ij] - limitedFlux_water.data()[ij];
-          // compute limiter
-          double Lij = 1.0;
-          Lij        = (Fluxij > 0 ? Rposi : Rpos_water[j]);
-          // compute limited flux
-          ith_Limiter_times_FluxCorrectionMatrix += Lij * Fluxij;
+//   //////////////////////////////////////////////////////
+//   // ********** COMPUTE LOW ORDER SOLUTION ********** //
+//   //////////////////////////////////////////////////////
+//   if (num_fct_iter == 0) { // No FCT for global bounds
+//     for (int i = 0; i < numDOFs; i++) { solLim_water.data()[i] = uLow_water.data()[i]; }
+//   } else { // do FCT iterations (with global bounds) on low order solution
+//     for (int iter = 0; iter < num_fct_iter; iter++) {
+//       ij = 0;
+//       for (int i = 0; i < numDOFs; i++) {
+//         double maxi = 1.0, Pposi = 0;
+//         for (int offset = csrRowIndeces_DofLoops.data()[i];
+//              offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//           int j = csrColumnOffsets_DofLoops.data()[offset];
+//           // compute Flux correction
+//           double Fluxij = FluxMatrix_water.data()[ij] - limitedFlux_water.data()[ij];
+//           Pposi += Fluxij * ((Fluxij > 0) ? 1. : 0.);
+//           // update ij
+//           ij += 1;
+//         }
+//         // compute Q vectors
+//         double mi      = ML_water.data()[i];
+//         double solLimi = solLim_water.data()[i];
+//         double Qposi   = mi * (maxi - solLimi);
+//         // compute R vectors
+//         Rpos_water[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
+//       }
+//       ij = 0;
+//       for (int i = 0; i < numDOFs; i++) {
+//         double ith_Limiter_times_FluxCorrectionMatrix = 0.;
+//         double Rposi                                  = Rpos_water[i];
+//         for (int offset = csrRowIndeces_DofLoops.data()[i];
+//              offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//           int j = csrColumnOffsets_DofLoops.data()[offset];
+//           // Flux Correction
+//           double Fluxij = FluxMatrix_water.data()[ij] - limitedFlux_water.data()[ij];
+//           // compute limiter
+//           double Lij = 1.0;
+//           Lij        = (Fluxij > 0 ? Rposi : Rpos_water[j]);
+//           // compute limited flux
+//           ith_Limiter_times_FluxCorrectionMatrix += Lij * Fluxij;
 
-          // update limited flux
-          limitedFlux_water.data()[ij] = Lij * Fluxij;
+//           // update limited flux
+//           limitedFlux_water.data()[ij] = Lij * Fluxij;
 
-          // update FluxMatrix
-          FluxMatrix_water.data()[ij] = Fluxij;
+//           // update FluxMatrix
+//           FluxMatrix_water.data()[ij] = Fluxij;
 
-          // update ij
-          ij += 1;
-        }
-        // update limited solution (same structure)
-        double mi = ML_water.data()[i];
-        // (no additional op here in your original loop body)
-      }
-    }
-  }
+//           // update ij
+//           ij += 1;
+//         }
+//         // update limited solution (same structure)
+//         double mi = ML_water.data()[i];
+//         // (no additional op here in your original loop body)
+//       }
+//     }
+//   }
 
-  // ***************************************** //
-  // ********** HIGH ORDER SOLUTION ********** //
-  // ***************************************** //
-  ij = 0;
-  for (int i = 0; i < numDOFs; i++) {
-    double mini = soln_water.data()[i], maxi = soln_water.data()[i];
-    double Pposi = 0, Pnegi = 0.;
-    for (int offset = csrRowIndeces_DofLoops.data()[i];
-         offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-      int j = csrColumnOffsets_DofLoops.data()[offset];
-      // compute local bounds //
-      mini = fmin(mini, soln_water.data()[j]);
-      maxi = fmax(maxi, soln_water.data()[j]);
-      // compute P vectors //
-      double fij = (MC_water.data()[ij] * (uDotLow_water.data()[i] - uDotLow_water.data()[j]) / dt
-                    + dLow_water.data()[ij] * (uLow_water.data()[i] - uLow_water.data()[j]));
-      Pposi += fij * (fij > 0 ? 1. : 0.);
-      Pnegi += fij * (fij < 0 ? 1. : 0.);
-      // update ij
-      ij += 1;
-    }
-    // compute Q vectors //
-    double mi    = ML_water.data()[i];
-    double Qposi = mi * (maxi - solLim_water.data()[i]);
-    double Qnegi = mi * (mini - solLim_water.data()[i]);
-    // compute R vectors //
-    Rpos_water[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
-    Rneg_water[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
-  }
+//   // ***************************************** //
+//   // ********** HIGH ORDER SOLUTION ********** //
+//   // ***************************************** //
+//   ij = 0;
+//   for (int i = 0; i < numDOFs; i++) {
+//     double mini = soln_water.data()[i], maxi = soln_water.data()[i];
+//     double Pposi = 0, Pnegi = 0.;
+//     for (int offset = csrRowIndeces_DofLoops.data()[i];
+//          offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//       int j = csrColumnOffsets_DofLoops.data()[offset];
+//       // compute local bounds //
+//       mini = fmin(mini, soln_water.data()[j]);
+//       maxi = fmax(maxi, soln_water.data()[j]);
+//       // compute P vectors //
+//       double fij = (MC_water.data()[ij] * (uDotLow_water.data()[i] - uDotLow_water.data()[j]) / dt
+//                     + dLow_water.data()[ij] * (uLow_water.data()[i] - uLow_water.data()[j]));
+//       Pposi += fij * (fij > 0 ? 1. : 0.);
+//       Pnegi += fij * (fij < 0 ? 1. : 0.);
+//       // update ij
+//       ij += 1;
+//     }
+//     // compute Q vectors //
+//     double mi    = ML_water.data()[i];
+//     double Qposi = mi * (maxi - solLim_water.data()[i]);
+//     double Qnegi = mi * (mini - solLim_water.data()[i]);
+//     // compute R vectors //
+//     Rpos_water[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
+//     Rneg_water[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
+//   }
 
-  // COMPUTE LIMITERS //
-  ij = 0;
-  for (int i = 0; i < numDOFs; i++) {
-    double ith_limited_flux_correction = 0;
-    double Rposi                       = Rpos_water[i];
-    double Rnegi                       = Rneg_water[i];
-    for (int offset = csrRowIndeces_DofLoops.data()[i];
-         offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-      int j = csrColumnOffsets_DofLoops.data()[offset];
-      // compute flux correction
-      double fij = (MC_water.data()[ij] * (uDotLow_water.data()[i] - uDotLow_water.data()[j]) / dt
-                    + dLow_water.data()[ij] * (uLow_water.data()[i] - uLow_water.data()[j]));
+//   // COMPUTE LIMITERS //
+//   ij = 0;
+//   for (int i = 0; i < numDOFs; i++) {
+//     double ith_limited_flux_correction = 0;
+//     double Rposi                       = Rpos_water[i];
+//     double Rnegi                       = Rneg_water[i];
+//     for (int offset = csrRowIndeces_DofLoops.data()[i];
+//          offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//       int j = csrColumnOffsets_DofLoops.data()[offset];
+//       // compute flux correction
+//       double fij = (MC_water.data()[ij] * (uDotLow_water.data()[i] - uDotLow_water.data()[j]) / dt
+//                     + dLow_water.data()[ij] * (uLow_water.data()[i] - uLow_water.data()[j]));
 
-      // compute limiters
-      double Lij = 1.0;
-      Lij        = fij > 0 ? fmin(Rposi, Rneg_water[j]) : fmin(Rnegi, Rpos_water[j]);
-      // compute ith_limited_flux_correction
-      ith_limited_flux_correction += Lij * fij;
-      ij += 1;
-    }
-    double mi = ML_water.data()[i];
-    solLim_water[i] += 1. / mi * ith_limited_flux_correction;
-  }
+//       // compute limiters
+//       double Lij = 1.0;
+//       Lij        = fij > 0 ? fmin(Rposi, Rneg_water[j]) : fmin(Rnegi, Rpos_water[j]);
+//       // compute ith_limited_flux_correction
+//       ith_limited_flux_correction += Lij * fij;
+//       ij += 1;
+//     }
+//     double mi = ML_water.data()[i];
+//     solLim_water[i] += 1. / mi * ith_limited_flux_correction;
+//   }
 
-  // ============================
-  // =========== AIR ============
-  // ============================
-  xt::pyarray<double> &lumped_mass_matrix_air = args.array<double>("lumped_mass_matrix_air");
-  xt::pyarray<double> &soln_air               = args.array<double>("soln_air");
-  xt::pyarray<double> &pn_air                 = args.array<double>("pn_air");
-  xt::pyarray<double> &solH_air               = args.array<double>("solH_air");
-  xt::pyarray<double> &uLow_air               = args.array<double>("uLow_air");
-  xt::pyarray<double> &uDotLow_air            = args.array<double>("uDotLow_air");
-  xt::pyarray<double> &dLow_air               = args.array<double>("dLow_air");
-  xt::pyarray<double> &solLim_air             = args.array<double>("limited_solution_air");
-  xt::pyarray<double> &MC_air                 = args.array<double>("MC_air");
-  xt::pyarray<double> &ML_air                 = args.array<double>("ML_air");
-  xt::pyarray<double> &FluxMatrix_air         = args.array<double>("FluxMatrix_air");
-  xt::pyarray<double> &limitedFlux_air        = args.array<double>("limited_Flux_air");
-  xt::pyarray<double> &MassMatrix_air         = args.array<double>("MassMatrix_air");
-  xt::pyarray<double> &dt_times_fH_minus_fL_air = args.array<double>("dt_times_fH_minus_fL_air");
-  xt::pyarray<double> &min_m_bc_air           = args.array<double>("min_m_bc_air");
-  xt::pyarray<double> &max_m_bc_air           = args.array<double>("max_m_bc_air");
+//   // ============================
+//   // =========== AIR ============
+//   // ============================
+//   xt::pyarray<double> &lumped_mass_matrix_air = args.array<double>("lumped_mass_matrix_air");
+//   xt::pyarray<double> &soln_air               = args.array<double>("soln_air");
+//   xt::pyarray<double> &pn_air                 = args.array<double>("pn_air");
+//   xt::pyarray<double> &solH_air               = args.array<double>("solH_air");
+//   xt::pyarray<double> &uLow_air               = args.array<double>("uLow_air");
+//   xt::pyarray<double> &uDotLow_air            = args.array<double>("uDotLow_air");
+//   xt::pyarray<double> &dLow_air               = args.array<double>("dLow_air");
+//   xt::pyarray<double> &solLim_air             = args.array<double>("limited_solution_air");
+//   xt::pyarray<double> &MC_air                 = args.array<double>("MC_air");
+//   xt::pyarray<double> &ML_air                 = args.array<double>("ML_air");
+//   xt::pyarray<double> &FluxMatrix_air         = args.array<double>("FluxMatrix_air");
+//   xt::pyarray<double> &limitedFlux_air        = args.array<double>("limited_Flux_air");
+//   xt::pyarray<double> &MassMatrix_air         = args.array<double>("MassMatrix_air");
+//   xt::pyarray<double> &dt_times_fH_minus_fL_air = args.array<double>("dt_times_fH_minus_fL_air");
+//   xt::pyarray<double> &min_m_bc_air           = args.array<double>("min_m_bc_air");
+//   xt::pyarray<double> &max_m_bc_air           = args.array<double>("max_m_bc_air");
 
-  double Rpos_air[numDOFs], Rneg_air[numDOFs];
-  // reuse ij var; reset before use
-  ij = 0;
+//   double Rpos_air[numDOFs], Rneg_air[numDOFs];
+//   // reuse ij var; reset before use
+//   ij = 0;
 
-  //////////////////////////////////////////////////////
-  // ********** COMPUTE LOW ORDER SOLUTION ********** //
-  //////////////////////////////////////////////////////
-  if (num_fct_iter == 0) { // No FCT for global bounds
-    for (int i = 0; i < numDOFs; i++) { solLim_air.data()[i] = uLow_air.data()[i]; }
-  } else { // do FCT iterations (with global bounds) on low order solution
-    for (int iter = 0; iter < num_fct_iter; iter++) {
-      ij = 0;
-      for (int i = 0; i < numDOFs; i++) {
-        double maxi = 1.0, Pposi = 0;
-        for (int offset = csrRowIndeces_DofLoops.data()[i];
-             offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-          int j = csrColumnOffsets_DofLoops.data()[offset];
-          // compute Flux correction
-          double Fluxij = FluxMatrix_air.data()[ij] - limitedFlux_air.data()[ij];
-          Pposi += Fluxij * ((Fluxij > 0) ? 1. : 0.);
-          // update ij
-          ij += 1;
-        }
-        // compute Q vectors
-        double mi      = ML_air.data()[i];
-        double solLimi = solLim_air.data()[i];
-        double Qposi   = mi * (maxi - solLimi);
-        // compute R vectors
-        Rpos_air[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
-      }
-      ij = 0;
-      for (int i = 0; i < numDOFs; i++) {
-        double ith_Limiter_times_FluxCorrectionMatrix = 0.;
-        double Rposi                                  = Rpos_air[i];
-        for (int offset = csrRowIndeces_DofLoops.data()[i];
-             offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-          int j = csrColumnOffsets_DofLoops.data()[offset];
-          // Flux Correction
-          double Fluxij = FluxMatrix_air.data()[ij] - limitedFlux_air.data()[ij];
-          // compute limiter
-          double Lij = 1.0;
-          Lij        = (Fluxij > 0 ? Rposi : Rpos_air[j]);
-          // compute limited flux
-          ith_Limiter_times_FluxCorrectionMatrix += Lij * Fluxij;
+//   //////////////////////////////////////////////////////
+//   // ********** COMPUTE LOW ORDER SOLUTION ********** //
+//   //////////////////////////////////////////////////////
+//   if (num_fct_iter == 0) { // No FCT for global bounds
+//     for (int i = 0; i < numDOFs; i++) { solLim_air.data()[i] = uLow_air.data()[i]; }
+//   } else { // do FCT iterations (with global bounds) on low order solution
+//     for (int iter = 0; iter < num_fct_iter; iter++) {
+//       ij = 0;
+//       for (int i = 0; i < numDOFs; i++) {
+//         double maxi = 1.0, Pposi = 0;
+//         for (int offset = csrRowIndeces_DofLoops.data()[i];
+//              offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//           int j = csrColumnOffsets_DofLoops.data()[offset];
+//           // compute Flux correction
+//           double Fluxij = FluxMatrix_air.data()[ij] - limitedFlux_air.data()[ij];
+//           Pposi += Fluxij * ((Fluxij > 0) ? 1. : 0.);
+//           // update ij
+//           ij += 1;
+//         }
+//         // compute Q vectors
+//         double mi      = ML_air.data()[i];
+//         double solLimi = solLim_air.data()[i];
+//         double Qposi   = mi * (maxi - solLimi);
+//         // compute R vectors
+//         Rpos_air[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
+//       }
+//       ij = 0;
+//       for (int i = 0; i < numDOFs; i++) {
+//         double ith_Limiter_times_FluxCorrectionMatrix = 0.;
+//         double Rposi                                  = Rpos_air[i];
+//         for (int offset = csrRowIndeces_DofLoops.data()[i];
+//              offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//           int j = csrColumnOffsets_DofLoops.data()[offset];
+//           // Flux Correction
+//           double Fluxij = FluxMatrix_air.data()[ij] - limitedFlux_air.data()[ij];
+//           // compute limiter
+//           double Lij = 1.0;
+//           Lij        = (Fluxij > 0 ? Rposi : Rpos_air[j]);
+//           // compute limited flux
+//           ith_Limiter_times_FluxCorrectionMatrix += Lij * Fluxij;
 
-          // update limited flux
-          limitedFlux_air.data()[ij] = Lij * Fluxij;
+//           // update limited flux
+//           limitedFlux_air.data()[ij] = Lij * Fluxij;
 
-          // update FluxMatrix
-          FluxMatrix_air.data()[ij] = Fluxij;
+//           // update FluxMatrix
+//           FluxMatrix_air.data()[ij] = Fluxij;
 
-          // update ij
-          ij += 1;
-        }
-        // update limited solution (same structure)
-        double mi = ML_air.data()[i];
-        // (no additional op here in your original loop body)
-      }
-    }
-  }
+//           // update ij
+//           ij += 1;
+//         }
+//         // update limited solution (same structure)
+//         double mi = ML_air.data()[i];
+//         // (no additional op here in your original loop body)
+//       }
+//     }
+//   }
 
-  // ***************************************** //
-  // ********** HIGH ORDER SOLUTION ********** //
-  // ***************************************** //
-  ij = 0;
-  for (int i = 0; i < numDOFs; i++) {
-    double mini = soln_air.data()[i], maxi = soln_air.data()[i];
-    double Pposi = 0, Pnegi = 0.;
-    for (int offset = csrRowIndeces_DofLoops.data()[i];
-         offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-      int j = csrColumnOffsets_DofLoops.data()[offset];
-      // compute local bounds //
-      mini = fmin(mini, soln_air.data()[j]);
-      maxi = fmax(maxi, soln_air.data()[j]);
-      // compute P vectors //
-      double fij = (MC_air.data()[ij] * (uDotLow_air.data()[i] - uDotLow_air.data()[j]) / dt
-                    + dLow_air.data()[ij] * (uLow_air.data()[i] - uLow_air.data()[j]));
-      Pposi += fij * (fij > 0 ? 1. : 0.);
-      Pnegi += fij * (fij < 0 ? 1. : 0.);
-      // update ij
-      ij += 1;
-    }
-    // compute Q vectors //
-    double mi    = ML_air.data()[i];
-    double Qposi = mi * (maxi - solLim_air.data()[i]);
-    double Qnegi = mi * (mini - solLim_air.data()[i]);
-    // compute R vectors //
-    Rpos_air[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
-    Rneg_air[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
-  }
+//   // ***************************************** //
+//   // ********** HIGH ORDER SOLUTION ********** //
+//   // ***************************************** //
+//   ij = 0;
+//   for (int i = 0; i < numDOFs; i++) {
+//     double mini = soln_air.data()[i], maxi = soln_air.data()[i];
+//     double Pposi = 0, Pnegi = 0.;
+//     for (int offset = csrRowIndeces_DofLoops.data()[i];
+//          offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//       int j = csrColumnOffsets_DofLoops.data()[offset];
+//       // compute local bounds //
+//       mini = fmin(mini, soln_air.data()[j]);
+//       maxi = fmax(maxi, soln_air.data()[j]);
+//       // compute P vectors //
+//       double fij = (MC_air.data()[ij] * (uDotLow_air.data()[i] - uDotLow_air.data()[j]) / dt
+//                     + dLow_air.data()[ij] * (uLow_air.data()[i] - uLow_air.data()[j]));
+//       Pposi += fij * (fij > 0 ? 1. : 0.);
+//       Pnegi += fij * (fij < 0 ? 1. : 0.);
+//       // update ij
+//       ij += 1;
+//     }
+//     // compute Q vectors //
+//     double mi    = ML_air.data()[i];
+//     double Qposi = mi * (maxi - solLim_air.data()[i]);
+//     double Qnegi = mi * (mini - solLim_air.data()[i]);
+//     // compute R vectors //
+//     Rpos_air[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
+//     Rneg_air[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
+//   }
 
-  // COMPUTE LIMITERS //
-  ij = 0;
-  for (int i = 0; i < numDOFs; i++) {
-    double ith_limited_flux_correction = 0;
-    double Rposi                       = Rpos_air[i];
-    double Rnegi                       = Rneg_air[i];
-    for (int offset = csrRowIndeces_DofLoops.data()[i];
-         offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-      int j = csrColumnOffsets_DofLoops.data()[offset];
-      // compute flux correction
-      double fij = (MC_air.data()[ij] * (uDotLow_air.data()[i] - uDotLow_air.data()[j]) / dt
-                    + dLow_air.data()[ij] * (uLow_air.data()[i] - uLow_air.data()[j]));
+//   // COMPUTE LIMITERS //
+//   ij = 0;
+//   for (int i = 0; i < numDOFs; i++) {
+//     double ith_limited_flux_correction = 0;
+//     double Rposi                       = Rpos_air[i];
+//     double Rnegi                       = Rneg_air[i];
+//     for (int offset = csrRowIndeces_DofLoops.data()[i];
+//          offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+//       int j = csrColumnOffsets_DofLoops.data()[offset];
+//       // compute flux correction
+//       double fij = (MC_air.data()[ij] * (uDotLow_air.data()[i] - uDotLow_air.data()[j]) / dt
+//                     + dLow_air.data()[ij] * (uLow_air.data()[i] - uLow_air.data()[j]));
 
-      // compute limiters
-      double Lij = 1.0;
-      Lij        = fij > 0 ? fmin(Rposi, Rneg_air[j]) : fmin(Rnegi, Rpos_air[j]);
-      // compute ith_limited_flux_correction
-      ith_limited_flux_correction += Lij * fij;
-      ij += 1;
-    }
-    double mi = ML_air.data()[i];
-    solLim_air[i] += 1. / mi * ith_limited_flux_correction;
-  }
-}
+//       // compute limiters
+//       double Lij = 1.0;
+//       Lij        = fij > 0 ? fmin(Rposi, Rneg_air[j]) : fmin(Rnegi, Rpos_air[j]);
+//       // compute ith_limited_flux_correction
+//       ith_limited_flux_correction += Lij * fij;
+//       ij += 1;
+//     }
+//     double mi = ML_air.data()[i];
+//     solLim_air[i] += 1. / mi * ith_limited_flux_correction;
+//   }
+// }
 
   void calculateResidual_entropy_viscosity(arguments_dict &args)
   {
-    xt::pyarray<double> &globalJacobian            = args.array<double>("globalJacobian");
+    xt::pyarray<double> &globalJacobian_water = args.array<double>("globalJacobian_water");
+    xt::pyarray<double> &globalJacobian_air   = args.array<double>("globalJacobian_air");
+    
     double               Theta                     = args.scalar<double>("Theta");
-    xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
+    xt::pyarray<double> &bc_mask_water             = args.array<double>("bc_mask_water");
+    xt::pyarray<double> &bc_mask_air               = args.array<double>("bc_mask_air");
+    
     double               dt                        = args.scalar<double>("dt");
     xt::pyarray<double> &mesh_trial_ref            = args.array<double>("mesh_trial_ref");
     xt::pyarray<double> &mesh_grad_trial_ref       = args.array<double>("mesh_grad_trial_ref");
@@ -2082,7 +2106,8 @@ void kth_FCT_step(arguments_dict &args)
     xt::pyarray<int>    &a_colind                                   = args.array<int>("a_colind");
     xt::pyarray<double> &ebqe_phi                                   = args.array<double>("ebqe_phi");
     double               epsFact                                    = args.scalar<double>("epsFact");
-
+    xt::pyarray<double> &cfl                                        = args.array<double>("cfl");
+    
 
 
 
@@ -2108,8 +2133,12 @@ void kth_FCT_step(arguments_dict &args)
     double               shockCapturingDiffusion                    = args.scalar<double>("shockCapturingDiffusion");
     double               sc_uref                                    = args.scalar<double>("sc_uref");
     double               sc_alpha                                   = args.scalar<double>("sc_alpha");
-    xt::pyarray<int>    &u_l2g                                      = args.array<int>("u_l2g");
-    xt::pyarray<int>    &r_l2g                                      = args.array<int>("r_l2g");
+    xt::pyarray<int>    &u_l2g_water                                = args.array<int>("u_l2g_water");
+    xt::pyarray<int>    &r_l2g_water                                = args.array<int>("r_l2g_water");
+
+    xt::pyarray<int>    &u_l2g_air                                  = args.array<int>("u_l2g_air");
+    xt::pyarray<int>    &r_l2g_air                                  = args.array<int>("r_l2g_air");
+
     xt::pyarray<double> &elementDiameter                            = args.array<double>("elementDiameter");
     int                  degree_polynomial                          = args.scalar<int>("degree_polynomial");
     int                  nExteriorElementBoundaries_global          = args.scalar<int>("nExteriorElementBoundaries_global");
@@ -2142,8 +2171,13 @@ void kth_FCT_step(arguments_dict &args)
     int                  offset_u_air                               = args.scalar<int>("offset_u_air");
     int                  stride_u_water                             = args.scalar<int>("stride_u_water");
     int                  stride_u_air                               = args.scalar<int>("stride_u_air");
+    
+    
     xt::pyarray<double> &globalResidual_water                       = args.array<double>("globalResidual_water");
     xt::pyarray<double> &globalResidual_air                         = args.array<double>("globalResidual_air");
+    
+    
+    
     xt::pyarray<double> &ebqe_velocity_ext_water                    = args.array<double>("ebqe_velocity_ext_water");
     xt::pyarray<double> &ebqe_velocity_ext_air                      = args.array<double>("ebqe_velocity_ext_air");
     xt::pyarray<int>    &isDOFBoundary_u_water                      = args.array<int>("isDOFBoundary_u_water");
@@ -2216,15 +2250,24 @@ void kth_FCT_step(arguments_dict &args)
     xt::pyarray<double> &dLow_water            = args.array<double>("dLow_water");
     xt::pyarray<double> &dLow_air                 = args.array<double>("dLow_air");
 
-    xt::pyarray<double> &fluxMatrix           = args.array<double>("fluxMatrix_water");
-    xt::pyarray<double> &fluxMatrix           = args.array<double>("fluxMatrix_air");
+    xt::pyarray<double> &fluxMatrix_water           = args.array<double>("fluxMatrix_water");
+    xt::pyarray<double> &fluxMatrix_air           = args.array<double>("fluxMatrix_air");
 
-    xt::pyarray<double> &mDotLow              = args.array<double>("mDotLow");
-    xt::pyarray<double> &mDotHigh              = args.array<double>("mDotHigh");
-    xt::pyarray<double> &mLow                 = args.array<double>("mLow");
-    xt::pyarray<double> &dt_times_fH_minus_fL = args.array<double>("dt_times_fH_minus_fL");
-    xt::pyarray<double> &min_m_bc             = args.array<double>("min_m_bc");
-    xt::pyarray<double> &max_m_bc             = args.array<double>("max_m_bc");
+    xt::pyarray<double> &mDotLow_water         = args.array<double>("mDotLow_water");
+    xt::pyarray<double> &mDotHigh_water              = args.array<double>("mDotHigh_water");
+    xt::pyarray<double> &mLow_water                 = args.array<double>("mLow_water");
+    xt::pyarray<double> &dt_times_fH_minus_fL_water = args.array<double>("dt_times_fH_minus_fL_water");
+    xt::pyarray<double> &min_m_bc_water             = args.array<double>("min_m_bc_water");
+    xt::pyarray<double> &max_m_bc_water             = args.array<double>("max_m_bc_water");
+
+    xt::pyarray<double> &mDotLow_air         = args.array<double>("mDotLow_air");
+    xt::pyarray<double> &mDotHigh_air              = args.array<double>("mDotHigh_air");
+    xt::pyarray<double> &mLow_air                 = args.array<double>("mLow_air");
+    xt::pyarray<double> &dt_times_fH_minus_fL_air = args.array<double>("dt_times_fH_minus_fL_air");
+    xt::pyarray<double> &min_m_bc_air             = args.array<double>("min_m_bc_air");
+    xt::pyarray<double> &max_m_bc_air             = args.array<double>("max_m_bc_air");
+
+
     // AUX QUANTITIES OF INTEREST
     xt::pyarray<double> &quantDOFs_water = args.array<double>("quantDOFs_water");
     xt::pyarray<double> &quantDOFs_air = args.array<double>("quantDOFs_air");
@@ -2246,6 +2289,9 @@ void kth_FCT_step(arguments_dict &args)
     xt::pyarray<int>    &csrRowIndeces_u_u                          = args.array<int>("csrRowIndeces_u_u");
     xt::pyarray<int>    &csrColumnOffsets_u_u                       = args.array<int>("csrColumnOffsets_u_u");
     xt::pyarray<int>    &csrColumnOffsets_eb_u_u                    = args.array<int>("csrColumnOffsets_eb_u_u");
+
+    xt::pyarray<double> &ebqe_bc_flux_ext_water                     = args.array<double>("ebqe_bc_flux_ext_water");
+    xt::pyarray<double> &ebqe_bc_flux_ext_air                       = args.array<double>("ebqe_bc_flux_ext_air");
     
     double Rpos[numDOFs], Rneg[numDOFs];
     //double FluxCorrectionMatrix[NNZ];
@@ -2268,11 +2314,11 @@ void kth_FCT_step(arguments_dict &args)
     for (int eN = 0; eN < nElements_global; eN++)
       for (int j = 0; j < nDOF_trial_element; j++) {
         int eN_nDOF_trial_element                               = eN * nDOF_trial_element;
-        u_free_dof_water[r_l2g.data()[eN_nDOF_trial_element + j]]  = u_dof_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
-        u_free_dof_air[r_l2g.data()[eN_nDOF_trial_element + j]]    = u_dof_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
+        u_free_dof_water[r_l2g_water.data()[eN_nDOF_trial_element + j]]  = u_dof_water.data()[u_l2g_water.data()[eN_nDOF_trial_element + j]];
+        u_free_dof_air[r_l2g_air.data()[eN_nDOF_trial_element + j]]    = u_dof_air.data()[u_l2g_air.data()[eN_nDOF_trial_element + j]];
         
-        u_free_dof_old_water[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];        
-        u_free_dof_old_air[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
+        u_free_dof_old_water[r_l2g_water.data()[eN_nDOF_trial_element + j]] = u_dof_old_water.data()[u_l2g_water.data()[eN_nDOF_trial_element + j]];        
+        u_free_dof_old_air[r_l2g_air.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g_air.data()[eN_nDOF_trial_element + j]];
       }
     for (int i = 0; i < NNZ; i++) {
       TransportMatrix_water[i]            = 0.;
@@ -2297,7 +2343,7 @@ void kth_FCT_step(arguments_dict &args)
       if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) //EV stab
       {
         double solni_water = 1.0 * u_free_dof_old_water[i];
-        double solni_air = = 1.0 * u_free_dof_old_air[i];
+        double solni_air  = 1.0 * u_free_dof_old_air[i];
         eta_water[i]                      = ENTROPY_TYPE == 1 ? ENTROPY(solni_water, uL_water, uR_water) : ENTROPY_LOG(solni_water, uL_water, uR_water);
         eta_air[i]                        = ENTROPY_TYPE == 1 ? ENTROPY(solni_air, uL_air, uR_air) : ENTROPY_LOG(solni_air, uL_air, uR_air);
 
@@ -2379,8 +2425,7 @@ void kth_FCT_step(arguments_dict &args)
           m_water, dm_water, f_water[nSpace], df_water[nSpace], a_water[nnz], da_water[nnz], as_water[nnz], mn_water, dmn_water, fn_water[nSpace], dfn_water[nSpace], an_water[nnz], dan_water[nnz], 
           asn_water[nnz],
           m_air, dm_air, f_air[nSpace], df_air[nSpace], a_air[nnz], da_air[nnz], as_air[nnz], mn_air, dmn_air, fn_air[nSpace], dfn_air[nSpace], an_air[nnz], dan_air[nnz], 
-          asn_air[nnz],
-          ;
+          asn_air[nnz];
         //get the physical integration weight
         ck.calculateMapping_element(eN, k, mesh_dof.data(), mesh_l2g.data(), mesh_trial_ref.data(), mesh_grad_trial_ref.data(), jac, jacDet, jacInv, x, y, z);
         ck.calculateMappingVelocity_element(eN, k, mesh_velocity_dof.data(), mesh_l2g.data(), mesh_trial_ref.data(), xt, yt, zt);
@@ -2428,7 +2473,7 @@ void kth_FCT_step(arguments_dict &args)
 
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                             rho_water, rho_air, 
-                            beta_water, beta_air 
+                            beta_water, beta_air, 
                             gravity.data(), 
                             alpha.data()[elementMaterialTypes.data()[eN]], 
                             n.data()[elementMaterialTypes.data()[eN]], 
@@ -2441,7 +2486,7 @@ void kth_FCT_step(arguments_dict &args)
                             dmn_water, dmn_air,
                             fn_water, fn_air,
                             dfn_water, dfn_air,
-                            an_water, an_air
+                            an_water, an_air,
                             dan_water, dan_air, 
                             asn_water, asn_air,
                             Krn_water, Krn_air,
@@ -2454,7 +2499,7 @@ void kth_FCT_step(arguments_dict &args)
         
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                             rho_water, rho_air, 
-                            beta_water, beta_air 
+                            beta_water, beta_air, 
                             gravity.data(), 
                             alpha.data()[elementMaterialTypes.data()[eN]], 
                             n.data()[elementMaterialTypes.data()[eN]], 
@@ -2467,7 +2512,7 @@ void kth_FCT_step(arguments_dict &args)
                             dm_water, dm_air,
                             f_water, f_air,
                             df_water, df_air,
-                            a_water, a_air
+                            a_water, a_air,
                             da_water, da_air, 
                             as_water, as_air,
                             Kr_water, Kr_air,
@@ -2517,8 +2562,6 @@ void kth_FCT_step(arguments_dict &args)
        double cfl_w = 0.0, cfl_a = 0.0;
        calculateCFL(h_eff, velocity_loc_water, cfl_w);
        calculateCFL(h_eff, velocity_loc_air,  cfl_a);
-
-       // use the worst-case (most restrictive) CFL
        cfl.data()[eN_k] = fmax(cfl_w, cfl_a);
       
 
@@ -2542,13 +2585,15 @@ void kth_FCT_step(arguments_dict &args)
         for (int i = 0; i < nDOF_test_element; i++) {
           // VECTOR OF ENTROPY RESIDUAL //
           int eN_i = eN * nDOF_test_element + i;
-          ML2_water[u_l2g.data()[eN_i]] += u_test_dV[i];
-          ML2_air[u_l2g.data()[eN_i]] += u_test_dV[i];
+          ML2_water[u_l2g_water.data()[eN_i]] += u_test_dV[i];
+          ML2_air[u_l2g_air.data()[eN_i]] += u_test_dV[i];
           if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) // EV stab
           {
-            int    gi                 = offset_u + stride_u * u_l2g.data()[eN_i]; //global i-th index
-            double uni_water = u_dof_old_water.data()[gi];
-            double uni_air = u_dof_old_air.data()[gi];
+            int    gi_water = offset_u_water + stride_u_water * u_l2g_water.data()[eN_i]; //global i-th index
+            int    gi_air   = offset_u_air + stride_u_air * u_l2g_air.data()[eN_i]; //global i-th index
+            
+            double uni_water = u_dof_old_water.data()[gi_water];
+            double uni_air = u_dof_old_air.data()[gi_air];
             DENTROPY_uni_water              = ENTROPY_TYPE == 1 ? DENTROPY(uni_water, uL_water, uR_water) : DENTROPY_LOG(uni_water, uL_water, uR_water);           
             DENTROPY_uni_air              = ENTROPY_TYPE == 1 ? DENTROPY(uni_air, uL_air, uR_air) : DENTROPY_LOG(uni_air, uL_air, uR_air);
             element_entropy_residual_water[i] += (DENTROPY_un_water - DENTROPY_uni_water) * aux_entropy_residual_water * u_test_dV[i];
@@ -2591,11 +2636,12 @@ void kth_FCT_step(arguments_dict &args)
       ////////////////
       for (int i = 0; i < nDOF_test_element; i++) {
         int eN_i = eN * nDOF_test_element + i;
-        int gi   = offset_u + stride_u * r_l2g.data()[eN_i]; //global i-th index
+        int gi_water   = offset_u_water + stride_u_water * r_l2g_water.data()[eN_i]; //global i-th index
+        int gi_air   = offset_u_air + stride_u_air * r_l2g_air.data()[eN_i]; //global i-th index
         // distribute entropy_residual
         if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) // EV Stab
-          global_entropy_residual_water[gi] += element_entropy_residual_water[i];
-          global_entropy_residual_air[gi] += element_entropy_residual_air[i];
+          global_entropy_residual_water[gi_water] += element_entropy_residual_water[i];
+          global_entropy_residual_air[gi_air] += element_entropy_residual_air[i];
         // distribute transport matrices
         for (int j = 0; j < nDOF_trial_element; j++) {
           int eN_i_j = eN_i * nDOF_trial_element + j;
@@ -2628,18 +2674,32 @@ void kth_FCT_step(arguments_dict &args)
 
       for (int kb = 0; kb < nQuadraturePoints_elementBoundary; kb++) {
         int    ebNE_kb = ebNE * nQuadraturePoints_elementBoundary + kb, ebNE_kb_nSpace = ebNE_kb * nSpace, ebN_local_kb = ebN_local * nQuadraturePoints_elementBoundary + kb, ebN_local_kb_nSpace = ebN_local_kb * nSpace;
-     double u_ext_water = 0.0, grad_u_ext_water[nSpace], m_ext_water = 0.0, dm_ext_water = 0.0, 
+        double jac_ext[nSpace * nSpace], jacDet_ext, jacInv_ext[nSpace * nSpace], boundaryJac[nSpace * (nSpace - 1)], 
+                metricTensor[(nSpace - 1) * (nSpace - 1)], metricTensorDetSqrt, dS, u_test_dS[nDOF_test_element], u_grad_trial_trace[nDOF_trial_element * nSpace], normal[3], 
+                x_ext, y_ext, z_ext, xt_ext, yt_ext, zt_ext, integralScaling, G[nSpace * nSpace], G_dd_G, tr_G;
+        double u_ext_water = 0.0, grad_u_ext_water[nSpace], m_ext_water = 0.0, dm_ext_water = 0.0, 
                f_ext_water[nSpace], df_ext_water[nSpace], a_ext_water[nnz], da_ext_water[nnz], as_ext_water[nnz], flux_ext_water = 0.0,
                //anb_seepage_flux=0.0, // for flux calculation
                bc_u_ext_water = 0.0, bc_grad_u_ext_water[nSpace], bc_m_ext_water = 0.0, bc_dm_ext_water = 0.0, 
                bc_f_ext_water[nSpace], bc_df_ext_water[nSpace], bc_a_ext_water[nnz], bc_da_ext_water[nnz], bc_as_ext_water[nnz];
+        
+        double un_ext_water, mn_ext_water = 0.0, dmn_ext_water = 0.0, fn_ext_water[nSpace], dfn_ext_water[nSpace], an_ext_water[nnz], dan_ext_water[nnz], asn_ext_water[nnz], bflux_ext_water = 0.0;
+        double un_ext_air , mn_ext_air = 0.0, dmn_ext_air = 0.0, fn_ext_air[nSpace], dfn_ext_air[nSpace], an_ext_air[nnz], dan_ext_air[nnz], asn_ext_air[nnz],  bflux_ext_air = 0.0;
         
         double u_ext_air = 0.0, grad_u_ext_air[nSpace], m_ext_air = 0.0, dm_ext_air = 0.0, 
                f_ext_air[nSpace], df_ext_air[nSpace], a_ext_air[nnz], da_ext_air[nnz], as_ext_air[nnz], flux_ext_air = 0.0,
                //anb_seepage_flux=0.0, // for flux calculation
                bc_u_ext_air = 0.0, bc_grad_u_ext_air[nSpace], bc_m_ext_air = 0.0, bc_dm_ext_air = 0.0, 
                bc_f_ext_air[nSpace], bc_df_ext_air[nSpace], bc_a_ext_air[nnz], bc_da_ext_air[nnz], bc_as_ext_air[nnz];         
-             //
+        
+        
+        double fluxJacobian_u_u_water[nDOF_trial_element], bfluxJacobian_u_u_water[nDOF_trial_element], fluxJacobian_un_un_water[nDOF_trial_element];
+
+        double fluxJacobian_u_u_air[nDOF_trial_element], bfluxJacobian_u_u_air[nDOF_trial_element], fluxJacobian_un_un_air[nDOF_trial_element];
+        
+        
+        
+               //
         //calculate the solution and gradients at quadrature points
         //
         //compute information about mapping from reference element to physical element
@@ -2657,30 +2717,30 @@ void kth_FCT_step(arguments_dict &args)
         // ck.valFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], u_ext);
 
         ck.valFromDOF(u_dof_water.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_water.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       u_ext_water);
         ck.valFromDOF(u_dof_air.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_air.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       u_ext_air);
 
         
         ck.valFromDOF(u_dof_old_water.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_water.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       un_ext_water);
         ck.valFromDOF(u_dof_old_air.data(), 
-                      &u_l2g.data()[eN_nDOF_trial_element], 
+                      &u_l2g_air.data()[eN_nDOF_trial_element], 
                       &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], 
                       un_ext_air);
         //Gradient
         ck.gradFromDOF(u_dof_water.data(), 
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_water.data()[eN_nDOF_trial_element], 
                        u_grad_trial_trace, 
                        grad_u_ext_water);
         ck.gradFromDOF(u_dof_air.data(), 
-                       &u_l2g.data()[eN_nDOF_trial_element], 
+                       &u_l2g_air.data()[eN_nDOF_trial_element], 
                        u_grad_trial_trace, 
                        grad_u_ext_air);
                
@@ -2695,19 +2755,24 @@ void kth_FCT_step(arguments_dict &args)
         //load the boundary values
         //
         bc_u_ext_water = isDOFBoundary_u_water.data()[ebNE_kb] * ebqe_bc_u_ext_water.data()[ebNE_kb] + (1 - isDOFBoundary_u_water.data()[ebNE_kb]) * u_ext_water;
-        bc_u_ext_air = isDOFBoundary_u_air.data()[ebNE_kb] * ebqe_bc_u_ext_air.data()[ebNE_kb] + (1 - isDOFBoundary_u_air.data()[ebNE_kb]) * u_ext;
+        bc_u_ext_air = isDOFBoundary_u_air.data()[ebNE_kb] * ebqe_bc_u_ext_air.data()[ebNE_kb] + (1 - isDOFBoundary_u_air.data()[ebNE_kb]) * u_ext_air;
       
 //        bc_u_ext = isDOFBoundary_u.data()[ebNE_kb] * ebqe_bc_u_ext.data()[ebNE_kb] + (1 - isDOFBoundary_u.data()[ebNE_kb]) * u_ext;
         //
         //calculate the pde coefficients using the solution and the boundary values for the solution
         //
+
+        double Kr_water, dKr_water,Kr_ext_water, dKr_ext_water, Krn_water, dKrn_water;
+        double Kr_air, dKr_air,Kr_ext_air, dKr_ext_air, Krn_air, dKrn_air;
+
+
         double bc_Kr_water, bc_dKr_water,bc_Kr_ext_water, bc_dKr_ext_water, bc_Krn_water, bc_dKrn_water;
         double bc_Kr_air, bc_dKr_air,bc_Kr_ext_air, bc_dKr_ext_air, bc_Krn_air, bc_dKrn_air;
         double Sw_ext, Sg_ext, Swn_ext, Sgn_ext;
 
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air,
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -2720,7 +2785,7 @@ void kth_FCT_step(arguments_dict &args)
                              dm_ext_water, dm_ext_air,
                              f_ext_water, f_ext_air,
                              df_ext_water, df_ext_air,
-                             a_ext_water, a_ext_air
+                             a_ext_water, a_ext_air,
                              da_ext_water, da_ext_air, 
                              as_ext_water, as_ext_air,
                              Kr_water, Kr_air,
@@ -2734,7 +2799,7 @@ void kth_FCT_step(arguments_dict &args)
 
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air, 
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -2747,7 +2812,7 @@ void kth_FCT_step(arguments_dict &args)
                              dmn_ext_water, dmn_ext_air,
                              fn_ext_water, fn_ext_air,
                              dfn_ext_water, dfn_ext_air,
-                             an_ext_water, an_ext_air
+                             an_ext_water, an_ext_air,
                              dan_ext_water, dan_ext_air, 
                              asn_ext_water, asn_ext_air,
                              Krn_water, Krn_air,
@@ -2761,7 +2826,7 @@ void kth_FCT_step(arguments_dict &args)
 
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                              rho_water, rho_air, 
-                             beta_water, beta_air 
+                             beta_water, beta_air ,
                              gravity.data(), 
                              alpha.data()[elementMaterialTypes.data()[eN]], 
                              n.data()[elementMaterialTypes.data()[eN]], 
@@ -2777,7 +2842,7 @@ void kth_FCT_step(arguments_dict &args)
                              bc_a_ext_water, bc_a_ext_air, 
                              bc_da_ext_water, bc_da_ext_air, 
                              bc_as_ext_water, bc_as_ext_air,
-                             Kr_water, Kr_air
+                             Kr_water, Kr_air,
                              dKr_water, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw_ext, Sg_ext,
@@ -2819,7 +2884,7 @@ void kth_FCT_step(arguments_dict &args)
         ebqe_flux_water.data()[ebNE_kb] = flux_ext_water;
         ebqe_flux_air.data()[ebNE_kb] = flux_ext_air;
       
-        anb_seepage_flux                 = seepagefluxcalculator(anb_seepage_flux, isSeepageFace.data()[ebNE], dS, flux_ext);
+        anb_seepage_flux                 = seepagefluxcalculator(anb_seepage_flux, isSeepageFace.data()[ebNE], dS, flux_ext_water);
         anb_seepage_flux_n.data()[0]     = anb_seepage_flux;
         ebqe_u_water.data()[ebNE_kb]     = u_ext_water;
         ebqe_u_air.data()[ebNE_kb]       = u_ext_air;
@@ -2895,8 +2960,8 @@ void kth_FCT_step(arguments_dict &args)
       } //kb
       for (int i = 0; i < nDOF_test_element; i++) {
           int eN_i = eN * nDOF_test_element + i;
-          globalResidual.data()[offset_u_water + stride_u_water * u_l2g.data()[eN_i]] += elementResidual_u_water[i];
-          globalResidual.data()[offset_u_air + stride_u_air * u_l2g.data()[eN_i]] += elementResidual_u_air[i];
+          globalResidual_water.data()[offset_u_water + stride_u_water * u_l2g_water.data()[eN_i]] += elementResidual_u_water[i];
+          globalResidual_air.data()[offset_u_air + stride_u_air * u_l2g_air.data()[eN_i]] += elementResidual_u_air[i];
           
       }//i
     } //ebNE
@@ -2910,9 +2975,9 @@ void kth_FCT_step(arguments_dict &args)
     
     
     int ij = 0;
-    double cflux[numDOFs];
+    double cflux_water[numDOFs];
     for (int i = 0; i < numDOFs; i++) {
-      double gi[nSpace], Cij[nSpace], xi[nSpace], etaMaxi, etaMini;
+      double gi_water[nSpace], Cij[nSpace], xi[nSpace], etaMaxi, etaMini;
       if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) //EV Stabilization
       {
         // For eta min and max
@@ -2922,7 +2987,7 @@ void kth_FCT_step(arguments_dict &args)
       double solni = u_free_dof_old_water[i];
       // initialize gi and compute xi
       for (int I = 0; I < nSpace; I++) {
-        gi[I] = 0.;
+        gi_water[I] = 0.;
         xi[I] = mesh_dof.data()[i * 3 + I];
       }
       // for smoothness indicator //
@@ -2945,7 +3010,7 @@ void kth_FCT_step(arguments_dict &args)
         Cij[2] = Cz[ij];
 #endif
         // COMPUTE gi VECTOR. gi=1/mi*sum_j(Cij*solj)
-        for (int I = 0; I < nSpace; I++) gi[I] += Cij[I] * solnj;
+        for (int I = 0; I < nSpace; I++) gi_water[I] += Cij[I] * solnj;
 
         // COMPUTE numerator and denominator of smoothness indicator
         double alpha_num = solni - solnj;
@@ -2962,7 +3027,7 @@ void kth_FCT_step(arguments_dict &args)
       // scale g vector by lumped mass matrix
       //double mass_matrix_error = abs(ML.data()[i] - ML2[i]);
       //if (mass_matrix_error > 1.0e-16) std::cout << mass_matrix_error<<" ML " << ML.data()[i] << '\t' << ML2[i] << std::endl;
-      for (int I = 0; I < nSpace; I++) gi[I] /= ML.data()[i];
+      for (int I = 0; I < nSpace; I++) gi_water[I] /= ML_water.data()[i];
       if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) //EV Stab
       {
         // Normalizae entropy residual
@@ -2980,7 +3045,7 @@ void kth_FCT_step(arguments_dict &args)
         // compute gi*(xi-xj)
         double gi_times_x = 0.;
         for (int I = 0; I < nSpace; I++) {
-          gi_times_x += gi[I] * delta_x_ij_water.data()[offset * 3 + I];
+          gi_times_x += gi_water[I] * delta_x_ij_water.data()[offset * 3 + I];
         }
         // compute the positive and negative part of gi*(xi-xj)
         SumPos += gi_times_x > 0 ? gi_times_x : 0;
@@ -3002,10 +3067,10 @@ void kth_FCT_step(arguments_dict &args)
     }
 // =============== air ================= //
 
-    int ij = 0;
-    double cflux[numDOFs];
+    ij = 0;
+    double cflux_air[numDOFs];
     for (int i = 0; i < numDOFs; i++) {
-      double gi[nSpace], Cij[nSpace], xi[nSpace], etaMaxi, etaMini;
+      double gi_air[nSpace], Cij[nSpace], xi[nSpace], etaMaxi, etaMini;
       if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) //EV Stabilization
       {
         // For eta min and max
@@ -3015,7 +3080,7 @@ void kth_FCT_step(arguments_dict &args)
       double solni = u_free_dof_old_air[i];
       // initialize gi and compute xi
       for (int I = 0; I < nSpace; I++) {
-        gi[I] = 0.;
+        gi_air[I] = 0.;
         xi[I] = mesh_dof.data()[i * 3 + I];
       }
       // for smoothness indicator //
@@ -3038,7 +3103,7 @@ void kth_FCT_step(arguments_dict &args)
         Cij[2] = Cz[ij];
 #endif
         // COMPUTE gi VECTOR. gi=1/mi*sum_j(Cij*solj)
-        for (int I = 0; I < nSpace; I++) gi[I] += Cij[I] * solnj;
+        for (int I = 0; I < nSpace; I++) gi_air[I] += Cij[I] * solnj;
 
         // COMPUTE numerator and denominator of smoothness indicator
         double alpha_num = solni - solnj;
@@ -3055,7 +3120,7 @@ void kth_FCT_step(arguments_dict &args)
       // scale g vector by lumped mass matrix
       //double mass_matrix_error = abs(ML.data()[i] - ML2[i]);
       //if (mass_matrix_error > 1.0e-16) std::cout << mass_matrix_error<<" ML " << ML.data()[i] << '\t' << ML2[i] << std::endl;
-      for (int I = 0; I < nSpace; I++) gi[I] /= ML.data()[i];
+      for (int I = 0; I < nSpace; I++) gi_air[I] /= ML_air.data()[i];
       if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) //EV Stab
       {
         // Normalizae entropy residual
@@ -3073,7 +3138,7 @@ void kth_FCT_step(arguments_dict &args)
         // compute gi*(xi-xj)
         double gi_times_x = 0.;
         for (int I = 0; I < nSpace; I++) {
-          gi_times_x += gi[I] * delta_x_ij_air.data()[offset * 3 + I];
+          gi_times_x += gi_air[I] * delta_x_ij_air.data()[offset * 3 + I];
         }
         // compute the positive and negative part of gi*(xi-xj)
         SumPos += gi_times_x > 0 ? gi_times_x : 0;
@@ -3156,8 +3221,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg, 
-                           BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
       Kr  = kr_w; dKr = dkr_w;
 
@@ -3188,8 +3253,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg, 
-                            BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
       Kr  = kr_w; dKr = dkr_w;
 
@@ -3222,8 +3287,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg, 
-                            BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
                            
       Krn = kr_w;
       fL  = (1 - Theta) * Krn * fmax(0.0, -TransportMatrixn_water[ij]) * (phin_j - phin_i);
@@ -3248,8 +3313,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg,
-                           BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
       Krn = kr_w;
       fL  = (1 - Theta) * Krn * fmax(0.0, -TransportMatrixn_water[ij]) * (phin_j - phin_i);
@@ -3284,8 +3349,8 @@ for (int i = 0; i < numDOFs; i++) {
                          a_w, a_a, da_w, da_a, as_w, as_a,
                          kr_w, dkr_w, kr_a, dkr_a,
                          PSK_TYPE, Sw, Sg, 
-                         BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                         BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                         BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                         BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
     mLow_water.data()[i] = m_w;
     // mass/old
@@ -3304,12 +3369,12 @@ for (int i = 0; i < numDOFs; i++) {
                          an, an, dan, dan, asn, asn,
                          Krn, dKrn, Krn, dKrn,
                          PSK_TYPE, Sw, Sg, 
-                         BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                         BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                         BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                         BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
                          
 
-    globalResidual_water.data()[i] += bc_mask.data()[i] * (MLi * (m_w - mn_w) / dt - ith_flux_term);
-    globalJacobian_water.data()[ii] += bc_mask.data()[i] * (MLi * dm_w / dt + J_ii) + (1.0 - bc_mask.data()[i]);
+    globalResidual_water.data()[i] += bc_mask_water.data()[i] * (MLi * (m_w - mn_w) / dt - ith_flux_term);
+    globalJacobian_water.data()[ii] += bc_mask_water.data()[i] * (MLi * dm_w / dt + J_ii) + (1.0 - bc_mask_water.data()[i]);
   }
 }
 
@@ -3325,7 +3390,7 @@ for (int i = 0; i < numDOFs; i++) {
   mDotHigh_water[i] = (cflux_water[i] + mDotHigh_water[i])/ML_water.data()[i];
 }
 if (STABILIZATION_TYPE == STABILIZATION::Implicit_FCT) {
-  FCTStep_water(args_water);
+  FCTStep(args);
   for (int i = 0; i < numDOFs; i++) {
     globalResidual_water.data()[i] += fluxCorrection_water.data()[i];
   }
@@ -3389,8 +3454,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg,
-                           BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                           BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
       Kr  = kr_a; dKr = dkr_a;
 
@@ -3420,8 +3485,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg,
-                           BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                           BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
       Kr  = kr_a; dKr = dkr_a;
 
@@ -3454,8 +3519,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg, 
-                            BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
       Krn = kr_a;
       fL  = (1 - Theta) * Krn * fmax(0.0, -TransportMatrixn_air[ij]) * (phin_j - phin_i);
@@ -3480,8 +3545,8 @@ for (int i = 0; i < numDOFs; i++) {
                            a_w, a_a, da_w, da_a, as_w, as_a,
                            kr_w, dkr_w, kr_a, dkr_a,
                            PSK_TYPE, Sw, Sg,
-                           BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                           BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
 
       Krn = kr_a;
@@ -3517,8 +3582,8 @@ for (int i = 0; i < numDOFs; i++) {
                          a_w, a_a, da_w, da_a, as_w, as_a,
                          kr_w, dkr_w, kr_a, dkr_a,
                          PSK_TYPE, Sw, Sg,
-                         BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                         BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                         BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                         BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
     mLow_air.data()[i] = m_a;
 
@@ -3538,11 +3603,11 @@ for (int i = 0; i < numDOFs; i++) {
                          an, an, dan, dan, asn, asn,
                          Krn, dKrn, Krn, dKrn,
                          PSK_TYPE, Sw, Sg,
-                         BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                         BC_lambda.data()[elementMaterialTypes.data()[eN]]); 
+                         BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                         BC_lambda.data()[elementMaterialTypes.data()[0]]); 
 
-    globalResidual_air.data()[i] += bc_mask.data()[i] * (MLi * (m_a - mn_a) / dt - ith_flux_term);
-    globalJacobian_air.data()[ii] += bc_mask.data()[i] * (MLi * dm_a / dt + J_ii) + (1.0 - bc_mask.data()[i]);
+    globalResidual_air.data()[i] += bc_mask_air.data()[i] * (MLi * (m_a - mn_a) / dt - ith_flux_term);
+    globalJacobian_air.data()[ii] += bc_mask_air.data()[i] * (MLi * dm_a / dt + J_ii) + (1.0 - bc_mask_air.data()[i]);
   }
 }
 
@@ -3558,7 +3623,7 @@ for (int i = 0; i < numDOFs; i++) {
   mDotHigh_air[i] = (cflux_air[i] + mDotHigh_air[i])/ML_air.data()[i];
 }
 if (STABILIZATION_TYPE == STABILIZATION::Implicit_FCT) {
-  FCTStep_air(args_air);
+  FCTStep(args);
   for (int i = 0; i < numDOFs; i++) {
     globalResidual_air.data()[i] += fluxCorrection_air.data()[i];
   }
@@ -3600,22 +3665,22 @@ void invert(arguments_dict &args)
   // double BC_lambda     = args.scalar<double>("BC_lambda");
 
   // single material hack preserved
-  const int matId = elementMaterialTypes.data()[0];
+  //const int matId = elementMaterialTypes.data()[0];
 
   for (int i = 0; i < numDOFs; i++) {
     // keep scratch locals to match prior structure (unused by new inverse)
     double dm, f[nSpace], df[nSpace], a[nnz], da[nnz];
 
     // ---- mass sanity checks (mirrors your previous pattern) ----
-    const double mMin_w = rho_water * thetaR.data()[matId];
-    const double mMax_w = rho_water * (thetaR.data()[matId] + thetaSR.data()[matId]);
+    const double mMin_w = rho_water * thetaR.data()[elementMaterialTypes.data()[0]];
+    const double mMax_w = rho_water * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
     if (mIn_water.data()[i] < mMin_w - 1.0e-3 || mIn_water.data()[i] > mMax_w + 1.0e-3) {
       std::cout << "WATER mass out of bounds " << mMin_w << '\t' << mIn_water.data()[i]
                 << '\t' << mMax_w << std::endl;
     }
 
-    const double mMin_a = rho_air * thetaR.data()[matId]; // use symmetric bounds; set to 0 if you prefer
-    const double mMax_a = rho_air * (thetaR.data()[matId] + thetaSR.data()[matId]);
+    const double mMin_a = rho_air * thetaR.data()[elementMaterialTypes.data()[0]]; // use symmetric bounds; set to 0 if you prefer
+    const double mMax_a = rho_air * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
     if (mIn_air.data()[i] < mMin_a - 1.0e-3 || mIn_air.data()[i] > mMax_a + 1.0e-3) {
       std::cout << "AIR mass out of bounds " << mMin_a << '\t' << mIn_air.data()[i]
                 << '\t' << mMax_a << std::endl;
@@ -3631,14 +3696,18 @@ void invert(arguments_dict &args)
       rho_water, rho_air,
       beta_water, beta_air,
       gravity.data(),
-      alpha.data()[matId], n.data()[matId],
-      thetaR.data()[matId], thetaSR.data()[matId],
-      &KWs.data()[matId * nnz],
+      alpha.data()[elementMaterialTypes.data()[0]],
+      n.data()[elementMaterialTypes.data()[0]],
+      thetaR.data()[elementMaterialTypes.data()[0]], 
+      thetaSR.data()[elementMaterialTypes.data()[0]],
+      &KWs.data()[elementMaterialTypes.data()[0] * nnz],
       uw, ua,                       // in/out
-      mIn_water.data()[i], mIn_air.data()[i],
+      mIn_water.data()[i], 
+      mIn_air.data()[i],
       Y_water, Y_air,
       PSK_TYPE,
-      BC_entry_head, BC_lambda
+      BC_entry_head[elementMaterialTypes.data()[0]], 
+      BC_lambda[elementMaterialTypes.data()[0]]
     );
 
     // write back heads
@@ -3697,10 +3766,10 @@ void invert(arguments_dict &args)
     double               alphaBDF                                   = args.scalar<double>("alphaBDF");
     int                  lag_shockCapturing                         = args.scalar<int>("lag_shockCapturing");
     double               shockCapturingDiffusion                    = args.scalar<double>("shockCapturingDiffusion");
-    xt::pyarray<int>    &u_l2g                                      = args.array<int>("u_l2g");
-    xt::pyarray<int>    &r_l2g                                      = args.array<int>("r_l2g");
-    //xt::pyarray<int>    &u_l2g                                      = args.array<int>("u_l2g");
-    //xt::pyarray<int>    &r_l2g                                      = args.array<int>("r_l2g");
+    xt::pyarray<int>    &u_l2g_water                                      = args.array<int>("u_l2g_water");
+    xt::pyarray<int>    &r_l2g_water                                      = args.array<int>("r_l2g_water");
+    xt::pyarray<int>    &u_l2g_air                                      = args.array<int>("u_l2g_air");
+    xt::pyarray<int>    &r_l2g_air                                      = args.array<int>("r_l2g_air");
     
     xt::pyarray<double> &elementDiameter                            = args.array<double>("elementDiameter");
     int                  degree_polynomial                          = args.scalar<int>("degree_polynomial");
@@ -3716,8 +3785,8 @@ void invert(arguments_dict &args)
     
     xt::pyarray<int>    &csrRowIndeces_u_u                          = args.array<int>("csrRowIndeces_u_u");
     xt::pyarray<int>    &csrColumnOffsets_u_u                       = args.array<int>("csrColumnOffsets_u_u");
-    xt::pyarray<double> &globalJacobian                             = args.array<double>("globalJacobian_water");
-    xt::pyarray<double> &globalJacobian                             = args.array<double>("globalJacobian_air");
+    xt::pyarray<double> &globalJacobian_water                             = args.array<double>("globalJacobian_water");
+    xt::pyarray<double> &globalJacobian_air                             = args.array<double>("globalJacobian_air");
     
     xt::pyarray<double> &delta_x_ij                                 = args.array<double>("delta_x_ij");
     int                   nExteriorElementBoundaries_global          = args.scalar<int>("nExteriorElementBoundaries_global");
@@ -3739,7 +3808,9 @@ void invert(arguments_dict &args)
     PSK PSK_TYPE{static_cast<PSK>(args.scalar<int>("PSK_MODEL"))};
     xt::pyarray<double> &BC_entry_head = args.array<double>("BC_entry_head"); // size: nMaterials
     xt::pyarray<double> &BC_lambda     = args.array<double>("BC_lambda");     // size: nMaterials
-
+    double Y_air                                                    = args.scalar<double>("Y_air");     // e.g. 1.0
+    double Y_water                                                  = args.scalar<double>("Y_water");   // e.g. 1.0
+   
     // double BC_entry_head = args.scalar<double>("BC_entry_head");
     // double BC_lambda     = args.scalar<double>("BC_lambda");  
     int                  LUMPED_MASS_MATRIX                         = args.scalar<int>("LUMPED_MASS_MATRIX");
@@ -3770,7 +3841,7 @@ void invert(arguments_dict &args)
 
         double u_air = 0.0, grad_u_air[nSpace], m_air = 0.0, dm_air = 0.0, f_air[nSpace], df_air[nSpace], 
         a_air[nnz], da_air[nnz], as_air[nnz], m_t_air = 0.0, dm_t_air = 0.0, dpdeResidual_u_u_air[nDOF_trial_element], Lstar_u_air[nDOF_test_element], 
-        dsubgridError_u_u_air[nDOF_trial_element], tau_air = 0.0, tau0_air = 0.0, tau1_air = 0.0, ;
+        dsubgridError_u_u_air[nDOF_trial_element], tau_air = 0.0, tau0_air = 0.0, tau1_air = 0.0 ;
         
         
         //get jacobian, etc for mapping reference element
@@ -3782,13 +3853,13 @@ void invert(arguments_dict &args)
         //get the trial function gradients
         ck.gradTrialFromRef(&u_grad_trial_ref.data()[k * nDOF_trial_element * nSpace], jacInv, u_grad_trial);
         //get the solution
-        ck.valFromDOF(u_dof_water.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_water);
-        ck.valFromDOF(u_dof_air.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_air);
+        ck.valFromDOF(u_dof_water.data(), &u_l2g_water.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_water);
+        ck.valFromDOF(u_dof_air.data(), &u_l2g_air.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_air);
         
 
         //get the solution gradients
-        ck.gradFromDOF(u_dof_water.data(), &u_l2g.data()[eN_nDOF_trial_element], u_grad_trial, grad_u_water);
-        ck.gradFromDOF(u_dof_air.data(), &u_l2g.data()[eN_nDOF_trial_element], u_grad_trial, grad_u_air);
+        ck.gradFromDOF(u_dof_water.data(), &u_l2g_water.data()[eN_nDOF_trial_element], u_grad_trial, grad_u_water);
+        ck.gradFromDOF(u_dof_air.data(), &u_l2g_air.data()[eN_nDOF_trial_element], u_grad_trial, grad_u_air);
         
         //precalculate test function products with integration weights
         for (int j = 0; j < nDOF_trial_element; j++) {
@@ -3801,10 +3872,11 @@ void invert(arguments_dict &args)
         //calculate pde coefficients and derivatives at quadrature points
         //
         double Kr_water, dKr_water;
-        double Kr_air, dKr_air;      
+        double Kr_air, dKr_air;  
+        double Sw=0.0, Sg= 0.0;    
         evaluateCoefficients(a_rowptr.data(), a_colind.data(),
                             rho_water, rho_air, 
-                            beta_water, beta_air 
+                            beta_water, beta_air, 
                             gravity.data(), 
                             alpha.data()[elementMaterialTypes.data()[eN]], 
                             n.data()[elementMaterialTypes.data()[eN]], 
@@ -3817,7 +3889,7 @@ void invert(arguments_dict &args)
                             dm_water, dm_air,
                             f_water, f_air,
                             df_water, df_air,
-                            a_water, a_air
+                            a_water, a_air,
                             da_water, da_air, 
                             as_water, as_air,
                             Kr_water, Kr_air,
@@ -3850,7 +3922,9 @@ void invert(arguments_dict &args)
         //calculate time derivatives
         //
         //cek hack
-        dm = 1.0;
+        dm_water = 1.0;
+        dm_air = 1.0;
+
         ck.bdf(alphaBDF,
                q_m_betaBDF_water.data()[eN_k], //since m_t isn't used, we don't have to correct mass
                m_water, dm_water, m_t_water, dm_t_water);
@@ -3873,15 +3947,15 @@ void invert(arguments_dict &args)
           int j_nSpace        = j * nSpace;
           dpdeResidual_u_u_water[j] = ck.MassJacobian_strong(dm_t_water, u_trial_ref.data()[k * nDOF_trial_element + j]) + 
                                       ck.AdvectionJacobian_strong(df_water, &u_grad_trial[j_nSpace]);
-          dpdeResidual_u_u[j]_air   = ck.MassJacobian_strong(dm_t_air, u_trial_ref.data()[k * nDOF_trial_element + j]) + 
+          dpdeResidual_u_u_air[j]   = ck.MassJacobian_strong(dm_t_air, u_trial_ref.data()[k * nDOF_trial_element + j]) + 
                                       ck.AdvectionJacobian_strong(df_air, &u_grad_trial[j_nSpace]);
         }
         //tau and tau*Res
-        calculateSubgridError_tau_water(elementDiameter.data()[eN], dm_t_water, df_water, cfl.data()[eN_k], tau0_water);
+        calculateSubgridError_tau(elementDiameter.data()[eN], dm_t_water, df_water, cfl.data()[eN_k], tau0_water);
         calculateSubgridError_tau(Ct_sge, G, dm_t_water, df_water, tau1_water, cfl.data()[eN_k]);
         tau_water = useMetrics * tau1_water + (1.0 - useMetrics) * tau0_water;
 
-        calculateSubgridError_tau_air(elementDiameter.data()[eN], dm_t_air, df_air, cfl.data()[eN_k], tau0_air);
+        calculateSubgridError_tau(elementDiameter.data()[eN], dm_t_air, df_air, cfl.data()[eN_k], tau0_air);
         calculateSubgridError_tau(Ct_sge, G, dm_t_air, df_air, tau1_air, cfl.data()[eN_k]);
         tau_air = useMetrics * tau1_air + (1.0 - useMetrics) * tau0_air;
 
@@ -3899,7 +3973,8 @@ void invert(arguments_dict &args)
             } else {
               int j_nSpace = j * nSpace;
               int i_nSpace = i * nSpace;
-              dm_t = 1.0; //we are solving for continuum density explicitly
+              dm_t_water = 1.0; //we are solving for continuum density explicitly
+              dm_t_air = 1.0;
               elementJacobian_u_u_water[i][j] += ck.MassJacobian_weak(dm_t_water, u_trial_ref.data()[k * nDOF_trial_element + j], u_test_dV[i]);
               elementJacobian_u_u_air[i][j] += ck.MassJacobian_weak(dm_t_air, u_trial_ref.data()[k * nDOF_trial_element + j], u_test_dV[i]);
             }
@@ -3911,10 +3986,10 @@ void invert(arguments_dict &args)
       //
       for (int i = 0; i < nDOF_test_element; i++) {
         int eN_i = eN * nDOF_test_element + i;
-        int I    = u_l2g.data()[eN_i];
+        int I    = u_l2g_water.data()[eN_i];
         for (int j = 0; j < nDOF_trial_element; j++) {
           int eN_i_j = eN_i * nDOF_trial_element + j;
-          int J      = u_l2g.data()[eN * nDOF_trial_element + j];
+          int J      = u_l2g_water.data()[eN * nDOF_trial_element + j];
           //globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]] += elementJacobian_u_u[i][j];
           delta_x_ij.data()[3 * (csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]) + 0] = mesh_dof.data()[I * 3 + 0] - mesh_dof.data()[J * 3 + 0];
           delta_x_ij.data()[3 * (csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]) + 1] = mesh_dof.data()[I * 3 + 1] - mesh_dof.data()[J * 3 + 1];
