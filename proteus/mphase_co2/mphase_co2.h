@@ -668,8 +668,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     int                  stride_u_water                             = args.scalar<int>("stride_u_water");
     int                  stride_u_air                               = args.scalar<int>("stride_u_air");
     xt::pyarray<double> &globalResidual                       = args.array<double>("globalResidual");
-    // xt::pyarray<double> &globalResidual_water                       = args.array<double>("globalResidual_water");
-    // xt::pyarray<double> &globalResidual_air                         = args.array<double>("globalResidual_air");
+    // xt::pyarray<double> &globalResidual                       = args.array<double>("globalResidual");
+    // xt::pyarray<double> &globalResidual                         = args.array<double>("globalResidual");
     xt::pyarray<double> &ebqe_velocity_ext_water                    = args.array<double>("ebqe_velocity_ext_water");
     xt::pyarray<double> &ebqe_velocity_ext_air                      = args.array<double>("ebqe_velocity_ext_air");
     xt::pyarray<int>    &isDOFBoundary_u_water                      = args.array<int>("isDOFBoundary_u_water");
@@ -1166,8 +1166,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<double> &q_numDiff_u_air                            = args.array<double>("q_numDiff_u_air");
     xt::pyarray<double> &q_numDiff_u_last_water                     = args.array<double>("q_numDiff_u_last_water");
     xt::pyarray<double> &q_numDiff_u_last_air                       = args.array<double>("q_numDiff_u_last_air");
-    xt::pyarray<double> &globalJacobian_water                       = args.array<double>("globalJacobian_water");
-    xt::pyarray<double> &globalJacobian_air                         = args.array<double>("globalJacobian_air");
+    xt::pyarray<double> &globalJacobian                       = args.array<double>("globalJacobian");
+    //xt::pyarray<double> &globalJacobian                         = args.array<double>("globalJacobian");
     xt::pyarray<double> &ebqe_velocity_ext_water                    = args.array<double>("ebqe_velocity_ext_water");
     xt::pyarray<double> &ebqe_velocity_ext_air                      = args.array<double>("ebqe_velocity_ext_air");
     xt::pyarray<int>    &isDOFBoundary_u_water                      = args.array<int>("isDOFBoundary_u_water");
@@ -1359,8 +1359,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         int eN_i = eN * nDOF_test_element + i;
         for (int j = 0; j < nDOF_trial_element; j++) {
           int eN_i_j = eN_i * nDOF_trial_element + j;
-          globalJacobian_water.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_u_u[eN_i_j]] += elementJacobian_u_u_water[i][j];
-          globalJacobian_air.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_u_u[eN_i_j]] += elementJacobian_u_u_air[i][j];
+          globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_u_u[eN_i_j]] += elementJacobian_u_u_water[i][j];
+          globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_u_u[eN_i_j]] += elementJacobian_u_u_air[i][j];
 
         } //j
       } //i
@@ -1521,8 +1521,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           int eN_i = eN * nDOF_test_element + i;
           for (int j = 0; j < nDOF_trial_element; j++) {
             int ebN_i_j = ebN * 4 * nDOF_test_X_trial_element + i * nDOF_trial_element + j;
-            globalJacobian_water.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_water[j] * u_test_dS[i];
-            globalJacobian_air.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_air[j] * u_test_dS[i];
+            globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_water[j] * u_test_dS[i];
+            globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_air[j] * u_test_dS[i];
           } //j
         } //i
       } //kb
@@ -2073,8 +2073,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
   void calculateResidual_entropy_viscosity(arguments_dict &args)
   {
-    xt::pyarray<double> &globalJacobian_water = args.array<double>("globalJacobian_water");
-    xt::pyarray<double> &globalJacobian_air   = args.array<double>("globalJacobian_air");
+    xt::pyarray<double> &globalJacobian = args.array<double>("globalJacobian");
+  //  xt::pyarray<double> &globalJacobian   = args.array<double>("globalJacobian");
     
     double               Theta                     = args.scalar<double>("Theta");
     xt::pyarray<double> &bc_mask_water             = args.array<double>("bc_mask_water");
@@ -2177,8 +2177,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     int                  stride_u_air                               = args.scalar<int>("stride_u_air");
     
     
-    xt::pyarray<double> &globalResidual_water                       = args.array<double>("globalResidual_water");
-    xt::pyarray<double> &globalResidual_air                         = args.array<double>("globalResidual_air");
+    xt::pyarray<double> &globalResidual                       = args.array<double>("globalResidual");
+    //xt::pyarray<double> &globalResidual                         = args.array<double>("globalResidual");
     
     
     
@@ -2946,11 +2946,11 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           for (int j = 0; j < nDOF_trial_element; j++) {
             int ebN_i_j = ebN * 4 * nDOF_test_X_trial_element + i * nDOF_trial_element + j;
             if (useConsistentFlux) {
-              globalJacobian_water.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_water[j] * u_test_dS[i];
-              globalJacobian_air.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_air[j] * u_test_dS[i];
+              globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_water[j] * u_test_dS[i];
+              globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_air[j] * u_test_dS[i];
             } else {
-              globalJacobian_water.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += bfluxJacobian_u_u_water[j] * u_test_dS[i];
-              globalJacobian_air.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += bfluxJacobian_u_u_air[j] * u_test_dS[i];
+              globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += bfluxJacobian_u_u_water[j] * u_test_dS[i];
+              globalJacobian.data()[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += bfluxJacobian_u_u_air[j] * u_test_dS[i];
               //phase 0:: water
               TransportMatrix_water[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_water[j] * u_test_dS[i];
               TransportMatrixConsistent_water[csrRowIndeces_u_u[eN_i] + csrColumnOffsets_eb_u_u[ebN_i_j]] += fluxJacobian_u_u_water[j] * u_test_dS[i];
@@ -2968,8 +2968,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       } //kb
       for (int i = 0; i < nDOF_test_element; i++) {
           int eN_i = eN * nDOF_test_element + i;
-          globalResidual_water.data()[offset_u_water + stride_u_water * u_l2g_water.data()[eN_i]] += elementResidual_u_water[i];
-          globalResidual_air.data()[offset_u_air + stride_u_air * u_l2g_air.data()[eN_i]] += elementResidual_u_air[i];
+          globalResidual.data()[offset_u_water + stride_u_water * u_l2g_water.data()[eN_i]] += elementResidual_u_water[i];
+          globalResidual.data()[offset_u_air + stride_u_air * u_l2g_air.data()[eN_i]] += elementResidual_u_air[i];
           
       }//i
     } //ebNE
@@ -3236,7 +3236,7 @@ for (int i = 0; i < numDOFs; i++) {
 
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
       if (i != j) {
-        globalJacobian_water.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]);
+        globalJacobian.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]);
         J_ii -= -Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
       }
       ith_flux_term += fL;
@@ -3268,7 +3268,7 @@ for (int i = 0; i < numDOFs; i++) {
 
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
       if (i != j) {
-        globalJacobian_water.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
+        globalJacobian.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
         J_ii -= -Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]);
       }
       ith_flux_term += fL;
@@ -3381,8 +3381,8 @@ for (int i = 0; i < numDOFs; i++) {
                          BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
                          
 
-    globalResidual_water.data()[i] += bc_mask_water.data()[i] * (MLi * (m_w - mn_w) / dt - ith_flux_term);
-    globalJacobian_water.data()[ii] += bc_mask_water.data()[i] * (MLi * dm_w / dt + J_ii) + (1.0 - bc_mask_water.data()[i]);
+    globalResidual.data()[i] += bc_mask_water.data()[i] * (MLi * (m_w - mn_w) / dt - ith_flux_term);
+    globalJacobian.data()[ii] += bc_mask_water.data()[i] * (MLi * dm_w / dt + J_ii) + (1.0 - bc_mask_water.data()[i]);
   }
 }
 
@@ -3400,7 +3400,7 @@ for (int i = 0; i < numDOFs; i++) {
 if (STABILIZATION_TYPE == STABILIZATION::Implicit_FCT) {
   FCTStep(args);
   for (int i = 0; i < numDOFs; i++) {
-    globalResidual_water.data()[i] += fluxCorrection_water.data()[i];
+    globalResidual.data()[i] += fluxCorrection_water.data()[i];
   }
 }
 
@@ -3469,7 +3469,7 @@ for (int i = 0; i < numDOFs; i++) {
 
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]) * (phi_j - phi_i);
       if (i != j) {
-        globalJacobian_air.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]);
+        globalJacobian.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]);
         J_ii -= -Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix_air[ij]) * (phi_j - phi_i);
       }
       ith_flux_term += fL;
@@ -3500,7 +3500,7 @@ for (int i = 0; i < numDOFs; i++) {
 
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]) * (phi_j - phi_i);
       if (i != j) {
-        globalJacobian_air.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix_air[ij]) * (phi_j - phi_i);
+        globalJacobian.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix_air[ij]) * (phi_j - phi_i);
         J_ii -= -Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]);
       }
       ith_flux_term += fL;
@@ -3708,7 +3708,7 @@ void invert(arguments_dict &args)
       n.data()[elementMaterialTypes.data()[0]],
       thetaR.data()[elementMaterialTypes.data()[0]], 
       thetaSR.data()[elementMaterialTypes.data()[0]],
-      &KWs.data()[elementMaterialTypes.data()[0]] * nnz],
+      &KWs.data()[elementMaterialTypes.data()[0] * nnz],
       uw, ua,                       // in/out
       mIn_water.data()[i], 
       mIn_air.data()[i],
@@ -3793,8 +3793,8 @@ void invert(arguments_dict &args)
     
     xt::pyarray<int>    &csrRowIndeces_u_u                          = args.array<int>("csrRowIndeces_u_u");
     xt::pyarray<int>    &csrColumnOffsets_u_u                       = args.array<int>("csrColumnOffsets_u_u");
-    xt::pyarray<double> &globalJacobian_water                             = args.array<double>("globalJacobian_water");
-    xt::pyarray<double> &globalJacobian_air                             = args.array<double>("globalJacobian_air");
+    xt::pyarray<double> &globalJacobian                             = args.array<double>("globalJacobian");
+//    xt::pyarray<double> &globalJacobian                             = args.array<double>("globalJacobian");
     
     xt::pyarray<double> &delta_x_ij                                 = args.array<double>("delta_x_ij");
     int                   nExteriorElementBoundaries_global          = args.scalar<int>("nExteriorElementBoundaries_global");
