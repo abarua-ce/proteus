@@ -2119,6 +2119,13 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["q_numDiff_u_last_air"] = self.q[('numDiff_last',1,1)]
         argsDict["csrRowIndeces_u_u"] = self.csrRowIndeces[(0,0)]
         argsDict["csrColumnOffsets_u_u"] = self.csrColumnOffsets[(0,0)]
+        argsDict["csrRowIndeces_w_w"]    = self.csrRowIndeces.get((0,0), self.csrRowIndeces[(0,0)])
+        argsDict["csrColumnOffsets_w_w"] = self.csrColumnOffsets.get((0,0), self.csrColumnOffsets[(0,0)])
+        argsDict["csrRowIndeces_a_a"]    = self.csrRowIndeces.get((1,1), self.csrRowIndeces[(0,0)])
+        argsDict["csrColumnOffsets_a_a"] = self.csrColumnOffsets.get((1,1), self.csrColumnOffsets[(0,0)])
+        argsDict["csrColumnOffsets_eb_w_w"] = self.csrColumnOffsets_eb.get((0,0), self.csrColumnOffsets_eb[(0,0)])       
+        argsDict["csrColumnOffsets_eb_a_a"] = self.csrColumnOffsets_eb.get((1,1), self.csrColumnOffsets_eb[(1,1)])
+
         argsDict["globalJacobian"] = jacobian.getCSRrepresentation()[2]
         argsDict["delta_x_ij"] = self.delta_x_ij
         argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
@@ -2141,6 +2148,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         
         
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0,0)]
+        
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["VMS"] = self.coefficients.VMS
         #argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux

@@ -3791,8 +3791,14 @@ void invert(arguments_dict &args)
     xt::pyarray<double> &q_numDiff_u_last_water                     = args.array<double>("q_numDiff_u_last_water");
     xt::pyarray<double> &q_numDiff_u_last_air                       = args.array<double>("q_numDiff_u_last_air");
     
-    xt::pyarray<int>    &csrRowIndeces_u_u                          = args.array<int>("csrRowIndeces_u_u");
-    xt::pyarray<int>    &csrColumnOffsets_u_u                       = args.array<int>("csrColumnOffsets_u_u");
+    xt::pyarray<int>    &csrRowIndeces_w_w                          = args.array<int>("csrRowIndeces_w_w");
+    xt::pyarray<int>    &csrColumnOffsets_w_w                       = args.array<int>("csrColumnOffsets_w_w");
+    xt::pyarray<int>    &csrRowIndeces_a_a                          = args.array<int>("csrRowIndeces_a_a");
+    xt::pyarray<int>    &csrColumnOffsets_a_a                       = args.array<int>("csrColumnOffsets_a_a");
+  
+
+  //  xt::pyarray<int>    &csrRowIndeces_u_u                          = args.array<int>("csrRowIndeces_u_u");
+  //  xt::pyarray<int>    &csrColumnOffsets_u_u                       = args.array<int>("csrColumnOffsets_u_u");
     xt::pyarray<double> &globalJacobian                             = args.array<double>("globalJacobian");
 //    xt::pyarray<double> &globalJacobian                             = args.array<double>("globalJacobian");
     
@@ -3900,8 +3906,8 @@ void invert(arguments_dict &args)
                             a_water, a_air,
                             da_water, da_air, 
                             as_water, as_air,
-                            Kr_water, Kr_air,
-                            dKr_water, dKr_air,
+                            Kr_water, dKr_water,
+                            Kr_air, dKr_air,
                             PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                             Sw, Sg,
                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
@@ -3999,11 +4005,26 @@ void invert(arguments_dict &args)
           int eN_i_j = eN_i * nDOF_trial_element + j;
           int J      = u_l2g_water.data()[eN * nDOF_trial_element + j];
           //globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]] += elementJacobian_u_u[i][j];
-          delta_x_ij.data()[3 * (csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]) + 0] = mesh_dof.data()[I * 3 + 0] - mesh_dof.data()[J * 3 + 0];
-          delta_x_ij.data()[3 * (csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]) + 1] = mesh_dof.data()[I * 3 + 1] - mesh_dof.data()[J * 3 + 1];
-          delta_x_ij.data()[3 * (csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]) + 2] = mesh_dof.data()[I * 3 + 2] - mesh_dof.data()[J * 3 + 2];
+          delta_x_ij.data()[3 * (csrRowIndeces_w_w.data()[eN_i] + csrColumnOffsets_w_w.data()[eN_i_j]) + 0] = mesh_dof.data()[I * 3 + 0] - mesh_dof.data()[J * 3 + 0];
+          delta_x_ij.data()[3 * (csrRowIndeces_w_w.data()[eN_i] + csrColumnOffsets_w_w.data()[eN_i_j]) + 1] = mesh_dof.data()[I * 3 + 1] - mesh_dof.data()[J * 3 + 1];
+          delta_x_ij.data()[3 * (csrRowIndeces_w_w.data()[eN_i] + csrColumnOffsets_w_w.data()[eN_i_j]) + 2] = mesh_dof.data()[I * 3 + 2] - mesh_dof.data()[J * 3 + 2];
         } //j
       } //i
+
+        for (int i = 0; i < nDOF_test_element; i++) {
+        int eN_i = eN * nDOF_test_element + i;
+        int I    = u_l2g_air.data()[eN_i];
+        for (int j = 0; j < nDOF_trial_element; j++) {
+          int eN_i_j = eN_i * nDOF_trial_element + j;
+          int J      = u_l2g_air.data()[eN * nDOF_trial_element + j];
+          //globalJacobian.data()[csrRowIndeces_u_u.data()[eN_i] + csrColumnOffsets_u_u.data()[eN_i_j]] += elementJacobian_u_u[i][j];
+          delta_x_ij.data()[3 * (csrRowIndeces_a_a.data()[eN_i] + csrColumnOffsets_a_a.data()[eN_i_j]) + 0] = mesh_dof.data()[I * 3 + 0] - mesh_dof.data()[J * 3 + 0];
+          delta_x_ij.data()[3 * (csrRowIndeces_a_a.data()[eN_i] + csrColumnOffsets_a_a.data()[eN_i_j]) + 1] = mesh_dof.data()[I * 3 + 1] - mesh_dof.data()[J * 3 + 1];
+          delta_x_ij.data()[3 * (csrRowIndeces_a_a.data()[eN_i] + csrColumnOffsets_a_a.data()[eN_i_j]) + 2] = mesh_dof.data()[I * 3 + 2] - mesh_dof.data()[J * 3 + 2];
+        } //j
+      } //i
+
+
     } //elements
   } //computeMassMatrix
 }; //Richards
