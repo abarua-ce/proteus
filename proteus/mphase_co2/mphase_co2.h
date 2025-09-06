@@ -74,15 +74,15 @@ public:
   const int      nDOF_test_X_trial_element;
   CompKernelType ck;
   mphase_co2() : nDOF_test_X_trial_element(nDOF_test_element * nDOF_trial_element), ck() { }
-
 inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz],
                                  const double rho_water, const double rho_air,
                                  const double beta_water , const double beta_air, 
                                  const double gravity[nSpace],
-                                 const double alpha, const double n_vg,
+                                 const double alpha, 
+                                 const double n_vg,
                                  const double thetaR, const double thetaSR,
                                  const double KWs[nnz],
-                                 const double &u_water,  const double &u_air,         // both heads
+                                 const double &u_water,  const double &u_air,   // heads
                                  const double Y_water,   const double Y_air,
                                  double &m_water, double &m_air,
                                  double &dm_water, double &dm_air,
@@ -96,130 +96,120 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
                                  const PSK PSK_TYPE,
                                  double &Swater_out, double &Sair_out,
                                  const double BC_entry_head, const double BC_lambda)
+{ const int nSpace2 = nSpace * nSpace;
+  double psiC;
+  double pcBar, pcBar_n, pcBar_nM1, pcBar_nM2, onePlus_pcBar_n;
+  double sBar, sqrt_sBar, DsBar_DpsiC;
+  double thetaW, DthetaW_DpsiC;
+  double vBar, vBar2, DvBar_DpsiC;
+  double KWr, DKWr_DpsiC;
+  double thetaS, m_vg, pcBarStar, sqrt_sBarStar;
+  
+  double Se      = 1.0;
+  double dSe_dpsic = 0.0;
+  thetaS = thetaR + thetaSR;
+  psiC = (rho_air / rho_water) * u_air - u_water;
+ 
+  const double dpsic_duw = -1.0;
+  const double dpsic_dua = (rho_air / rho_water);
+
+  if (PSK_TYPE == PSK::VG_PSK)
   {
-  const int nSpace2 = nSpace * nSpace;
-  double    psiC;
-  double    pcBar;
-  double    pcBar_n;
-  double    pcBar_nM1;
-  double    pcBar_nM2;
-  double    onePlus_pcBar_n;
-  double    sBar;
-  double    sqrt_sBar;
-  double    DsBar_DpsiC;
-  double    thetaW;
-  double    DthetaW_DpsiC;
-  double    vBar;
-  double    vBar2;
-  double    DvBar_DpsiC;
-  double    KWr;
-  double    DKWr_DpsiC;
-  //double    rho2_water = rho_water * rho_water;
-  //double    rho2_air = rho_air * rho_air; 
-  double    thetaS;
-  double    rhom;
-  double    drhom;
-  double    m_vg;
-  double    pcBarStar;
-  double    sqrt_sBarStar;
-  double Se;
-  double dSe_dpsic;
-
-   thetaS = thetaR + thetaSR;
-   psiC = (rho_air / rho_water) * u_air - u_water;
-   const double dpsic_duw = -1.0;
-   const double dpsic_dua = (rho_air / rho_water);
-
-   Se = 1.0, dSe_dpsic = 0.0;
-   thetaW = thetaS, DthetaW_DpsiC = 0.0;
-   double krw = 1.0, dkrw_dpsic = 0.0;
-
-  if (PSK_TYPE == PSK::VG_PSK) {
-    const double m_vg = 1.0 - 1.0 / n_vg;
+    m_vg = 1.0 - 1.0 / n_vg;
 
     if (psiC > 0.0) {
-      const double pcBar = alpha * psiC;
-      const double pcBarStar = (pcBar < 1.0e-8) ? 1.0e-8 : pcBar;
+      pcBar     = alpha * psiC;
+      pcBarStar = (pcBar < 1.0e-8) ? 1.0e-8 : pcBar;
 
-      const double pc_nM2 = std::pow(pcBarStar, n_vg - 2.0);
-      const double pc_nM1 = pc_nM2 * pcBar;
-      const double pc_n   = pc_nM1 * pcBar;
-      const double onePlus_pc_n = 1.0 + pc_n;
+      pcBar_nM2       = std::pow(pcBarStar, n_vg - 2.0);
+      pcBar_nM1       = pcBar_nM2 * pcBar;
+      pcBar_n         = pcBar_nM1 * pcBar;
+      onePlus_pcBar_n = 1.0 + pcBar_n;
 
-      Se          = std::pow(onePlus_pc_n, -m_vg);
-      dSe_dpsic   = alpha * (1.0 - n_vg) * (Se / onePlus_pc_n) * pc_nM1;
+      sBar        = std::pow(onePlus_pcBar_n, -m_vg);
+      DsBar_DpsiC = alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
 
-      const double vBar    = 1.0 - pc_nM1 * Se;
-      const double vBar2   = vBar * vBar;
-      const double sqrtSe  = std::sqrt(std::max(Se, 1.0e-16));
-      const double dV_dpsi = -alpha * (n_vg - 1.0) * pc_nM2 * Se - pc_nM1 * dSe_dpsic;
+      vBar        = 1.0 - pcBar_nM1 * sBar;
+      vBar2       = vBar * vBar;
+      DvBar_DpsiC = -alpha * (n_vg - 1.0) * pcBar_nM2 * sBar - pcBar_nM1 * DsBar_DpsiC;
 
-      thetaW        = thetaR + thetaSR * Se;
-      DthetaW_DpsiC = thetaSR * dSe_dpsic;
+      thetaW        = thetaSR * sBar + thetaR;
+      DthetaW_DpsiC = thetaSR * DsBar_DpsiC;
 
-      krw        = sqrtSe * vBar2;
-      dkrw_dpsic = (0.5 / std::max(sqrtSe, 1.0e-8)) * dSe_dpsic * vBar2
-                 + 2.0 * sqrtSe * vBar * dV_dpsi;
-    } else {
-      // Saturated plateau
-      Se = 1.0; dSe_dpsic = 0.0;
-      thetaW = thetaS; DthetaW_DpsiC = 0.0;
-      krw = 1.0; dkrw_dpsic = 0.0;
+      sqrt_sBar     = std::sqrt(std::max(sBar, 1.0e-16));
+      sqrt_sBarStar = (sqrt_sBar < 1.0e-8) ? 1.0e-8 : sqrt_sBar;
+
+      KWr           = sqrt_sBar * vBar2;                                                                
+      DKWr_DpsiC    = (0.5 / sqrt_sBarStar) * DsBar_DpsiC * vBar2 + 2.0 * sqrt_sBar * vBar * DvBar_DpsiC;
+
+      Se            = sBar;
+      dSe_dpsic     = DsBar_DpsiC;
     }
-  } else {
-    // Brooks–Corey (with Mualem)
-    const double hb  = (BC_entry_head > 1e-12) ? BC_entry_head : 1e-12;
-    const double lam = (BC_lambda     > 1e-12) ? BC_lambda     : 1.0e-12;
+    else {
+      thetaW        = thetaS;
+      DthetaW_DpsiC = 0.0;
+      KWr           = 1.0;
+      DKWr_DpsiC    = 0.0;
+
+      Se            = 1.0;
+      dSe_dpsic     = 0.0;
+    }
+  }
+  else // Brooks–Corey (with Mualem)
+  {
+    const double hb  = (BC_entry_head > 1.0e-12) ? BC_entry_head : 1.0e-12;
+    const double lam = (BC_lambda     > 1.0e-12) ? BC_lambda     : 1.0e-12;
 
     if (psiC > 0.0) {
       if (psiC >= hb) {
-        Se         = std::pow(hb / psiC, lam);
-        dSe_dpsic  = -lam * Se / psiC;
+        Se            = std::pow(hb / psiC, lam);
+        dSe_dpsic     = -lam * Se / psiC;
+
         thetaW        = thetaR + thetaSR * Se;
         DthetaW_DpsiC = thetaSR * dSe_dpsic;
 
-        const double expo = 3.0 + 2.0 / lam;  // Mualem–BC
-        krw        = std::pow(Se, expo);
-        dkrw_dpsic = expo * std::pow(Se, expo - 1.0) * dSe_dpsic;
+        // Mualem–BC wetting rel-perm
+        const double expo = 3.0 + 2.0 / lam;
+        KWr           = std::pow(Se, expo);
+        DKWr_DpsiC    = expo * std::pow(Se, expo - 1.0) * dSe_dpsic;
       } else {
-        Se = 1.0; dSe_dpsic = 0.0;
-        thetaW = thetaS; DthetaW_DpsiC = 0.0;
-        krw = 1.0; dkrw_dpsic = 0.0;
+        // saturated
+        Se            = 1.0;  dSe_dpsic = 0.0;
+        thetaW        = thetaS; DthetaW_DpsiC = 0.0;
+        KWr           = 1.0;  DKWr_DpsiC = 0.0;
       }
     } else {
-      Se = 1.0; dSe_dpsic = 0.0;
-      thetaW = thetaS; DthetaW_DpsiC = 0.0;
-      krw = 1.0; dkrw_dpsic = 0.0;
+      Se            = 1.0;  dSe_dpsic = 0.0;
+      thetaW        = thetaS; DthetaW_DpsiC = 0.0;
+      KWr           = 1.0;  DKWr_DpsiC = 0.0;
     }
   }
 
-  // Clamp Se in (0,1) for non-wetting rel-perm stability
   const double Se_cl = std::min(std::max(Se, 1.0e-12), 1.0 - 1.0e-12);
+  double Kra, dKra_dSe;
 
-  // ---------- Non-wetting rel-perm kra(Se) and d/dψc (one-time) ----------
-  double kra = 0.0, dkra_dpsic = 0.0;
   if (PSK_TYPE == PSK::VG_PSK) {
     const double mvg    = 1.0 - 1.0 / n_vg;
     const double Se_pow = std::pow(Se_cl, 1.0 / mvg);
     const double t1     = std::sqrt(1.0 - Se_cl);
     const double t2     = 1.0 - Se_pow;
 
-    kra = t1 * std::pow(t2, 2.0 * mvg);
+    Kra      = t1 * std::pow(t2, 2.0 * mvg);
 
     const double dt1_dSe = -0.5 / std::max(t1, 1.0e-8);
     const double dt2_dSe = -(1.0 / mvg) * std::pow(Se_cl, 1.0 / mvg - 1.0);
-    const double dkr_dSe = dt1_dSe * std::pow(t2, 2.0 * mvg)
-                         + t1 * (2.0 * mvg) * std::pow(t2, 2.0 * mvg - 1.0) * dt2_dSe;
-    dkra_dpsic = dkr_dSe * dSe_dpsic;
-  } else {
-    const double lam = (BC_lambda > 1.0e-12) ? BC_lambda : 1.0e-12;
-    const double expo_a  = 2.0 + 1.0 / lam;          // simple Corey-type
-    kra         = std::pow(1.0 - Se_cl, expo_a);
-    const double dkr_dSe = -expo_a * std::pow(1.0 - Se_cl, expo_a - 1.0);
-    dkra_dpsic  = dkr_dSe * dSe_dpsic;
+    dKra_dSe = dt1_dSe * std::pow(t2, 2.0 * mvg)
+             + t1 * (2.0 * mvg) * std::pow(t2, 2.0 * mvg - 1.0) * dt2_dSe;
   }
+  else { // BC: Corey-type for non-wetting
+    const double lam    = (BC_lambda > 1.0e-12) ? BC_lambda : 1.0e-12;
+    const double expo_a = 2.0 + 1.0 / lam;
+    Kra      = std::pow(1.0 - Se_cl, expo_a);
+    dKra_dSe = -expo_a * std::pow(1.0 - Se_cl, expo_a - 1.0);
+  }
+  const double dKra_dpsic = dKra_dSe * dSe_dpsic;
 
-  // ---------- Saturations and contents ----------
+  // ---------- Phase saturations ----------
   const double Sw = thetaW / std::max(thetaS, 1.0e-12);
   const double Sg = 1.0 - Sw;
   Swater_out = Sw;
@@ -228,34 +218,31 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
   const double thetaA        = thetaS - thetaW;
   const double dthetaA_dpsic = -DthetaW_DpsiC;
 
-
+  // ---------- Slight compressibility (per phase) ----------
   const double rho_w  = rho_water * std::exp(beta_water * u_water);
   const double drho_w = beta_water * rho_w;
-
   const double rho_a  = rho_air   * std::exp(beta_air * u_air);
   const double drho_a = beta_air  * rho_a;
 
+  // chain rule to own primary variable
   const double dthetaW_duw = DthetaW_DpsiC * dpsic_duw;
   const double dthetaW_dua = DthetaW_DpsiC * dpsic_dua;
-  const double dthetaA_duw = dthetaA_dpsic * dpsic_duw;   // = -dthetaW_duw
-  const double dthetaA_dua = dthetaA_dpsic * dpsic_dua;   // = -dthetaW_dua
+  const double dthetaA_duw = dthetaA_dpsic * dpsic_duw; // = -dthetaW_duw
+  const double dthetaA_dua = dthetaA_dpsic * dpsic_dua; // = -dthetaW_dua
 
-  const double dkrw_duw = dkrw_dpsic * dpsic_duw;
-  const double dkrw_dua = dkrw_dpsic * dpsic_dua;
-  const double dkra_duw = dkra_dpsic * dpsic_duw;
-  const double dkra_dua = dkra_dpsic * dpsic_dua;
+  const double dKWr_duw = DKWr_DpsiC * dpsic_duw;
+  const double dKWr_dua = DKWr_DpsiC * dpsic_dua;
+  const double dKra_duw = dKra_dpsic * dpsic_duw;
+  const double dKra_dua = dKra_dpsic * dpsic_dua;
 
-  // ---------- Mass terms m, dm (with optional mass fractions Y_k) ----------
+  // ---------- Mass and its derivative (with optional mass fractions Y_k) ----------
   m_water  = rho_w * thetaW * Y_water;
   m_air    = rho_a * thetaA * Y_air;
 
-  // dm/du_k = (drho_k/du_k) * theta_k * Y_k + rho_k * (dtheta_k/du_k) * Y_k
-  // Note: derivative is w.r.t. **own** primary variable (uw for water, ua for air)
-  dm_water = drho_w * thetaW * Y_water + rho_w * dthetaW_duw * Y_water;
-  dm_air   = drho_a * thetaA * Y_air   + rho_a * dthetaA_dua * Y_air;
+  dm_water = drho_w * thetaW * Y_water + rho_w * dthetaW_duw * Y_water; // wrt u_water
+  dm_air   = drho_a * thetaA * Y_air   + rho_a * dthetaA_dua * Y_air;   // wrt u_air
 
-  // ---------- Flux-like vectors and tensors ----------
-  // Zero outputs first
+  // ---------- Flux-like terms (keep original loops/shape) ----------
   for (int I = 0; I < nSpace; ++I) {
     f_water[I] = 0.0; df_water[I] = 0.0;
     f_air[I]   = 0.0; df_air[I]   = 0.0;
@@ -268,45 +255,34 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
   const double rho2_w = rho_w * rho_w;
   const double rho2_a = rho_a * rho_a;
 
-  // Fill per phase
   for (int I = 0; I < nSpace; ++I) {
     for (int ii = rowptr[I]; ii < rowptr[I + 1]; ++ii) {
       const int J = colind[ii];
 
-      // --- water phase (wetting) ---
-      f_water[I]  += rho2_w * krw * KWs[ii] * gravity[J];
-      df_water[I] += rho2_w * dkrw_duw * KWs[ii] * gravity[J];
+      // wetting (water)
+      f_water[I]  += rho2_w * KWr * KWs[ii] * gravity[J];
+      df_water[I] += rho2_w * dKWr_duw * KWs[ii] * gravity[J];
 
-      a_water[ii]  = rho_w * krw * KWs[ii];
-      da_water[ii] = rho_w * dkrw_duw * KWs[ii];
+      a_water[ii]  = rho_w * KWr * KWs[ii];
+      da_water[ii] = rho_w * dKWr_duw * KWs[ii];
 
       as_water[ii] = rho_w * KWs[ii];
 
-      // --- air phase (non-wetting) ---
-      f_air[I]  += rho2_a * kra * KWs[ii] * gravity[J];
-      df_air[I] += rho2_a * dkra_dua * KWs[ii] * gravity[J];
+      // non-wetting (air)
+      f_air[I]  += rho2_a * Kra * KWs[ii] * gravity[J];
+      df_air[I] += rho2_a * dKra_dua * KWs[ii] * gravity[J];
 
-      a_air[ii]  = rho_a * kra * KWs[ii];
-      da_air[ii] = rho_a * dkra_dua * KWs[ii];
+      a_air[ii]  = rho_a * Kra * KWs[ii];
+      da_air[ii] = rho_a * dKra_dua * KWs[ii];
 
       as_air[ii] = rho_a * KWs[ii];
     }
   }
 
-  // Report rel-perms and their derivatives wrt OWN variables
-  kr_water = krw;   dkr_water = dkrw_duw;
-  kr_air   = kra;   dkr_air   = dkra_dua;
+  // ---------- Report rel-perms and OWN-variable derivatives ----------
+  kr_water = KWr;  dkr_water = dKWr_duw;
+  kr_air   = Kra;  dkr_air   = dKra_dua;
 }
-  
-// Two-phase inverse: recover the selected phase head (k=0 water, k=1 air)
-// from the stored mass m and the other phase head, using PSK inverse.
-//
-// Notes:
-// - Uses m ≈ ρ_k * θ_k * Y_k  (same as forward) and ignores slight
-//   compressibility in the inversion (like your original did).
-// - Requires both heads by reference; updates only the selected one.
-// - If you still need the original single-phase inverse, keep it under a
-//   different name (e.g., evaluateInverseCoefficients_1ph).
 
 inline void evaluateInverseCoefficients_2ph(const int rowptr[nSpace], const int colind[nnz],
                                             const double rho_water, const double rho_air,
@@ -837,14 +813,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                             a_water, a_air,
                             da_water, da_air, 
                             as_water, as_air,
-                            Kr_water, Kr_air,
-                            dKr_water, dKr_air,
+                            Kr_water, dKr_water,
+                            Kr_air, dKr_air,
                             PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                             Sw, Sg,
                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
-
-       
+                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));       
                              //
         //calculate time derivative at quadrature points
         //
@@ -1015,8 +989,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              a_ext_water, a_ext_air,
                              da_ext_water, da_ext_air, 
                              as_ext_water, as_ext_air,
-                             Kr_water, Kr_air,
-                             dKr_water, dKr_air,
+                             Kr_water, dKr_water,
+                             Kr_air, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw_ext, Sg_ext,
                              BC_entry_head.data()[elementMaterialTypes.data()[eN]],
@@ -1040,12 +1014,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              bc_a_ext_water, bc_a_ext_air, 
                              bc_da_ext_water, bc_da_ext_air, 
                              bc_as_ext_water, bc_as_ext_air,
-                             bc_Kr_water, Kr_air,
-                             dKr_water, dKr_air,
+                             Kr_water, dKr_water,
+                             Kr_air, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw_ext, Sg_ext,
-                            BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
+                             BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
      // λ   (only used if BC_PSK));
                             //
         //calculate the numerical fluxes
@@ -1287,12 +1261,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              a_water, a_air,
                              da_water, da_air, 
                              as_water, as_air,
-                             Kr_water, Kr_air,
-                             dKr_water, dKr_air,
+                             Kr_water, dKr_water, 
+                             Kr_air, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw, Sg,
-                            BC_entry_head.data()[elementMaterialTypes.data()[eN]],
-                            BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
+                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
+                             BC_lambda.data()[elementMaterialTypes.data()[eN]]);        // lambda  (only used if BC_PSK));
 
 
                              //
@@ -1455,8 +1429,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              a_ext_water, a_ext_air,
                              da_ext_water, da_ext_air, 
                              as_ext_water, as_ext_air,
-                             Kr_water, Kr_air,
-                             dKr_water, dKr_air,
+                             Kr_water, dKr_water,
+                             Kr_air, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw_ext, Sg_ext,
                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
@@ -1480,8 +1454,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              bc_a_ext_water, bc_a_ext_air, 
                              bc_da_ext_water, bc_da_ext_air, 
                              bc_as_ext_water, bc_as_ext_air,
-                             Kr_water, Kr_air,
-                             dKr_water, dKr_air,
+                             Kr_water, dKr_water,
+                             Kr_air, dKr_air,
                              PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                              Sw_ext, Sg_ext,
                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
@@ -2497,8 +2471,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                             an_water, an_air,
                             dan_water, dan_air, 
                             asn_water, asn_air,
-                            Krn_water, Krn_air,
-                            dKrn_water, dKrn_air,
+                            Krn_water, dKrn_water,
+                            Krn_air, dKrn_air,
                             PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                             Sw, Sg,
                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
@@ -2523,8 +2497,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                             a_water, a_air,
                             da_water, da_air, 
                             as_water, as_air,
-                            Kr_water, Kr_air,
-                            dKr_water, dKr_air,
+                            Kr_water, 
+                            dKr_water,Kr_air, dKr_air,
                             PSK_TYPE,          // 0: VG_PSK, 1: BC_PSK
                             Sw, Sg,
                             BC_entry_head.data()[elementMaterialTypes.data()[eN]],
@@ -3184,9 +3158,15 @@ for (int i = 0; i < numDOFs; i++) {
   double ith_consistent_flux_term       = 0;
   double dLii                           = 0.;
   // scratch (kept; not all used because bi-phase call returns both)
-  double m, dm, f[nSpace], df[nSpace], a[nnz], da[nnz], as[nnz];
-  double dmn, fn[nSpace], dfn[nSpace], an[nnz], dan[nnz], asn[nnz];
+  double kr_water, dkr_water, krn_water, dkrn_water;
+  double kr_air, dkr_air, krn_air, dkrn_air;
+  double m_water, dm_water, f_water[nSpace], df_water[nSpace], a_water[nnz], da_water[nnz], as_water[nnz];
+  double m_air, dm_air, f_air[nSpace], df_air[nSpace], a_air[nnz], da_air[nnz], as_air[nnz];
+  
 
+  double mn_water, dmn_water, fn_water[nSpace], dfn_water[nSpace], an_water[nnz], dan_water[nnz], asn_water[nnz];
+  double mn_air, dmn_air, fn_air[nSpace], dfn_air[nSpace], an_air[nnz], dan_air[nnz], asn_air[nnz];
+  //double Kr, dKr, Krn, dKrn;
   for (int I = 0; I < nSpace; I++) {
     phi_i  -= rho_water * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
     phin_i -= rho_water * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
@@ -3211,12 +3191,14 @@ for (int i = 0; i < numDOFs; i++) {
     // ---- low-order at t^{n+1} (donor based on sign) ----
     if (-TransportMatrix_water[ij] * (phi_j - phi_i) <= 0.0) {
       // donor = i  (use heads at i for BOTH phases; take water kr)
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double Sw, Sg;
+      //double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      //double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3224,16 +3206,21 @@ for (int i = 0; i < numDOFs; i++) {
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                            /*u_w*/ u_free_dof_water[i], /*u_a*/ u_free_dof_air[i],
                            /*Yw,Ya*/ 1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg, 
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, 
+                           df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg, 
                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
-                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-      Kr  = kr_w; dKr = dkr_w;
-
+      Kr  = kr_water; dKr = dkr_water;
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
       if (i != j) {
         globalJacobian.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]);
@@ -3243,12 +3230,14 @@ for (int i = 0; i < numDOFs; i++) {
       fA -= fL;
     } else {
       // donor = j
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double Sw, Sg;
+      //double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      //double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3256,16 +3245,21 @@ for (int i = 0; i < numDOFs; i++) {
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                            u_free_dof_water[j], u_free_dof_air[j],
                            1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg, 
-                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
-                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, 
+                           df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg, 
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-      Kr  = kr_w; dKr = dkr_w;
-
+      Kr  = kr_water; dKr = dkr_water;
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
       if (i != j) {
         globalJacobian.data()[ij] -= Theta * Kr * fmax(0.0, -TransportMatrix_water[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix_water[ij]) * (phi_j - phi_i);
@@ -3277,12 +3271,14 @@ for (int i = 0; i < numDOFs; i++) {
 
     // ---- low-order at t^n (old) ----
     if (-TransportMatrixn_water[ij] * (phin_j - phin_i) <= 0.0) {
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double Sw, Sg;
+      //double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      //double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3290,25 +3286,33 @@ for (int i = 0; i < numDOFs; i++) {
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                            u_free_dof_old_water[i], u_free_dof_old_air[i],
                            1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg, 
-                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
-                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, 
+                           df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg, 
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
                            
-      Krn = kr_w;
+      Krn = kr_water;
       fL  = (1 - Theta) * Krn * fmax(0.0, -TransportMatrixn_water[ij]) * (phin_j - phin_i);
       ith_flux_term += fL;
       fA -= fL;
     } else {
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double Sw, Sg;
+      //double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      //double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3316,15 +3320,20 @@ for (int i = 0; i < numDOFs; i++) {
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                            u_free_dof_old_water[j], u_free_dof_old_air[j],
                            1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg,
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg,
                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
-                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-      Krn = kr_w;
+      Krn = kr_water;
       fL  = (1 - Theta) * Krn * fmax(0.0, -TransportMatrixn_water[ij]) * (phin_j - phin_i);
       ith_flux_term += fL;
       fA -= fL;
@@ -3339,12 +3348,14 @@ for (int i = 0; i < numDOFs; i++) {
 
   // mass/current at i (take water outputs)
   {
-    double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-    double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-    double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+    double Sw, Sg;
+    //double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+    //double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
     evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                         rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                         rho_water, rho_air, 
+                         beta_water, beta_air, 
+                         gravity.data(),
                          alpha.data()[elementMaterialTypes.data()[0]],
                          n.data()[elementMaterialTypes.data()[0]],
                          thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3352,19 +3363,27 @@ for (int i = 0; i < numDOFs; i++) {
                          &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                          u_free_dof_water[i], u_free_dof_air[i],
                          1.0, 1.0,
-                         m_w, m_a, dm_w, dm_a,
-                         f_w, f_a, df_w, df_a,
-                         a_w, a_a, da_w, da_a, as_w, as_a,
-                         kr_w, dkr_w, kr_a, dkr_a,
-                         PSK_TYPE, Sw, Sg, 
+                         m_water, m_air, 
+                         dm_water, dm_air,
+                         f_water, f_air, 
+                         df_water, df_air,
+                         a_water, a_air, 
+                         da_water, da_air, 
+                         as_water, as_air,
+                         kr_water, dkr_water, 
+                         kr_air, dkr_air,
+                         PSK_TYPE, 
+                         Sw, Sg, 
                          BC_entry_head.data()[elementMaterialTypes.data()[0]],
                          BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-    mLow_water.data()[i] = m_w;
+    mLow_water.data()[i] = m_water;
     // mass/old
-    double mn_w, mn_a, dmn_w, dmn_a;
+//    double mn_w, mn_a, dmn_w, dmn_a;
     evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                         rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                         rho_water, rho_air, 
+                         beta_water, beta_air, 
+                         gravity.data(),
                          alpha.data()[elementMaterialTypes.data()[0]],
                          n.data()[elementMaterialTypes.data()[0]],
                          thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3372,17 +3391,23 @@ for (int i = 0; i < numDOFs; i++) {
                          &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                          u_free_dof_old_water[i], u_free_dof_old_air[i],
                          1.0, 1.0,
-                         mn_w, mn_a, dmn_w, dmn_a,
-                         fn, fn, dfn, dfn,
-                         an, an, dan, dan, asn, asn,
-                         Krn, dKrn, Krn, dKrn,
-                         PSK_TYPE, Sw, Sg, 
+                         mn_water, mn_air, 
+                         dmn_water, dmn_air,
+                         fn_water, fn_air, 
+                         dfn_water, dfn_air,
+                         an_water, an_air, 
+                         dan_water, dan_air, 
+                         asn_water, asn_air,
+                         krn_water, dkrn_water, 
+                         krn_air, dkrn_air,
+                         PSK_TYPE, 
+                         Sw, Sg, 
                          BC_entry_head.data()[elementMaterialTypes.data()[0]],
                          BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
                          
 
-    globalResidual.data()[i] += bc_mask_water.data()[i] * (MLi * (m_w - mn_w) / dt - ith_flux_term);
-    globalJacobian.data()[ii] += bc_mask_water.data()[i] * (MLi * dm_w / dt + J_ii) + (1.0 - bc_mask_water.data()[i]);
+    globalResidual.data()[i] += bc_mask_water.data()[i] * (MLi * (m_water - mn_water) / dt - ith_flux_term);
+    globalJacobian.data()[ii] += bc_mask_water.data()[i] * (MLi * dm_water / dt + J_ii) + (1.0 - bc_mask_water.data()[i]);
   }
 }
 
@@ -3419,8 +3444,19 @@ for (int i = 0; i < numDOFs; i++) {
   double ith_flux_term                  = 0;
   double ith_consistent_flux_term       = 0;
   double dLii                           = 0.;
-  double m, dm, f[nSpace], df[nSpace], a[nnz], da[nnz], as[nnz];
-  double dmn, fn[nSpace], dfn[nSpace], an[nnz], dan[nnz], asn[nnz];
+
+  double kr_water, dkr_water, krn_water, dkrn_water;
+  double kr_air, dkr_air, krn_air, dkrn_air;
+
+  double m_water, dm_water, f_water[nSpace], df_water[nSpace], a_water[nnz], da_water[nnz], as_water[nnz];
+  double m_air, dm_air, f_air[nSpace], df_air[nSpace], a_air[nnz], da_air[nnz], as_air[nnz];
+  double mn_water, dmn_water, fn_water[nSpace], dfn_water[nSpace], an_water[nnz], dan_water[nnz], asn_water[nnz];
+  double mn_air, dmn_air, fn_air[nSpace], dfn_air[nSpace], an_air[nnz], dan_air[nnz], asn_air[nnz];
+
+
+
+  // double m, dm, f[nSpace], df[nSpace], a[nnz], da[nnz], as[nnz];
+  // double dmn, fn[nSpace], dfn[nSpace], an[nnz], dan[nnz], asn[nnz];
 
   for (int I = 0; I < nSpace; I++) {
     phi_i  -= rho_air * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
@@ -3444,28 +3480,36 @@ for (int i = 0; i < numDOFs; i++) {
 
     // t^{n+1}
     if (-TransportMatrix_air[ij] * (phi_j - phi_i) <= 0.0) {
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double Sw, Sg;
+      //double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      //double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
                            thetaSR.data()[elementMaterialTypes.data()[0]],
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
-                           u_free_dof_water[i], u_free_dof_air[i],
-                           1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg,
+                           /*u_w*/ u_free_dof_water[i], /*u_a*/ u_free_dof_air[i],
+                           /*Yw,Ya*/ 1.0, 1.0,
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, 
+                           df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg, 
                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-      Kr  = kr_a; dKr = dkr_a;
+      Kr  = kr_air; dKr = dkr_air;
 
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]) * (phi_j - phi_i);
       if (i != j) {
@@ -3475,12 +3519,14 @@ for (int i = 0; i < numDOFs; i++) {
       ith_flux_term += fL;
       fA -= fL;
     } else {
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double Sw, Sg;
+      // double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      // double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3488,15 +3534,21 @@ for (int i = 0; i < numDOFs; i++) {
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                            u_free_dof_water[j], u_free_dof_air[j],
                            1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg,
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, 
+                           df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg, 
                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-      Kr  = kr_a; dKr = dkr_a;
+      Kr  = kr_air; dKr = dkr_air;
 
       fL = Theta * Kr * fmax(0.0, -TransportMatrix_air[ij]) * (phi_j - phi_i);
       if (i != j) {
@@ -3509,12 +3561,14 @@ for (int i = 0; i < numDOFs; i++) {
 
     // t^n
     if (-TransportMatrixn_air[ij] * (phin_j - phin_i) <= 0.0) {
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double  Sw, Sg;
+      //double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      //double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3522,25 +3576,33 @@ for (int i = 0; i < numDOFs; i++) {
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                            u_free_dof_old_water[i], u_free_dof_old_air[i],
                            1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg, 
-                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
-                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, 
+                           df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg, 
+                           BC_entry_head.data()[elementMaterialTypes.data()[0]],
+                           BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-      Krn = kr_a;
+      Krn = kr_air;
       fL  = (1 - Theta) * Krn * fmax(0.0, -TransportMatrixn_air[ij]) * (phin_j - phin_i);
       ith_flux_term += fL;
       fA -= fL;
     } else {
-      double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-      double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-      double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+      double  Sw, Sg;
+      // double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+      // double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
       evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                           rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                           rho_water, rho_air, 
+                           beta_water, beta_air, 
+                           gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]],
                            n.data()[elementMaterialTypes.data()[0]],
                            thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3548,16 +3610,21 @@ for (int i = 0; i < numDOFs; i++) {
                            &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                            u_free_dof_old_water[j], u_free_dof_old_air[j],
                            1.0, 1.0,
-                           m_w, m_a, dm_w, dm_a,
-                           f_w, f_a, df_w, df_a,
-                           a_w, a_a, da_w, da_a, as_w, as_a,
-                           kr_w, dkr_w, kr_a, dkr_a,
-                           PSK_TYPE, Sw, Sg,
+                           m_water, m_air, 
+                           dm_water, dm_air,
+                           f_water, f_air, df_water, df_air,
+                           a_water, a_air, 
+                           da_water, da_air, 
+                           as_water, as_air,
+                           kr_water, dkr_water, 
+                           kr_air, dkr_air,
+                           PSK_TYPE, 
+                           Sw, Sg,
                            BC_entry_head.data()[elementMaterialTypes.data()[0]],
                            BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
 
-      Krn = kr_a;
+      Krn = kr_air;
       fL  = (1 - Theta) * Krn * fmax(0.0, -TransportMatrixn_air[ij]) * (phin_j - phin_i);
       ith_flux_term += fL;
       fA -= fL;
@@ -3572,12 +3639,14 @@ for (int i = 0; i < numDOFs; i++) {
 
   // mass/current at i (take air outputs)
   {
-    double m_w, m_a, dm_w, dm_a, kr_w, dkr_w, kr_a, dkr_a, Sw, Sg;
-    double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
-    double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
+    double Sw, Sg;
+    // double f_w[nSpace], f_a[nSpace], df_w[nSpace], df_a[nSpace];
+    // double a_w[nnz], a_a[nnz], da_w[nnz], da_a[nnz], as_w[nnz], as_a[nnz];
 
     evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                         rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                         rho_water, rho_air, 
+                         beta_water, beta_air, 
+                         gravity.data(),
                          alpha.data()[elementMaterialTypes.data()[0]],
                          n.data()[elementMaterialTypes.data()[0]],
                          thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3585,20 +3654,28 @@ for (int i = 0; i < numDOFs; i++) {
                          &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                          u_free_dof_water[i], u_free_dof_air[i],
                          1.0, 1.0,
-                         m_w, m_a, dm_w, dm_a,
-                         f_w, f_a, df_w, df_a,
-                         a_w, a_a, da_w, da_a, as_w, as_a,
-                         kr_w, dkr_w, kr_a, dkr_a,
-                         PSK_TYPE, Sw, Sg,
+                         m_water, m_air, 
+                         dm_water, dm_air,
+                         f_water, f_air, 
+                         df_water, df_air,
+                         a_water, a_air, 
+                         da_water, da_air, 
+                         as_water, as_air,
+                         kr_water, dkr_water, 
+                         kr_air, dkr_air,
+                         PSK_TYPE, 
+                         Sw, Sg, 
                          BC_entry_head.data()[elementMaterialTypes.data()[0]],
                          BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-    mLow_air.data()[i] = m_a;
+    mLow_air.data()[i] = m_air;
 
     // mass/old
-    double mn_w, mn_a, dmn_w, dmn_a;
+//    double mn_w, mn_a, dmn_w, dmn_a;
     evaluateCoefficients(a_rowptr.data(), a_colind.data(),
-                         rho_water, rho_air, beta_water, beta_air, gravity.data(),
+                         rho_water, rho_air, 
+                         beta_water, beta_air, 
+                         gravity.data(),
                          alpha.data()[elementMaterialTypes.data()[0]],
                          n.data()[elementMaterialTypes.data()[0]],
                          thetaR.data()[elementMaterialTypes.data()[0]],
@@ -3606,16 +3683,23 @@ for (int i = 0; i < numDOFs; i++) {
                          &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                          u_free_dof_old_water[i], u_free_dof_old_air[i],
                          1.0, 1.0,
-                         mn_w, mn_a, dmn_w, dmn_a,
-                         fn, fn, dfn, dfn,
-                         an, an, dan, dan, asn, asn,
-                         Krn, dKrn, Krn, dKrn,
-                         PSK_TYPE, Sw, Sg,
+                         mn_water, mn_air, 
+                         dmn_water, dmn_air,
+                         fn_water, fn_air, 
+                         dfn_water, dfn_air,
+                         an_water, an_air, 
+                         dan_water, dan_air, 
+                         asn_water, asn_air,
+                         krn_water, dkrn_water, 
+                         krn_air, dkrn_air,
+                         PSK_TYPE, 
+                         Sw, Sg, 
                          BC_entry_head.data()[elementMaterialTypes.data()[0]],
-                         BC_lambda.data()[elementMaterialTypes.data()[0]]); 
+                         BC_lambda.data()[elementMaterialTypes.data()[0]]);        // lambda  (only used if BC_PSK));
 
-    globalResidual.data()[i] += bc_mask_air.data()[i] * (MLi * (m_a - mn_a) / dt - ith_flux_term);
-    globalJacobian.data()[ii] += bc_mask_air.data()[i] * (MLi * dm_a / dt + J_ii) + (1.0 - bc_mask_air.data()[i]);
+
+    globalResidual.data()[i] += bc_mask_air.data()[i] * (MLi * (m_air - mn_air) / dt - ith_flux_term);
+    globalJacobian.data()[ii] += bc_mask_air.data()[i] * (MLi * dm_air / dt + J_ii) + (1.0 - bc_mask_air.data()[i]);
   }
 }
 
