@@ -74,7 +74,8 @@ public:
   const int      nDOF_test_X_trial_element;
   CompKernelType ck;
   mphase_co2() : nDOF_test_X_trial_element(nDOF_test_element * nDOF_trial_element), ck() { }
-inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz],
+
+  inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz],
                                  const double rho_water, const double rho_air,
                                  const double beta_water , const double beta_air, 
                                  const double gravity[nSpace],
@@ -155,11 +156,12 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
       dSe_dpsic     = 0.0;
     }
   }
-  else // Brooks–Corey (with Mualem)
+  else // Brooks–Corey
   {
     const double hb  = (BC_entry_head > 1.0e-12) ? BC_entry_head : 1.0e-12;
     const double lam = (BC_lambda     > 1.0e-12) ? BC_lambda     : 1.0e-12;
 
+    // ---- Se(ψc) and dSe/dψc (UNCHANGED) ----
     if (psiC > 0.0) {
       if (psiC >= hb) {
         Se            = std::pow(hb / psiC, lam);
@@ -168,23 +170,58 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
         thetaW        = thetaR + thetaSR * Se;
         DthetaW_DpsiC = thetaSR * dSe_dpsic;
 
-        // Mualem–BC wetting rel-perm
-        const double expo = 3.0 + 2.0 / lam;
-        KWr           = std::pow(Se, expo);
-        DKWr_DpsiC    = expo * std::pow(Se, expo - 1.0) * dSe_dpsic;
+        // ---- k_rℓ : Brooks–Corey wetting rel-perm (same exponent as before) ----
+        // CHANGED: annotate formula explicitly: kr_w = Se^{(2+3λ)/λ} = Se^{3 + 2/λ}
+        const double expo_w = 3.0 + 2.0 / lam;
+        KWr           = std::pow(Se, expo_w);
+        DKWr_DpsiC    = expo_w * std::pow(Se, expo_w - 1.0) * dSe_dpsic;
+
+        // ---- k_rg : Brooks–Corey non-wetting per user's formula ----
+        // CHANGED: use kr_g = (1 - Se)^2 * (1 - Se^{(2+λ)/λ})
+        const double Se_cl   = std::min(std::max(Se, 1.0e-12), 1.0 - 1.0e-12);
+        const double expo_bw = (2.0 + lam) / lam;            // = 2/λ + 1
+        const double one_m_Se= 1.0 - Se_cl;
+        const double Se_bw   = std::pow(Se_cl, expo_bw);
+        double Kra, dKra_dSe;
+
+        Kra      = (one_m_Se * one_m_Se) * (1.0 - Se_bw);
+        // d/dSe [ (1-Se)^2 * (1 - Se^{bw}) ]
+        dKra_dSe = -2.0 * one_m_Se * (1.0 - Se_bw)
+                   - (one_m_Se * one_m_Se) * (expo_bw * std::pow(Se_cl, expo_bw - 1.0));
+
+        // pack using existing names (used later)
+        // NOTE: dKra_dpsic = dKra_dSe * dSe/dψc, and OWN-variable mapping is applied below
+        // We reuse 'dKra_dpsic' slot via local scope after this block
+        // To keep structure, store to temporary file-scope variables:
+        // We'll compute dKra_dpsic below outside the if's after Se known
+        // For now stash Kra into 'kr_air' via locals:
+        kr_air = Kra;
+        dkr_air = dKra_dSe * dSe_dpsic;  // d(kr_g)/dψc (OWN mapping applied later)
+
       } else {
         // saturated
         Se            = 1.0;  dSe_dpsic = 0.0;
         thetaW        = thetaS; DthetaW_DpsiC = 0.0;
         KWr           = 1.0;  DKWr_DpsiC = 0.0;
+
+        // CHANGED: gas rel-perm when Se=1 -> kr_g = 0
+        kr_air        = 0.0;  dkr_air    = 0.0;
       }
     } else {
       Se            = 1.0;  dSe_dpsic = 0.0;
       thetaW        = thetaS; DthetaW_DpsiC = 0.0;
       KWr           = 1.0;  DKWr_DpsiC = 0.0;
+
+      // CHANGED: gas rel-perm when Se=1 -> kr_g = 0
+      kr_air        = 0.0;  dkr_air    = 0.0;
     }
+
+    // If we are in the general case above (ψc ≥ hb), kr_air and dkr_air are already set.
+    // Otherwise they are zero from the branches.
   }
 
+  // --- Non-wetting rel-perm & derivative for VG path or if BC computed locally ---
+  // For VG branch we already had Kra via vg-formula below; for BC we put it in kr_air/dkr_air above.
   const double Se_cl = std::min(std::max(Se, 1.0e-12), 1.0 - 1.0e-12);
   double Kra, dKra_dSe;
 
@@ -201,11 +238,16 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
     dKra_dSe = dt1_dSe * std::pow(t2, 2.0 * mvg)
              + t1 * (2.0 * mvg) * std::pow(t2, 2.0 * mvg - 1.0) * dt2_dSe;
   }
-  else { // BC: Corey-type for non-wetting
-    const double lam    = (BC_lambda > 1.0e-12) ? BC_lambda : 1.0e-12;
-    const double expo_a = 2.0 + 1.0 / lam;
-    Kra      = std::pow(1.0 - Se_cl, expo_a);
-    dKra_dSe = -expo_a * std::pow(1.0 - Se_cl, expo_a - 1.0);
+  else { 
+    // BC branch: if we already computed kr_air/dkr_air above, reuse it; otherwise compute here
+    if (psiC > 0.0 && psiC >= ((BC_entry_head > 1.0e-12) ? BC_entry_head : 1.0e-12)) {
+      // Already set in the BC block
+      Kra = kr_air;
+      dKra_dSe = (dkr_air / std::max(dSe_dpsic, 1e-30)); // back out dKra/dSe safely
+    } else {
+      Kra      = 0.0;
+      dKra_dSe = 0.0;
+    }
   }
   const double dKra_dpsic = dKra_dSe * dSe_dpsic;
 
@@ -283,6 +325,8 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
   kr_water = KWr;  dkr_water = dKWr_duw;
   kr_air   = Kra;  dkr_air   = dKra_dua;
 }
+
+
 
 inline void evaluateInverseCoefficients_2ph(const int rowptr[nSpace], const int colind[nnz],
                                             const double rho_water, const double rho_air,
@@ -656,8 +700,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &isFluxBoundary_u_air                       = args.array<int>("isFluxBoundary_u_air");
     xt::pyarray<double> &ebqe_bc_flux_ext_water                     = args.array<double>("ebqe_bc_flux_ext_water");
     xt::pyarray<double> &ebqe_bc_flux_ext_air                       = args.array<double>("ebqe_bc_flux_ext_air");
-    xt::pyarray<double> &ebqe_phi_water                             = args.array<double>("ebqe_phi_water");
-    xt::pyarray<double> &ebqe_phi_air                               = args.array<double>("ebqe_phi_air");
+    //xt::pyarray<double> &ebqe_phi_water                             = args.array<double>("ebqe_phi_water");
+    //xt::pyarray<double> &ebqe_phi_air                               = args.array<double>("ebqe_phi_air");
     xt::pyarray<double> &ebqe_u_water                               = args.array<double>("ebqe_u_water");
     xt::pyarray<double> &ebqe_u_air                                 = args.array<double>("ebqe_u_air");
     xt::pyarray<double> &ebqe_flux_water                            = args.array<double>("ebqe_flux_water");
@@ -2082,7 +2126,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &isSeepageFace                              = args.array<int>("isSeepageFace");
     xt::pyarray<int>    &a_rowptr                                   = args.array<int>("a_rowptr");
     xt::pyarray<int>    &a_colind                                   = args.array<int>("a_colind");
-    xt::pyarray<double> &ebqe_phi                                   = args.array<double>("ebqe_phi");
+    xt::pyarray<double> &ebqe_phi_water                                   = args.array<double>("ebqe_phi_water");
+    xt::pyarray<double> &ebqe_phi_air                                   = args.array<double>("ebqe_phi_air");
+    
     double               epsFact                                    = args.scalar<double>("epsFact");
     xt::pyarray<double> &cfl                                        = args.array<double>("cfl");
     
@@ -2134,9 +2180,11 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<double> &q_m_air                                    = args.array<double>("q_m_air");
     xt::pyarray<double> &q_u_water                                  = args.array<double>("q_u_water");
     xt::pyarray<double> &q_u_air                                    = args.array<double>("q_u_air");
-    xt::pyarray<double> &q_dV_water                                 = args.array<double>("q_dV_water");
-    xt::pyarray<double> &q_dV_air                                   = args.array<double>("q_dV_air");
-    xt::pyarray<double> &q_m_betaBDF_water                          = args.array<double>("q_m_betaBDF_water");
+    xt::pyarray<double> &q_dV                                       = args.array<double>("q_dV");
+    
+    // xt::pyarray<double> &q_dV_water                                 = args.array<double>("q_dV_water");
+    // xt::pyarray<double> &q_dV_air                                   = args.array<double>("q_dV_air");
+    // xt::pyarray<double> &q_m_betaBDF_water                          = args.array<double>("q_m_betaBDF_water");
     xt::pyarray<double> &q_m_betaBDF_air                            = args.array<double>("q_m_betaBDF_air");
     xt::pyarray<double> &q_numDiff_u_water                          = args.array<double>("q_numDiff_u_water");    
     xt::pyarray<double> &q_numDiff_u_air                            = args.array<double>("q_numDiff_u_air");

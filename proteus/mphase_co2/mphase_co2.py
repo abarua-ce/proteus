@@ -221,7 +221,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  thetaR_types,
                  thetaSR_types,
                  gravity,
-                 density_water,
+                 density_water ,
                  density_air,
                  beta_water,
                  beta_air,
@@ -243,10 +243,12 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  uR=1.0,
                  # FOR ARTIFICIAL COMPRESSION
                  cK=1.0,
-                 BC_entry_head,
-                 BC_lambda,
+                 BC_entry_head = None,
+                 BC_lambda= None,
                  # OUTPUT quantDOFs
                  outputQuantDOFs=False,
+                 Y_water=1.0, 
+                 Y_air= 1.0,
                   ):
         self.VMS=VMS
         self.SC=SC
@@ -272,6 +274,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.gravity=gravity
         #self.rho = density
         #self.beta=beta
+        self.Y_water = Y_water,
+        self.Y_air = Y_air,
         self.rho_water = density_water
         self.rho_air = density_air
         self.beta_water = beta_water
@@ -295,68 +299,76 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.diagonal_conductivity = diagonal_conductivity
         self.Ksw_types_in = Ksw_types
 
-        if self.diagonal_conductivity:
-            
-            # same stencil for both components (0 and 1)
-            srow = np.arange(self.nd+1, dtype='i')
-            scol = np.arange(self.nd,   dtype='i')
-            sparseDiffusionTensors = {
-                (0,0): (srow, scol),
-                (1,1): (srow, scol),
-            }
-            assert len(Ksw_types.shape) in [1,2], \
-            "if diagonal conductivity true then Ksw_types scalar or vector of diagonal entries"
-            # allow scalar input Ks
-            if len(Ksw_types.shape) == 1:
-                self.Ksw_types = np.zeros((self.nMaterialTypes, self.nd), 'd')
-                for I in range(self.nd):
-                    self.Ksw_types[:, I] = Ksw_types
-            else:
-                self.Ksw_types = Ksw_types
-
-        else:  # full tensor
-        # same full-tensor stencil for both components (0 and 1)
-            srow = np.arange(self.nd**2+1, step=self.nd, dtype='i')
-            scol = np.array([list(range(self.nd)) for _ in range(self.nd)], dtype='i')
-             sparseDiffusionTensors = {
-            (0,0): (srow, scol),
-            (1,1): (srow, scol),
-            }
-
-            assert len(Ksw_types.shape) in [1,2], \
-                "if full tensor conductivity true then Ksw_types scalar or 'flattened' row-major representation of entries"
-        if len(Ksw_types.shape) == 1:
-            self.Ksw_types = np.zeros((self.nMaterialTypes, self.nd**2), 'd')
-            for I in range(self.nd):
-                self.Ksw_types[:, I*self.nd + I] = Ksw_types
-        else:
-            assert Ksw_types.shape[1] == self.nd**2
-            self.Ksw_types = Ksw_types
-
+        # try to allow some flexibility in input of permeability/conductivity tensor
+        # self.diagonal_conductivity = diagonal_conductivity
+        # self.Ksw_types_in = Ksw_types
 
         # if self.diagonal_conductivity:
-        #     sparseDiffusionTensors = {(0,0):(np.arange(self.nd+1,dtype='i'),
-        #                                      np.arange(self.nd,dtype='i'))}
+        #     # --- diagonal stencil for both components (0 and 1)
+        #     srow = np.arange(self.nd + 1, dtype='i')         # CSR rowptr for nd entries
+        #     scol = np.arange(self.nd,     dtype='i')         # CSR colind for diagonal
+        #     self.sdInfo = { (0,0): (srow, scol),
+        #                     (1,1): (srow, scol) }
 
-        #     assert len(Ksw_types.shape) in [1,2], "if diagonal conductivity true then Ksw_types scalar or vector of diagonal entries"
-        #     #allow scalar input Ks
-        #     if len(Ksw_types.shape)==1:
-        #         self.Ksw_types = np.zeros((self.nMaterialTypes,self.nd),'d')
+        #     assert len(Ksw_types.shape) in [1, 2], \
+        #         "if diagonal conductivity True then Ksw_types is scalar or vector of diagonal entries"
+
+        #     # allow scalar input Ks
+        #     if len(Ksw_types.shape) == 1:
+        #         self.Ksw_types = np.zeros((self.nMaterialTypes, self.nd), 'd')
         #         for I in range(self.nd):
-        #             self.Ksw_types[:,I] = Ksw_types
+        #             self.Ksw_types[:, I] = Ksw_types
         #     else:
+        #         assert Ksw_types.shape[1] == self.nd, \
+        #             "for diagonal conductivity, Ksw_types must have nd columns"
         #         self.Ksw_types = Ksw_types
-        # else: #full
-        #     sparseDiffusionTensors = {(0,0):(np.arange(self.nd**2+1,step=self.nd,dtype='i'),
-        #                                      np.array([list(range(self.nd)) for row in range(self.nd)],dtype='i'))}
-        #     assert len(Ksw_types.shape) in [1,2], "if full tensor conductivity true then Ksw_types scalar or 'flattened' row-major representation of entries"
-        #     if len(Ksw_types.shape)==1:
-        #         self.Ksw_types = np.zeros((self.nMaterialTypes,self.nd**2),'d')
+
+        # else:
+        #     # --- full-tensor stencil for both components (0 and 1)
+        #     # rowptr jumps by nd each block, total nnz = nd**2
+        #     srow = np.arange(self.nd**2 + 1, step=self.nd, dtype='i')
+        #     # flattened row-major col indices: 0..nd**2-1
+        #     scol = np.arange(self.nd**2, dtype='i')
+        #     self.sdInfo = { (0,0): (srow, scol),
+        #                     (1,1): (srow, scol) }
+
+        #     assert len(Ksw_types.shape) in [1, 2], \
+        #         "if full tensor True then Ksw_types is scalar (isotropic) or row-major flattened nd*nd"
+
+        #     if len(Ksw_types.shape) == 1:
+        #         # scalar isotropic => fill diagonal blocks for each material
+        #         self.Ksw_types = np.zeros((self.nMaterialTypes, self.nd**2), 'd')
         #         for I in range(self.nd):
-        #             self.Ksw_types[:,I*self.nd+I] = Ksw_types
+        #             self.Ksw_types[:, I*self.nd + I] = Ksw_types
         #     else:
-        #         assert Ksw_types.shape[1] == self.nd**2
+        #         assert Ksw_types.shape[1] == self.nd**2, \
+        #             "for full tensor, Ksw_types must have nd**2 columns (row-major)"
         #         self.Ksw_types = Ksw_types
+
+
+        if self.diagonal_conductivity:
+            sparseDiffusionTensors = {(0,0):(np.arange(self.nd+1,dtype='i'),
+                                             np.arange(self.nd,dtype='i'))}
+
+            assert len(Ksw_types.shape) in [1,2], "if diagonal conductivity true then Ksw_types scalar or vector of diagonal entries"
+            #allow scalar input Ks
+            if len(Ksw_types.shape)==1:
+                self.Ksw_types = np.zeros((self.nMaterialTypes,self.nd),'d')
+                for I in range(self.nd):
+                    self.Ksw_types[:,I] = Ksw_types
+            else:
+                self.Ksw_types = Ksw_types
+        else: #full
+            sparseDiffusionTensors = {(0,0):(np.arange(self.nd**2+1,step=self.nd,dtype='i'),
+                                             np.array([list(range(self.nd)) for row in range(self.nd)],dtype='i'))}
+            assert len(Ksw_types.shape) in [1,2], "if full tensor conductivity true then Ksw_types scalar or 'flattened' row-major representation of entries"
+            if len(Ksw_types.shape)==1:
+                self.Ksw_types = np.zeros((self.nMaterialTypes,self.nd**2),'d')
+                for I in range(self.nd):
+                    self.Ksw_types[:,I*self.nd+I] = Ksw_types
+            else:
+                assert Ksw_types.shape[1] == self.nd**2
+                self.Ksw_types = Ksw_types
 
         stabilization_types = {"Galerkin":0, 
                                "EV_Stab":1, 
@@ -1080,7 +1092,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.globalResidualDummy = None
         compKernelFlag=0
         self.delta_x_ij=None
-        self.mphase_co2 = cmphase_co2_base(self.nSpace_global,
+        self.mphase_co2 = cMphase_co2_base(self.nSpace_global,
                              self.nQuadraturePoints_element,
                              self.u[0].femSpace.elementMaps.localFunctionSpace.dim,
                              self.u[0].femSpace.referenceFiniteElement.localFunctionSpace.dim,
@@ -1430,7 +1442,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         
         try:
             for ci, fbcObject in list(self.fluxBoundaryConditionsObjectsDict.items()):
-                self.ebqe[('advectiveFlux_bc_flag', ci)] = numpy.zeros(self.ebqe[('advectiveFlux_bc', ci)].shape, 'i')
+                self.ebqe[('advectiveFlux_bc_flag', ci)] = np.zeros(self.ebqe[('advectiveFlux_bc', ci)].shape, 'i')
                 for t, g in list(fbcObject.advectiveFluxBoundaryConditionsDict.items()):
                     if ci in self.coefficients.advection:
                         self.ebqe[('advectiveFlux_bc', ci)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t,self.ebqe['n'][t[0],t[1]])
@@ -1442,7 +1454,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                 #         self.ebqe[('diffusiveFlux_bc_flag', ck, ci)][t[0], t[1]] = 1
         except:
             for ci, fbcObject in list(self.fluxBoundaryConditionsObjectsDict.items()):
-                self.ebqe[('advectiveFlux_bc_flag', ci)] = numpy.zeros(self.ebqe[('advectiveFlux_bc', ci)].shape, 'i')
+                self.ebqe[('advectiveFlux_bc_flag', ci)] = np.zeros(self.ebqe[('advectiveFlux_bc', ci)].shape, 'i')
                 for t, g in list(fbcObject.advectiveFluxBoundaryConditionsDict.items()):
                     if ci in self.coefficients.advection:
                         self.ebqe[('advectiveFlux_bc', ci)][t[0], t[1]] = g(self.ebqe[('x')][t[0], t[1]], self.timeIntegration.t)
@@ -1534,7 +1546,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         # Per phase density and compressibility
         ##################################################
         argsDict["rho_water"] = self.coefficients.rho_water
-        argsDict["rho_water"] = self.coefficients.rho_water
+        argsDict["rho_air"] = self.coefficients.rho_air
         argsDict["beta_water"] = self.coefficients.beta_water
         argsDict["beta_air"] = self.coefficients.beta_air
 
@@ -1545,8 +1557,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["thetaSR"] = self.coefficients.thetaSR_types
         argsDict["KWs"] = self.coefficients.Ksw_types
         ######################################################
-        argsDict["BC_entry_head_types"] = self.coefficients.BC_entry_head_types   
-        argsDict["BC_lambda_types"]     = self.coefficients.BC_lambda_types       
+        argsDict["BC_entry_head"] = self.coefficients.BC_entry_head   
+        argsDict["BC_lambda"]     = self.coefficients.BC_lambda       
 
 
 
@@ -1572,7 +1584,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["u_dof_old_water"] = self.u_dof_old
         
         argsDict["u_dof_air"] = self.u[1].dof
-        argsDict["u_dof_old"] = self.u_dof_old_air
+        argsDict["u_dof_old_air"] = self.u_dof_old_air
         
 
         argsDict["velocity_water"] = self.q['velocity', 0]
@@ -1586,15 +1598,15 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["q_u_air"] = self.q[('u',1)]
         
         argsDict["q_dV"] = self.q[('dV_u',0)]
-        # argsDict["q_dV_water"] = self.q[('dV_u',0)]
-        # argsDict["q_dV_air"] = self.q[('dV_u',1)]
+        #argsDict["q_dV_water"] = self.q[('dV_u',0)]
+        #argsDict["q_dV_air"] = self.q[('dV_u',1)]
 
         argsDict["q_m_betaBDF_water"] = self.timeIntegration.beta_bdf[0]       
         argsDict["q_m_betaBDF_air"] = self.timeIntegration.beta_bdf[1]
 
-        argsDict["cfl_water"] = self.q[('cfl',0)]
-        argsDict["cfl_air"] = self.q[('cfl',1)]
-        
+        #argsDict["cfl_water"] = self.q[('cfl',0)]
+        #argsDict["cfl_air"] = self.q[('cfl',1)]
+        argsDict["cfl"] = self.q[('cfl',0)]
 
         argsDict["q_numDiff_u"] = self.q[('numDiff',0,0)]
         argsDict["q_numDiff_u_air"] = self.q[('numDiff',1,1)]
@@ -1611,8 +1623,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["stride_u"] = self.stride[0]        
         argsDict["stride_u"] = self.stride[1]
 
-        argsDict["globalResidual_water"] = r_water
-        argsDict["globalResidual_air"] = r_air
+        argsDict["globalResidual"] = r
+        #argsDict["globalResidual_air"] = r_air
        
 
         argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
@@ -1754,9 +1766,13 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #argsDict['PSK_TYPE'] = self.coefficients.PSK_TYPE
         argsDict["BC_entry_head"]= self.coefficients.BC_entry_head
         argsDict['BC_lambda'] = self.coefficients.BC_lambda
-        
-        
 
+        argsDict["ebqe_phi_water"] = self.ebqe[('u',0)]
+        argsDict["ebqe_phi_air"] = self.ebqe[('u',1)]
+
+
+        argsDict["Y_water"] = 1.0
+        argsDict["Y_air"] = 1.0 
         #print(anb_seepage_flux)
         #argsDict["anb_seepage_flux_n"] = self.coefficients.anb_seepage_flux_n
         #if np.sum(anb_seepage_flux_n)>0:
@@ -1807,11 +1823,11 @@ class LevelModel(proteus.Transport.OneLevelTransport):
 #                f.write(f"{self.timeIntegration.t:.6f}, {seepage_flux_value:.6f}\n")
 
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
-            self.calculateResidual = self.richards.calculateResidual
-            self.calculateJacobian = self.richards.calculateJacobian
+            self.calculateResidual = self.mphase_co2.calculateResidual
+            self.calculateJacobian = self.mphase_co2.calculateJacobian
         else:
-            self.calculateResidual = self.richards.calculateResidual_entropy_viscosity
-            self.calculateJacobian = self.richards.calculateMassMatrix
+            self.calculateResidual = self.mphase_co2.calculateResidual_entropy_viscosity
+            self.calculateJacobian = self.mphase_co2.calculateMassMatrix
         
         if self.delta_x_ij is None:
             self.delta_x_ij = -np.ones((self.nNonzerosInJacobian*3,),'d')
@@ -1922,7 +1938,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["q_u_water"] = self.q[('u',0)]
         argsDict["q_dV"] = self.q[('dV_u',0)]
         argsDict["q_m_betaBDF_water"] = self.timeIntegration.beta_bdf[0]
-        argsDict["cfl_water"] = self.q[('cfl',0)]
+        argsDict["cfl"] = self.q[('cfl',0)]
         argsDict["q_numDiff_u_water"] = self.q[('numDiff',0,0)]
         argsDict["q_numDiff_u_last_water"] = self.q[('numDiff_last',0,0)]
         argsDict["q_numDiff_u_last_water"] = self.numDiff_star
@@ -1937,7 +1953,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["q_u_air"] = self.q[('u',1)]
         #argsDict["q_dV_air"] = self.q[('dV_u',1)]
         argsDict["q_m_betaBDF_air"] = self.timeIntegration.beta_bdf[1]
-        argsDict["cfl_air"] = self.q[('cfl',1)]
+        #argsDict["cfl_air"] = self.q[('cfl',1)]
         argsDict["q_numDiff_u_air"] = self.q[('numDiff',1,1)]
         argsDict["q_numDiff_u_last_air"] = self.q[('numDiff_last',1,1)]
 #        argsDict["q_numDiff_u_last_air"] = self.numDiff_star
@@ -2107,14 +2123,16 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["u_dof_water"] = self.u[0].dof
         argsDict["velocity_water"] = self.q['velocity', 0]
         argsDict["q_m_betaBDF_water"] = self.timeIntegration.beta_bdf[0]
-        argsDict["cfl_water"] = self.q[('cfl',0)]
+        #argsDict["cfl_water"] = self.q[('cfl',0)]
+        argsDict["cfl"] = self.q[('cfl',0)]
+        
         argsDict["q_numDiff_u_water"] = self.q[('numDiff',0,0)]
         argsDict["q_numDiff_u_last_water"] = self.q[('numDiff_last',0,0)]
 
         argsDict["u_dof_air"] = self.u[1].dof
         argsDict["velocity_air"] = self.q['velocity', 1]
         argsDict["q_m_betaBDF_air"] = self.timeIntegration.beta_bdf[1]
-        argsDict["cfl_air"] = self.q[('cfl',1)]
+        #argsDict["cfl_air"] = self.q[('cfl',1)]
         argsDict["q_numDiff_u_air"] = self.q[('numDiff',1,1)]
         argsDict["q_numDiff_u_last_air"] = self.q[('numDiff_last',1,1)]
         argsDict["csrRowIndeces_u_u"] = self.csrRowIndeces[(0,0)]
