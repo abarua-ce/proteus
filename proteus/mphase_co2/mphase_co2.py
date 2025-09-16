@@ -1570,132 +1570,131 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         """
         import numpy as np
         import copy
-    
-        self.mHigh[:] = u
-    
-        rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
-        nnz = nzval.shape[-1]
-    
-        rowptr, colind, Cx = self.cterm_global[0].getCSRrepresentation()
-        Cy = self.cterm_global[1].getCSRrepresentation()[2] if self.nSpace_global >= 2 else np.zeros(Cx.shape, 'd')
-        Cz = self.cterm_global[2].getCSRrepresentation()[2] if self.nSpace_global == 3 else np.zeros(Cx.shape, 'd')
-    
-        rowptr, colind, CTx = self.cterm_global_transpose[0].getCSRrepresentation()
-        CTy = self.cterm_global_transpose[1].getCSRrepresentation()[2] if self.nSpace_global >= 2 else np.zeros(CTx.shape, 'd')
-        CTz = self.cterm_global_transpose[2].getCSRrepresentation()[2] if self.nSpace_global == 3 else np.zeros(CTx.shape, 'd')
-    
-        degree_polynomial = getattr(self.u[0].femSpace, "order", 1)
-    
-        if self.delta_x_ij is None:
-            self.delta_x_ij = -np.ones((self.nNonzerosInJacobian * 3,), 'd')
-    
-        argsDict = cArgumentsDict.ArgumentsDict()
-        argsDict["dt"] = self.timeIntegration.dt
-        argsDict["mesh_trial_ref"] = self.u[0].femSpace.elementMaps.psi
-        argsDict["mesh_grad_trial_ref"] = self.u[0].femSpace.elementMaps.grad_psi
-        argsDict["mesh_dof"] = self.mesh.nodeArray
-        argsDict["mesh_velocity_dof"] = self.mesh.nodeVelocityArray
-        argsDict["MOVING_DOMAIN"] = self.MOVING_DOMAIN
-        argsDict["mesh_l2g"] = self.mesh.elementNodesArray
-        argsDict["dV_ref"] = self.elementQuadratureWeights[('u',0)]
-        argsDict["u_trial_ref"] = self.u[0].femSpace.psi
-        argsDict["u_grad_trial_ref"] = self.u[0].femSpace.grad_psi
-        argsDict["u_test_ref"] = self.u[0].femSpace.psi
-        argsDict["u_grad_test_ref"] = self.u[0].femSpace.grad_psi
-        argsDict["mesh_trial_trace_ref"] = self.u[0].femSpace.elementMaps.psi_trace
-        argsDict["mesh_grad_trial_trace_ref"] = self.u[0].femSpace.elementMaps.grad_psi_trace
-        argsDict["dS_ref"] = self.elementBoundaryQuadratureWeights[('u',0)]
-        argsDict["u_trial_trace_ref"] = self.u[0].femSpace.psi_trace
-        argsDict["u_grad_trial_trace_ref"] = self.u[0].femSpace.grad_psi_trace
-        argsDict["u_test_trace_ref"] = self.u[0].femSpace.psi_trace
-        argsDict["u_grad_test_trace_ref"] = self.u[0].femSpace.grad_psi_trace
-        argsDict["normal_ref"] = self.u[0].femSpace.elementMaps.boundaryNormals
-        argsDict["boundaryJac_ref"] = self.u[0].femSpace.elementMaps.boundaryJacobians
-        argsDict["nElements_global"] = self.mesh.nElements_global
-        argsDict["ebqe_penalty_ext"] = self.ebqe['penalty']
-        argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes
-        argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
-        argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
-        argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-        argsDict["rho"] = self.coefficients.rho_water
-        argsDict["beta"] = self.coefficients.beta
-        argsDict["gravity"] = self.coefficients.gravity
-        argsDict["alpha"] = self.coefficients.vgm_alpha_types
-        argsDict["n"] = self.coefficients.vgm_n_types
-        argsDict["thetaR"] = self.coefficients.thetaR_types
-        argsDict["thetaSR"] = self.coefficients.thetaSR_types
-        argsDict["KWs"] = self.coefficients.Ksw_types
-        argsDict["useMetrics"] = 0.0
-        argsDict["alphaBDF"] = self.timeIntegration.alpha_bdf
-        argsDict["lag_shockCapturing"] = 0
-        argsDict["shockCapturingDiffusion"] = self.coefficients.SC
-        argsDict["sc_uref"] = 1.0
-        argsDict["sc_alpha"] = 2.0
-        argsDict["u_l2g"] = self.u[0].femSpace.dofMap.l2g
-        argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
-        argsDict["elementDiameter"] = self.mesh.elementDiametersArray
-        argsDict["degree_polynomial"] = degree_polynomial
-        argsDict["u_dof"] = self.u[0].dof
-        argsDict["u_dof_old"] = self.u[0].dof
-        argsDict["velocity"] = self.q['velocity']
-        argsDict["q_m"] = self.timeIntegration.m_tmp[0]
-        argsDict["q_u"] = self.q[('u',0)]
-        argsDict["q_dV"] = self.q[('dV_u',0)]
-        argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
-        argsDict["cfl"] = self.q[('cfl',0)]
-        argsDict["q_numDiff_u"] = self.q[('numDiff',0,0)]
-        argsDict["q_numDiff_u_last"] = self.q[('numDiff_last',0,0)]
-        argsDict["q_numDiff_u_last"] = self.numDiff_star
-        argsDict["offset_u"] = self.offset[0]
-        argsDict["stride_u"] = self.stride[0]
-        argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
-        argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
-        argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
-        argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
-        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity',0]
-        argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
-        argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',0)]
-        argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]
-        argsDict["ebqe_bc_flux_ext"] = self.ebqe[('advectiveFlux_bc',0)]
-        argsDict["ebqe_phi"] = self.ebqe[('u',0)]
-        argsDict["epsFact"] = 0.0
-        argsDict["ebqe_u"] = self.ebqe[('u',0)]
-        argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux',0)]
-        argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
-        argsDict["cE"] = self.coefficients.cE
-        argsDict["cK"] = self.coefficients.cK
-        argsDict["uL"] = self.coefficients.uL
-        argsDict["uR"] = self.coefficients.uR
-        argsDict["numDOFs"] = len(rowptr) - 1
-        argsDict["NNZ"] = self.nnz
-        argsDict["csrRowIndeces_DofLoops"] = rowptr
-        argsDict["csrColumnOffsets_DofLoops"] = colind
-        argsDict["csrRowIndeces_CellLoops"] = self.csrRowIndeces[(0, 0)]
-        argsDict["csrColumnOffsets_CellLoops"] = self.csrColumnOffsets[(0, 0)]
-        argsDict["csrColumnOffsets_eb_CellLoops"] = self.csrColumnOffsets_eb[(0, 0)]
-        argsDict["Cx"] = Cx
-        argsDict["Cy"] = Cy
-        argsDict["Cz"] = Cz
-        argsDict["CTx"] = CTx
-        argsDict["CTy"] = CTy
-        argsDict["CTz"] = CTz
-        argsDict["ML"] = self.ML
-        argsDict["delta_x_ij"] = self.delta_x_ij
-        argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
-        argsDict["ENTROPY_TYPE"] = self.coefficients.ENTROPY_TYPE
-        argsDict["dLow"] = self.dLow
-        argsDict["fluxMatrix"] = self.fluxMatrix
-        argsDict["mDotLow"] = self.mDotLow
-        argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL
-        argsDict["min_m_bc"] = self.min_m_bc
-        argsDict["max_m_bc"] = self.max_m_bc
-        argsDict["quantDOFs"] = self.quantDOFs
-        argsDict["mn"] = self.mn
-        argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
-        argsDict["limited_solution"] = u
-        argsDict["mLow"] = self.u[0].dof
-#        self.richards.invert(argsDict)
-        self.mphase_co2.invert(argsDict)
+        for ci in range(self.nc):
+            self.mHigh[ci][:] = u[ci].dof   
+            rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
+            nnz = nzval.shape[-1]
+        
+            rowptr, colind, Cx = self.cterm_global[ci][0].getCSRrepresentation()
+            Cy = self.cterm_global[ci][1].getCSRrepresentation()[2] if self.nSpace_global >= 2 else np.zeros(Cx.shape, 'd')
+            Cz = self.cterm_global[ci][2].getCSRrepresentation()[2] if self.nSpace_global == 3 else np.zeros(Cx.shape, 'd')
+        
+            rowptr, colind, CTx = self.cterm_global_transpose[ci][0].getCSRrepresentation()
+            CTy = self.cterm_global_transpose[ci][1].getCSRrepresentation()[2] if self.nSpace_global >= 2 else np.zeros(CTx.shape, 'd')
+            CTz = self.cterm_global_transpose[ci][2].getCSRrepresentation()[2] if self.nSpace_global == 3 else np.zeros(CTx.shape, 'd')
+        
+            degree_polynomial = getattr(self.u[ci].femSpace, "order", 1)
+        
+            if self.delta_x_ij is None:
+                self.delta_x_ij = -np.ones((self.nNonzerosInJacobian * 3,), 'd')
+        
+            argsDict = cArgumentsDict.ArgumentsDict()
+            argsDict["dt"] = self.timeIntegration.dt
+            argsDict["mesh_trial_ref"] = self.u[ci].femSpace.elementMaps.psi
+            argsDict["mesh_grad_trial_ref"] = self.u[ci].femSpace.elementMaps.grad_psi
+            argsDict["mesh_dof"] = self.mesh.nodeArray
+            argsDict["mesh_velocity_dof"] = self.mesh.nodeVelocityArray
+            argsDict["MOVING_DOMAIN"] = self.MOVING_DOMAIN
+            argsDict["mesh_l2g"] = self.mesh.elementNodesArray
+            argsDict["dV_ref"] = self.elementQuadratureWeights[('u',ci)]
+            argsDict["u_trial_ref"] = self.u[ci].femSpace.psi
+            argsDict["u_grad_trial_ref"] = self.u[ci].femSpace.grad_psi
+            argsDict["u_test_ref"] = self.u[ci].femSpace.psi
+            argsDict["u_grad_test_ref"] = self.u[ci].femSpace.grad_psi
+            argsDict["mesh_trial_trace_ref"] = self.u[ci].femSpace.elementMaps.psi_trace
+            argsDict["mesh_grad_trial_trace_ref"] = self.u[ci].femSpace.elementMaps.grad_psi_trace
+            argsDict["dS_ref"] = self.elementBoundaryQuadratureWeights[('u',ci)]
+            argsDict["u_trial_trace_ref"] = self.u[ci].femSpace.psi_trace
+            argsDict["u_grad_trial_trace_ref"] = self.u[ci].femSpace.grad_psi_trace
+            argsDict["u_test_trace_ref"] = self.u[ci].femSpace.psi_trace
+            argsDict["u_grad_test_trace_ref"] = self.u[ci].femSpace.grad_psi_trace
+            argsDict["normal_ref"] = self.u[ci].femSpace.elementMaps.boundaryNormals
+            argsDict["boundaryJac_ref"] = self.u[ci].femSpace.elementMaps.boundaryJacobians
+            argsDict["nElements_global"] = self.mesh.nElements_global
+            argsDict["ebqe_penalty_ext"] = self.ebqe['penalty']
+            argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes
+            argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
+            argsDict["a_rowptr"] = self.coefficients.sdInfo[(ci,ci)][0]
+            argsDict["a_colind"] = self.coefficients.sdInfo[(ci,ci)][1]
+            argsDict["rho"] = self.coefficients.rho_water
+            argsDict["beta"] = self.coefficients.beta
+            argsDict["gravity"] = self.coefficients.gravity
+            argsDict["alpha"] = self.coefficients.vgm_alpha_types
+            argsDict["n"] = self.coefficients.vgm_n_types
+            argsDict["thetaR"] = self.coefficients.thetaR_types
+            argsDict["thetaSR"] = self.coefficients.thetaSR_types
+            argsDict["KWs"] = self.coefficients.Ksw_types
+            argsDict["useMetrics"] = 0.0
+            argsDict["alphaBDF"] = self.timeIntegration.alpha_bdf
+            argsDict["lag_shockCapturing"] = 0
+            argsDict["shockCapturingDiffusion"] = self.coefficients.SC
+            argsDict["sc_uref"] = 1.0
+            argsDict["sc_alpha"] = 2.0
+            argsDict["u_l2g"] = self.u[0].femSpace.dofMap.l2g
+            argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
+            argsDict["elementDiameter"] = self.mesh.elementDiametersArray
+            argsDict["degree_polynomial"] = degree_polynomial
+            argsDict["u_dof"] = self.u[ci].dof
+            argsDict["u_dof_old"] = self.u[ci].dof
+            argsDict["velocity"] = self.q['velocity', ci]
+            argsDict["q_m"] = self.timeIntegration.m_tmp[ci]
+            argsDict["q_u"] = self.q[('u',ci)]
+            argsDict["q_dV"] = self.q[('dV_u',ci)]
+            argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[ci]
+            argsDict["cfl"] = self.q[('cfl',ci)]
+            argsDict["q_numDiff_u"] = self.q[('numDiff',ci,ci)]
+            argsDict["q_numDiff_u_last"] = self.q[('numDiff_last',ci,ci)]
+            argsDict["q_numDiff_u_last"] = self.numDiff_star
+            argsDict["offset_u"] = self.offset[ci]
+            argsDict["stride_u"] = self.stride[ci]
+            argsDict["nExteriorElementBoundaries_global"] = self.mesh.nExteriorElementBoundaries_global
+            argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
+            argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
+            argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
+            argsDict["ebqe_velocity_ext"] = self.ebqe['velocity',ci]
+            argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[ci]
+            argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',ci)]
+            argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',ci)]
+            argsDict["ebqe_bc_flux_ext"] = self.ebqe[('advectiveFlux_bc',ci)]
+            argsDict["ebqe_phi"] = self.ebqe[('u',ci)]
+            argsDict["epsFact"] = 0.0
+            argsDict["ebqe_u"] = self.ebqe[('u',ci)]
+            argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux',ci)]
+            argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
+            argsDict["cE"] = self.coefficients.cE
+            argsDict["cK"] = self.coefficients.cK
+            argsDict["uL"] = self.coefficients.uL
+            argsDict["uR"] = self.coefficients.uR
+            argsDict["numDOFs"] = len(rowptr) - 1
+            argsDict["NNZ"] = self.nnz
+            argsDict["csrRowIndeces_DofLoops"] = rowptr
+            argsDict["csrColumnOffsets_DofLoops"] = colind
+            argsDict["csrRowIndeces_CellLoops"] = self.csrRowIndeces[(ci, ci)]
+            argsDict["csrColumnOffsets_CellLoops"] = self.csrColumnOffsets[(ci, ci)]
+            argsDict["csrColumnOffsets_eb_CellLoops"] = self.csrColumnOffsets_eb[(ci, ci)]
+            argsDict["Cx"] = Cx
+            argsDict["Cy"] = Cy
+            argsDict["Cz"] = Cz
+            argsDict["CTx"] = CTx
+            argsDict["CTy"] = CTy
+            argsDict["CTz"] = CTz
+            argsDict["ML"] = self.ML[ci]
+            argsDict["delta_x_ij"] = self.delta_x_ij
+            argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
+            argsDict["ENTROPY_TYPE"] = self.coefficients.ENTROPY_TYPE
+            argsDict["dLow"] = self.dLow[ci]
+            argsDict["fluxMatrix"] = self.fluxMatrix[ci]
+            argsDict["mDotLow"] = self.mDotLow[ci]
+            argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL[ci]
+            argsDict["min_m_bc"] = self.min_m_bc[ci]
+            argsDict["max_m_bc"] = self.max_m_bc[ci]
+            argsDict["quantDOFs"] = self.quantDOFs[ci]
+            argsDict["mn"] = self.mn[ci]
+            argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
+            argsDict["limited_solution"] = u[ci]
+            argsDict["mLow"] = self.u[ci].dof
+    #        self.richards.invert(argsDict)
+            self.mphase_co2.invert(argsDict)
      
     def getJacobian(self,jacobian):
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
