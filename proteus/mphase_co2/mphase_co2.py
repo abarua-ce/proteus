@@ -21,8 +21,8 @@ class ThetaScheme(TimeIntegration.BackwardEuler):
         TimeIntegration.BackwardEuler.__init__(self,transport, integrateInterpolationPoints)
     def updateTimeHistory(self,resetFromDOF=False):
         TimeIntegration.BackwardEuler.updateTimeHistory(self,resetFromDOF)
-        self.transport.u_dof_old_water[:] = self.u[0]
-        self.transport.u_dof_old_air[:] = self.u[1]
+        self.transport.u_dof_old_ci[0][:] = self.u[0] #water
+        self.transport.u_dof_old_ci[1][:] = self.u[1] # air
         
 class RKEV(TimeIntegration.SSP):
     from proteus import TimeIntegration
