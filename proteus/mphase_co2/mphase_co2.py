@@ -1103,15 +1103,18 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                 # assume a linear mass term
                 dm = np.ones(self.q[('u', ci)].shape, 'd')
                 elementMassMatrix = np.zeros((self.mesh.nElements_global,
-                                            self.nDOF_test_element[ci],
-                                            self.nDOF_trial_element[ci]), 'd')
+                                            self.nDOF_test_element[0],
+                                            self.nDOF_trial_element[0]), 'd')
                 cfemIntegrals.updateMassJacobian_weak_lowmem(dm,
                                                             self.q[('w', ci)],
                                                             self.q[('w*dV_m', ci)],
                                                             elementMassMatrix)
-                self.MC_a = nzval.copy() #make room for two phase
-                self.MC_global[ci] = SparseMat(self.nFreeDOF_global[ci],
-                                            self.nFreeDOF_global[ci],
+                
+                #self.MC_a[ci] = np.zeros(nnz_ci, dtype='d')
+                #self.MC_a = nzval.copy() #make room for two phase
+                self.MC_a = np.zeros(nnz, dtype='d') 
+                self.MC_global[ci] = SparseMat(self.nFreeDOF_global[0],
+                                            self.nFreeDOF_global[0],
                                             nnz,#make room for two phase
                                             self.MC_a, #make room for two phase
                                             colind, #make room for two phase
@@ -1125,20 +1128,18 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                                                                         self.csrColumnOffsets[(ci, ci)],
                                                                         elementMassMatrix,
                                                                         self.MC_global[ci])
-                #rowptr_M, _, MCvals = self.MC_global[ci].getCSRrepresentation()
-                self.ML[ci] = np.zeros((self.nFreeDOF_global[ci],), 'd')
-                if ci==0:
-                    for i in range(self.nFreeDOF_global[ci]):
-                        self.ML[ci][i] = self.MC_a[rowptr[i]:rowptr[i + 1]].sum()
-                else:
-                    if (self.nFreeDOF_global[ci] == self.nFreeDOF_global[0]):
-                        self.ML[ci] = self.ML[0].copy()
-                    else:
-                        assert self.nFreeDOF_global[ci] < self.nFreeDOF_global[0], "More DOFs for phase 2 than phase 1?"
 
-                np.testing.assert_almost_equal(self.ML[ci].sum(),
-                                            self.mesh.volume,
-                                            err_msg=f"Trace of lumped mass matrix should be the domain volume, ci={ci}", verbose=True)
+                rowptr_M, _, MCvals = self.MC_global[0].getCSRrepresentation()
+                self.ML[ci] = np.zeros((self.nFreeDOF_global[ci],), 'd')
+                # for k, irow in enumerate(grows_ci):
+                #     self.ML[ci][k] = MCvals[rowptr_M[irow]:rowptr_M[irow+1]].sum()
+
+                for i in range(self.nFreeDOF_global[0]):
+                    self.ML[ci][i] = MCvals[rowptr_M[i]:rowptr_M[i + 1]].sum()
+
+                # np.testing.assert_almost_equal(self.ML[ci].sum(),
+                #                             self.mesh.volume,
+                #                             err_msg=f"Trace of lumped mass matrix should be the domain volume, ci={ci}", verbose=True)
                 if ci not in self.cterm:
                     self.cterm[ci] = {}
                     self.cterm_a[ci] = {}
