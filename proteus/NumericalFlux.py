@@ -4916,6 +4916,7 @@ class Richards_IIPG_exterior(NF_base):
         - CHANGED: set flags for the current component 'ci' (not hardcoded 0)
         - NEW: shape-safety guards so arrays exist and match shapes even if no BCs
         """
+        import numpy as np
         # --- ensure per-component storage exists and zero flags (MINIMAL CHANGE) ---
         for ci in range(self.nc):
             # guarantee local ebqe storage for ('u', ci)
