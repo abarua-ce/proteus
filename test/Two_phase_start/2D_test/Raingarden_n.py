@@ -64,8 +64,8 @@ elementQuadrature = SimplexLobattoQuadrature(nd,1)
 #
 elementBoundaryQuadrature = SimplexLobattoQuadrature(nd-1,1)
 
-nnx=21
-nny=21
+nnx=41
+nny=41
 nLevels = 1
 triangleFlag=1 #alternating triangles
 triangleOptions="pAq30Dena%f" % (0.5*(G[0]/(nnx-1))**2,)
