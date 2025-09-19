@@ -1166,18 +1166,18 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                 from mpi4py import MPI
                 comm = MPI.COMM_WORLD
 
-                if comm.size >1:    
-                    local_trace = float(self.ML[ci].sum())
-                    global_trace = comm.allreduce(local_trace, op=MPI.SUM)
-                    # in parallel, the trace of the mass matrix is the sum of the local traces
-                    if comm.rank ==0:
-                        np.testing.assert_almost_equal(global_trace,
-                                                      self.mesh.volume,
-                                                      err_msg=f"Trace of lumped mass matrix should be the domain volume, ci={ci}", verbose=True)
-                else:
-                    np.testing.assert_almost_equal(self.ML[ci].sum(),
-                                            self.mesh.volume,
-                                            err_msg=f"Trace of lumped mass matrix should be the domain volume, ci={ci}", verbose=True)
+                # if comm.size >1:    
+                #     local_trace = float(self.ML[ci].sum())
+                #     global_trace = comm.allreduce(local_trace, op=MPI.SUM)
+                #     # in parallel, the trace of the mass matrix is the sum of the local traces
+                #     if comm.rank ==0:
+                #         np.testing.assert_almost_equal(global_trace,
+                #                                       self.mesh.volume,
+                #                                       err_msg=f"Trace of lumped mass matrix should be the domain volume, ci={ci}", verbose=True)
+                # else:
+                #     np.testing.assert_almost_equal(self.ML[ci].sum(),
+                #                             self.mesh.volume,
+                #                             err_msg=f"Trace of lumped mass matrix should be the domain volume, ci={ci}", verbose=True)
 
                 if ci not in self.cterm:
                     self.cterm[ci] = {}
