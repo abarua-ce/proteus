@@ -225,7 +225,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  gravity,
                  density_water,
                  density_air,
-                 beta,
+                 beta_water,
+                 beta_air,
                  diagonal_conductivity=True,
                  getSeepageFace=None,
                 # FOR EDGE BASED EV
@@ -262,7 +263,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.gravity=gravity
         self.rho_water = density_water
         self.rho_air = density_air
-        self.beta=beta
+        self.beta_water=beta_water
+        self.beta_air=beta_air
         self.vgm_n_types = vgm_n_types
         self.vgm_alpha_types = vgm_alpha_types
         self.thetaR_types    = thetaR_types
@@ -1374,8 +1376,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["mesh_velocity_dof"] = self.mesh.nodeVelocityArray
             argsDict["MOVING_DOMAIN"] = self.MOVING_DOMAIN
             argsDict["mesh_l2g"] = self.mesh.elementNodesArray
-            argsDict["rho"] = self.coefficients.rho_water
-            argsDict["beta"] = self.coefficients.beta
+            ######################################################
+            argsDict["rho_water"] = self.coefficients.rho_water
+            argsDict["beta_water"] = self.coefficients.beta_water
+
+            argsDict["rho_air"] = self.coefficients.rho_air
+            argsDict["beta_air"] = self.coefficients.beta_air
+
+            #####################################################
             argsDict["gravity"] = self.coefficients.gravity
             argsDict["alpha"] = self.coefficients.vgm_alpha_types
             argsDict["n"] = self.coefficients.vgm_n_types
@@ -1415,8 +1423,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
             argsDict["u_l2g"] = self.u[ci].femSpace.dofMap.l2g #okay
             argsDict["r_l2g"] = self.l2g[ci]['freeGlobal']
-            argsDict["u_dof"] = self.u[ci].dof
-            argsDict["u_dof_old"] = self.u_dof_old_ci[ci]
+            #######################################################
+            argsDict["u_dof_water"] = self.u[0].dof
+            argsDict["u_dof_old_water"] = self.u_dof_old_ci[0]    
+            argsDict["u_dof_air"] = self.u[1].dof
+            argsDict["u_dof_old_air"] = self.u_dof_old_ci[1]
+
+            argsDict["phase"]= ci
+            ###########################################################
             argsDict["velocity"] = self.q['velocity',ci]
             argsDict["q_m"] = self.timeIntegration.m_tmp[ci]
             argsDict["q_u"] = self.q[('u',ci)]
@@ -1604,8 +1618,13 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
             argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
             argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-            argsDict["rho"] = self.coefficients.rho_water
-            argsDict["beta"] = self.coefficients.beta
+            
+            argsDict["rho_water"] = self.coefficients.rho_water
+            argsDict["beta_water"] = self.coefficients.beta_water
+            argsDict["rho_air"] = self.coefficients.rho_air
+            argsDict["beta_air"] = self.coefficients.beta_air
+            
+
             argsDict["gravity"] = self.coefficients.gravity
             argsDict["alpha"] = self.coefficients.vgm_alpha_types
             argsDict["n"] = self.coefficients.vgm_n_types
@@ -1622,8 +1641,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["r_l2g"] = self.l2g[0]['freeGlobal']
             argsDict["elementDiameter"] = self.mesh.elementDiametersArray
             argsDict["degree_polynomial"] = degree_polynomial
-            argsDict["u_dof"] = self.u[ci].dof
-            argsDict["u_dof_old"] = self.u[ci].dof
+#            argsDict["u_dof"] = self.u[ci].dof
+#            argsDict["u_dof_old"] = self.u[ci].dof
+
+            argsDict["u_dof_water"] = self.u[0].dof
+            argsDict["u_dof_old_water"] = self.u_dof_old_ci[0]    
+            argsDict["u_dof_air"] = self.u[1].dof
+            argsDict["u_dof_old_air"] = self.u_dof_old_ci[1]
+
             argsDict["velocity"] = self.q['velocity', ci]
             argsDict["q_m"] = self.timeIntegration.m_tmp[ci]
             argsDict["q_u"] = self.q[('u',ci)]
@@ -1724,8 +1749,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
             argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
             argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-            argsDict["rho"] = self.coefficients.rho_water
-            argsDict["beta"] = self.coefficients.beta
+            
+            argsDict["rho_water"] = self.coefficients.rho_water
+            argsDict["beta_water"] = self.coefficients.beta_water
+            argsDict["rho_air"] = self.coefficients.rho_air
+            argsDict["beta_air"] = self.coefficients.beta_air
+
+
+            
             argsDict["gravity"] = self.coefficients.gravity
             argsDict["alpha"] = self.coefficients.vgm_alpha_types
             argsDict["n"] = self.coefficients.vgm_n_types
@@ -1740,7 +1771,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["r_l2g"] = self.l2g[ci]['freeGlobal']
             argsDict["elementDiameter"] = self.mesh.elementDiametersArray
             argsDict["degree_polynomial"] = degree_polynomial
-            argsDict["u_dof"] = self.u[ci].dof
+            
+            argsDict["u_dof_water"] = self.u[0].dof
+            argsDict["u_dof_air"] = self.u[1].dof
+
+            argsDict["phase"] = ci
+            
+
+            
             argsDict["velocity"] = self.q['velocity', ci]
             argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[ci]
             argsDict["cfl"] = self.q[('cfl',ci)]
