@@ -208,20 +208,32 @@ public:
     dkr    = -dkr_use;
   }
 
-  inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
+  inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], 
+                                          const double rho_water, const double rho_air,
+                                          const double beta_water, const double beta_air, 
+                                          const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], 
+                                          double &u_water, double &u_air, 
+                                          const int phase, 
+                                          const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
   {
     double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
     m_vg   = 1.0 - 1.0 / n_vg;
     thetaS = thetaR + thetaSR;
-    thetaW = m / rho;
+//    thetaW = m / rho; Adding compressibility here 
+    const double rhom_phase = (phase==0)? rho_water * std::exp(beta_water * u_water) : rho_air   * std::exp(beta_air   * u_air);
+    thetaW = m/rhom_phase;
+    //thetaW = ((phase==0) ? rho_water : rho_air);
     if (thetaW > 1.01*thetaR && thetaW < thetaS) {
       sBar    = (thetaW - thetaR) / thetaSR;
       pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
       pcBar   = pow(pcBar_n, 1.0 / n_vg);
       psiC    = pcBar / alpha;
       u       = -psiC;
+      if (phase ==0){u_water = (rho_air/rho_water)*u_air -psiC}
+      else { u_air = (rho_water/ rho_air)*(u_water +psiC)}
     }
   }
+
   inline void calculateCFL(const double &elementDiameter, const double df[nSpace], double &cfl)
   {
     double h, nrm_v;
@@ -1270,8 +1282,14 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &isSeepageFace                              = args.array<int>("isSeepageFace");
     xt::pyarray<int>    &a_rowptr                                   = args.array<int>("a_rowptr");
     xt::pyarray<int>    &a_colind                                   = args.array<int>("a_colind");
-    double               rho                                        = args.scalar<double>("rho");
-    double               beta                                       = args.scalar<double>("beta");
+    //////////////////////////////////////////////////////////////////////////////////////////////////
+    double               rho_water                                  = args.scalar<double>("rho_water");
+    double               beta_water                                 = args.scalar<double>("beta_water");
+    double               rho_air                                    = args.scalar<double>("rho_air");
+    double               beta_air                                   = args.scalar<double>("beta_air");
+    int  phase   = args.scalar<int>("phase");
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+    
     xt::pyarray<double> &gravity                                    = args.array<double>("gravity");
     xt::pyarray<double> &alpha                                      = args.array<double>("alpha");
     xt::pyarray<double> &n                                          = args.array<double>("n");
@@ -1288,8 +1306,11 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &r_l2g                                      = args.array<int>("r_l2g");
     xt::pyarray<double> &elementDiameter                            = args.array<double>("elementDiameter");
     int                  degree_polynomial                          = args.scalar<int>("degree_polynomial");
-    xt::pyarray<double> &u_dof                                      = args.array<double>("u_dof");
-    xt::pyarray<double> &u_dof_old                                  = args.array<double>("u_dof_old");
+    xt::pyarray<double> &u_dof_water                                      = args.array<double>("u_dof");
+    xt::pyarray<double> &u_dof_old_water                                  = args.array<double>("u_dof_old");
+    xt::pyarray<double> &u_dof_air                                      = args.array<double>("u_dof");
+    xt::pyarray<double> &u_dof_old_air                                  = args.array<double>("u_dof_old");
+    
     xt::pyarray<double> &velocity                                   = args.array<double>("velocity");
     xt::pyarray<double> &q_m                                        = args.array<double>("q_m");
     xt::pyarray<double> &q_u                                        = args.array<double>("q_u");
@@ -1463,7 +1484,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         }
 
         for (int j = 0; j < nDOF_trial_element; j++) {
-          u_test_dV[j] = u_test_ref.data()[k * nDOF_trial_element + j] * dV;
+          u_test_dV[j] = u_test_ref.data()[k * nDOF_trial_element + j] * dV;g
           for (int I = 0; I < nSpace; I++) {
             grad_un[I] += Phi_n[j] * u_grad_trial[j * nSpace + I];//note: grad u is grad phi
             grad_u[I] += Phi[j] * u_grad_trial[j * nSpace + I];
@@ -1892,8 +1913,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
   {
     xt::pyarray<int>    &a_rowptr             = args.array<int>("a_rowptr");
     xt::pyarray<int>    &a_colind             = args.array<int>("a_colind");
-    double               rho                  = args.scalar<double>("rho");
-    double               beta                 = args.scalar<double>("beta");
+    double               rho_water                  = args.scalar<double>("rho_water");
+    double               beta_water                 = args.scalar<double>("beta_water");
+    double               rho_air                  = args.scalar<double>("rho_air");
+    double               beta_air                 = args.scalar<double>("beta_air");
+    int  phase   = args.scalar<int>("phase");
+
     xt::pyarray<double> &gravity              = args.array<double>("gravity");
     xt::pyarray<double> &alpha                = args.array<double>("alpha");
     xt::pyarray<double> &n                    = args.array<double>("n");
@@ -1903,18 +1928,37 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &elementMaterialTypes = args.array<int>("elementMaterialTypes");
     int                  numDOFs              = args.scalar<int>("numDOFs");
     xt::pyarray<double> &mIn = args.array<double>("limited_solution");
-    xt::pyarray<double> &pOut = args.array<double>("u_dof");
+    
+    //xt::pyarray<double> &pOut = args.array<double>("u_dof");
+    xt::pyarray<double> &pOut = (phase==0)? {args.array<double>("u_dof_water")} : {args.array<double>("u_dof_air")};
+  
+    xt::pyarray<double> &u_dof_water          = args.array<double>("u_dof_water");   // CHANGED
+    xt::pyarray<double> &u_dof_air            = args.array<double>("u_dof_air");     // CHANGED
+
+
     for (int i = 0; i < numDOFs; i++) {
       double dm, f[nSpace], df[nSpace], a[nnz], da[nnz];
-      double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
-      double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
+      const double rho_phase = (phase == 0) ? rho_water : rho_air; 
+      double mMin = rho_phase * thetaR.data()[elementMaterialTypes.data()[0]];
+      double mMax = rho_phase * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
 
       if (mIn.data()[i] < mMin - 0.001 || mIn.data()[i] > mMax + 0.001) { std::cout << "mass out of bounds " << mMin << '\t' << mIn.data()[i] << '\t' << mMax << std::endl; }
 
-      evaluateInverseCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[0]], n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]],
+    
+      double u_w = u_dof_water.data()[i];                                           // CHANGED
+      double u_a = u_dof_air.data()[i];                                             // CHANGED
+
+      evaluateInverseCoefficients(a_rowptr.data(), a_colind.data(), 
+                                  rho_water,rho_air, 
+                                  beta_water, beta_air,
+                                  gravity.data(), alpha.data()[elementMaterialTypes.data()[0]], n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]],
                                   thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz],
-                                  pOut.data()[i], mIn.data()[i],
+                                  //pOut.data()[i], 
+                                  u_w,u_a, 
+                                  phase
+                                  mIn.data()[i],
                                   dm, f, df, a, da);
+      pOut.data()[i] = (phase==0) > u_w: u_a;                                                   // CHANGED
     }
   }
 
@@ -1951,8 +1995,13 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &isSeepageFace        = args.array<int>("isSeepageFace");
     xt::pyarray<int>    &a_rowptr             = args.array<int>("a_rowptr");
     xt::pyarray<int>    &a_colind             = args.array<int>("a_colind");
-    double               rho                  = args.scalar<double>("rho");
-    double               beta                 = args.scalar<double>("beta");
+    
+    double               rho_water            = args.scalar<double>("rho_water");
+    double               beta_water                 = args.scalar<double>("beta_water");
+    double               rho_air                  = args.scalar<double>("rho_air");
+    double               beta_air                 = args.scalar<double>("beta_air");
+
+
     xt::pyarray<double> &gravity              = args.array<double>("gravity");
     xt::pyarray<double> &alpha                = args.array<double>("alpha");
     xt::pyarray<double> &n                    = args.array<double>("n");
@@ -1968,7 +2017,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &r_l2g                                      = args.array<int>("r_l2g");
     xt::pyarray<double> &elementDiameter                            = args.array<double>("elementDiameter");
     int                  degree_polynomial                          = args.scalar<int>("degree_polynomial");
-    xt::pyarray<double> &u_dof                                      = args.array<double>("u_dof");
+    xt::pyarray<double> &u_dof_water                                = args.array<double>("u_dof_water");
+    xt::pyarray<double> &u_dof_air                                  = args.array<double>("u_dof_air");
+    
     xt::pyarray<double> &velocity                                   = args.array<double>("velocity");
     xt::pyarray<double> &q_m_betaBDF                                = args.array<double>("q_m_betaBDF");
     xt::pyarray<double> &cfl                                        = args.array<double>("cfl");
@@ -2013,8 +2064,13 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         ck.calculateG(jacInv, G, G_dd_G, tr_G);
         //get the trial function gradients
         ck.gradTrialFromRef(&u_grad_trial_ref.data()[k * nDOF_trial_element * nSpace], jacInv, u_grad_trial);
+        
         //get the solution
-        ck.valFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u);
+        double u_w, u_a;
+        
+        ck.valFromDOF(u_dof_water.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_w);
+        ck.valFromDOF(u_dof_air.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_a);
+        
         //get the solution gradients
         ck.gradFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], u_grad_trial, grad_u);
         //precalculate test function products with integration weights
