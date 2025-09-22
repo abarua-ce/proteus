@@ -1421,8 +1421,15 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["boundaryJac_ref"] = self.u[0].femSpace.elementMaps.boundaryJacobians            
             argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
             argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
+
             argsDict["u_l2g"] = self.u[ci].femSpace.dofMap.l2g #okay
             argsDict["r_l2g"] = self.l2g[ci]['freeGlobal']
+
+            argsDict["u_l2g_water"] = self.u[0].femSpace.dofMap.l2g #okay
+            argsDict["r_l2g_water"] = self.l2g[0]['freeGlobal']
+
+            argsDict["u_l2g_air"] = self.u[1].femSpace.dofMap.l2g #okay
+            argsDict["r_l2g_air"] = self.l2g[1]['freeGlobal']
             #######################################################
             argsDict["u_dof_water"] = self.u[0].dof
             argsDict["u_dof_old_water"] = self.u_dof_old_ci[0]    
@@ -1444,8 +1451,18 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["offset_u"] = self.offset[ci]
             argsDict["stride_u"] = self.stride[ci]
             argsDict["ebqe_velocity_ext"] = self.ebqe['velocity',ci]
+            
             argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[ci]
+
+            argsDict["isDOFBoundary_u_water"] = self.numericalFlux.isDOFBoundary[0]
+            argsDict["isDOFBoundary_u_air"] = self.numericalFlux.isDOFBoundary[1]
+
+
             argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',ci)]
+            argsDict["ebqe_bc_u_ext_water"] = self.numericalFlux.ebqe[('u',0)]
+            argsDict["ebqe_bc_u_ext_air"] = self.numericalFlux.ebqe[('u',1)]
+
+
             argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',ci)]
             argsDict["ebqe_bc_flux_ext"] = self.ebqe[('advectiveFlux_bc',ci)]
             argsDict["ebqe_phi"] = self.ebqe[('u',ci)]
