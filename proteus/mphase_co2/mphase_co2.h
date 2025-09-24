@@ -116,20 +116,20 @@ public:
 
     //psiC   = -u;
 //    psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
-   // psiC   = u_air - u_water; //newly added
+   psiC   = u_air - u_water; //newly added
 
-    if (phase==0){
-      psiC = -u_water;
-    }else{
-      psiC = -u_air;
-    }
+    // if (phase==0){
+    //   psiC = -u_water;
+    // }else{
+    //   psiC = -u_air;
+    // }
     m_vg   = 1.0 - 1.0 / n_vg;
     thetaS = thetaR + thetaSR;
     //if (psiC > 0.0) {
     if (psiC > 1e-10) { 
       pcBar     = alpha * psiC;
       pcBarStar = pcBar;
-      if (pcBar < 1.0e-8) pcBarStar = 1.0e-8;
+      if (pcBar < 1.0e-10) pcBarStar = 1.0e-10;
       pcBar_nM2       = pow(pcBarStar, n_vg - 2);
       pcBar_nM1       = pcBar_nM2 * pcBar;
       pcBar_n         = pcBar_nM1 * pcBar;
@@ -177,7 +177,7 @@ public:
     }
     } else {
       thetaW        = thetaS;
-      DthetaW_DpsiC = 0.0;
+      DthetaW_DpsiC = 1e-30;
       kr_wet        = 1.0; dkrw_dpsic = 0.0;
       kr_nonwet     = 0.0; dkrn_dpsic = 0.0;
     }
@@ -203,24 +203,25 @@ public:
     m     = rhom * thetaW;
     dm    = -rhom * DthetaW_DpsiC + drhom * thetaW;
     }else{
-      //const double thetaA = thetaS - thetaW;
-      m     = rhom * thetaW;
-      dm    = -rhom * DthetaW_DpsiC + drhom * thetaW;
+      const double thetaA = thetaS - thetaW;
+      m     = rhom * thetaA;
+      dm    = rhom * DthetaW_DpsiC + drhom * thetaA;
     }
+    const double sign_psiC = (phase==0) ? -1.0 : +1.0; // water:-1, air:+1
     for (int I = 0; I < nSpace; I++) {
       f[I]  = 0.0;
       df[I] = 0.0;
       for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
         f[I] += rho2 * kr_use * KWs[ii] * gravity[colind[ii]];
-        df[I] += -rho2 * dkr_use * KWs[ii] * gravity[colind[ii]]; 
+        df[I] += rho2 * sign_psiC* dkr_use * KWs[ii] * gravity[colind[ii]]; 
         a[ii]  = rho_phase * kr_use * KWs[ii];
-        da[ii] = -rho_phase * dkr_use * KWs[ii];
+        da[ii] = rho_phase * dkr_use * sign_psiC* KWs[ii];
         as[ii] = rho_phase * KWs[ii];
         
       }
     }
     kr     = kr_use;
-    dkr    = -dkr_use;
+    dkr    = dkr_use * sign_psiC;
   }
 
 
