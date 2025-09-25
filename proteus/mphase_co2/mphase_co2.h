@@ -8,6 +8,7 @@
 #include "../mprans/ArgumentsDict.h"
 #include "xtensor-python/pyarray.hpp"
 #define nnz nSpace
+#define EVALCOEFF_DEBUG 0
 
 namespace py = pybind11;
 #define POWER_SMOOTHNESS_INDICATOR 2
@@ -116,17 +117,28 @@ public:
 
     //psiC   = -u;
 //    psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
-   psiC   = u_air - u_water; //newly added
+      psiC   = u_air - u_water; //newly added
 
-    // if (phase==0){
-    //   psiC = -u_water;
-    // }else{
-    //   psiC = -u_air;
+      //  #ifdef EVALCOEFF_DEBUG
+    // Print once per call; use stderr so it shows even if stdout is buffered.
+    // if (!std::isfinite(psiC) || !std::isfinite(u_water) || !std::isfinite(u_air)) {
+    //   std::fprintf(stderr,
+    //               "[evaluateCoefficients][WARNING non-finite]\n"
+    //               "  psiC=%+.17e  u_water=%+.17e  u_air=%+.17e  phase=%d\n",
+    //               psiC, u_water, u_air, phase);
+    // } else {
+    //   std::fprintf(stderr,
+    //               "[evaluateCoefficients]\n"
+    //               "  psiC=%+.6e  u_water=%+.6e  u_air=%+.6e  phase=%d\n",
+    //               psiC, u_water, u_air, phase);
     // }
+    // std::fflush(stderr);
+    // #endif
+    
     m_vg   = 1.0 - 1.0 / n_vg;
     thetaS = thetaR + thetaSR;
-    //if (psiC > 0.0) {
-    if (psiC > 1e-10) { 
+    if (psiC > 0.0) {
+    //if (psiC > 1e-10) { 
       pcBar     = alpha * psiC;
       pcBarStar = pcBar;
       if (pcBar < 1.0e-10) pcBarStar = 1.0e-10;
@@ -145,7 +157,7 @@ public:
 
       thetaW        = thetaSR * sBar + thetaR; //thetaS;//
       DthetaW_DpsiC = thetaSR * DsBar_DpsiC;   //0.0;//
-
+ 
       sqrt_sBar     = sqrt(sBar);
       sqrt_sBarStar = sqrt_sBar;
       if (sqrt_sBar < 1.0e-8) sqrt_sBarStar = 1.0e-8;
@@ -177,7 +189,14 @@ public:
     }
     } else {
       thetaW        = thetaS;
-      DthetaW_DpsiC = 1e-30;
+      //DthetaW_DpsiC =  -1e-100; //1e-30;
+      //DthetaW_DpsiC == (psiC==0) ? -1e-30: 0.0; // to avoid singularity in dm
+      DthetaW_DpsiC == (phase==0) ? 0.0: 1e-30; // 0.0;
+      
+      // std::fprintf(stderr,
+      //             "  psiC=%+.17e  u_water=%+.17e  u_air=%+.17e  phase=%d, DthetaW_DpsiC=%+ .17e\n",
+      //             psiC, u_water, u_air, phase, DthetaW_DpsiC);
+      std::fflush(stderr);
       kr_wet        = 1.0; dkrw_dpsic = 0.0;
       kr_nonwet     = 0.0; dkrn_dpsic = 0.0;
     }
