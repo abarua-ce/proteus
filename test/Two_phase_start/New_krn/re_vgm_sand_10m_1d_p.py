@@ -16,7 +16,7 @@ gravity       = 9.8     #m/s^2
 beta_water          = 0.0#density*gravity*4.524e-10
 beta_air            = 0.0#density*gravity*9.2e-11
 m_per_s_by_m_per_d = 1.1574074e-5
-permeability  = (0.00922*m_per_s_by_m_per_d)*viscosity/(gravity*density_water)  #m^2
+permeability  = (0.0000922*m_per_s_by_m_per_d)*viscosity/(gravity*density_water)  #m^2
 thetaS        = 0.368   #-
 thetaR        = 0.102   #-
 mvg_alpha     = 0.0335    #1/m
@@ -89,7 +89,7 @@ coefficients = mphase_co2.Coefficients(nd,
 #pondingPressure=-0.1#-0.1
 #bottomPressure = -0.2#0.0
 pondingPressure= -0.75 #0.1
-bottomPressure = -10.0
+bottomPressure = -5.0
 #pondingSaturation = 0.9
 #waterTableSaturation = 0.9
 #initialSaturation = 0.01
@@ -111,9 +111,9 @@ def getDBC_Richards_Shock_water(x,flag):
 
 def getDBC_Richards_Shock_air(x,flag):
     if x[0] == L[0]:
-        return lambda x,t: -0.75
+        return lambda x,t: -0.75 # 0.0
     if x[0] == 0.0:
-        return lambda x,t: bottomPressure
+        return lambda x,t: 0.0 #  0.0
    
 dirichletConditions = {0:getDBC_Richards_Shock_water, 1:getDBC_Richards_Shock_air}
 
@@ -131,7 +131,7 @@ class ShockIC_Richards_water:
         if f:
             return f(x,t)
         else:
-            return -10.0
+            return -5.0
         #     # return bottomPressure + x[0]*dimensionless_gravity[0]*dimensionless_density
         # if x[0] < L[0]:#*0.5:
         #     return bottomPressure + x[0]*dimensionless_gravity[0]*dimensionless_density
@@ -140,11 +140,11 @@ class ShockIC_Richards_water:
 
 class ShockIC_Richards_air:
     def uOfXT(self,x,t):
-        f = getDBC_Richards_Shock_water(x,0)
+        f = getDBC_Richards_Shock_air(x,0)
         if f:
             return f(x,t)
         else:
-            return -10.0
+            return 0.0
 
 initialConditions  = {0:ShockIC_Richards_water(), 1:ShockIC_Richards_air()}
 

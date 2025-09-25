@@ -6,8 +6,8 @@ from re_vgm_sand_10m_1d_p import *
 timeIntegrator = ForwardIntegrator
 useFLCBDF = False#True#False
 useGustafsson = False#True#
-atol_u[0] = 1.0e-5
-rtol_u[0] = 1.0e-5
+atol_u[0] = 1.0e-7
+rtol_u[0] = 1.0e-7
 #DT = 1.0e-6#None#0.025#1.0e-1/timeScale
 tnList = [0.0]; nDTout = 1000#cek don't have stability worked out yet, blows up for large time steps
 for i in range(nDTout):
@@ -45,7 +45,7 @@ if not galerkin:
     timeIntegration = mphase_co2.ThetaScheme
 #    timeIntegration = Richards.RKEV
 timeOrder = 1
-stepController = FixedStep
+stepController = HeuristicNL_dt_controller # FixedStep
 #systemStepControllerType = SplitOperator.Sequential_FixedStep
 #dt_system_fixed = 0.001
 #nDTout = 1#int(T/DT)#int(T/DT) #100#int(T/DT)
@@ -72,7 +72,7 @@ elementBoundaryQuadrature = SimplexGaussQuadrature(nd-1,1)
 
 #nn=101
 #nLevels = 4
-nn= 21#3*2**2
+nn= 101#3*2**2
 nLevels = 1#10-2
 #nn=3
 #nLevels = 10
@@ -121,7 +121,7 @@ fullNewtonFlag = True
 
 tolFac = 0.0
 
-nl_atol_res = 1.0e-8
+nl_atol_res = 1.0e-4 #1.0e-6
 
 maxNonlinearIts = 10#1001
 maxLineSearches =10
