@@ -191,7 +191,7 @@ public:
       thetaW        = thetaS;
       //DthetaW_DpsiC =  -1e-100; //1e-30;
       //DthetaW_DpsiC == (psiC==0) ? -1e-30: 0.0; // to avoid singularity in dm
-      DthetaW_DpsiC == (phase==0) ? 0.0: 1e-30; // 0.0;
+      DthetaW_DpsiC = (phase==0) ? 0.0: 1e-30; // 0.0;
       
       // std::fprintf(stderr,
       //             "  psiC=%+.17e  u_water=%+.17e  u_air=%+.17e  phase=%d, DthetaW_DpsiC=%+ .17e\n",
@@ -226,7 +226,7 @@ public:
       m     = rhom * thetaA;
       dm    = rhom * DthetaW_DpsiC + drhom * thetaA;
     }
-    const double sign_psiC = (phase==0) ? -1.0 : +1.0; // water:-1, air:+1
+    const double sign_psiC = (phase==0) ? -1.0 : rho_air/rho_water; // water:-1, air:+1*rho_air/rho_water
     for (int I = 0; I < nSpace; I++) {
       f[I]  = 0.0;
       df[I] = 0.0;
