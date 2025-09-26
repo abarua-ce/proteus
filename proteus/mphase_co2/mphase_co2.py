@@ -231,6 +231,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  getSeepageFace=None,
                 # FOR EDGE BASED EV
                  STABILIZATION_TYPE='Implicit_FCT',
+                 PSK_TYPE=0, # PSK_TYPE=0: VG , PSK_TYPE=1: Brooks-Corey
                  ENTROPY_TYPE=2,  # logarithmic
                  LUMPED_MASS_MATRIX=False,
                  MONOLITHIC=False,
@@ -316,10 +317,13 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         except:
             raise ValueError("STABILIZATION_TYPE must be one of "+str(stabilization_types.keys())+" not "+STABILIZATION_TYPE)
         
+        psk_types = {"VG":0, "Brooks-Corey":1}
+
         # EDGE BASED (AND ENTROPY) VISCOSITY
         self.LUMPED_MASS_MATRIX = LUMPED_MASS_MATRIX
         self.MONOLITHIC = MONOLITHIC
         #self.STABILIZATION_TYPE = STABILIZATION_TYPE
+        self.PSK_TYPE = PSK_TYPE
         self.ENTROPY_TYPE = ENTROPY_TYPE
         self.FCT = FCT
         self.num_fct_iter=num_fct_iter
@@ -1478,6 +1482,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
 
         
             argsDict['STABILIZATION_TYPE'] = self.coefficients.STABILIZATION_TYPE
+            argsDict['PSK_TYPE'] = self.coefficients.PSK_TYPE
+            
             # ENTROPY VISCOSITY and ARTIFICIAL COMRPESSION
             argsDict["cE"] = self.coefficients.cE
             argsDict["cK"] = self.coefficients.cK
@@ -1507,6 +1513,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             # PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
             argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
             argsDict["STABILIZATTION_TYPE"] = self.coefficients.STABILIZATION_TYPE
+            argsDict["PSK_TYPE"] = self.coefficients.PSK_TYPE
+            
             argsDict["ENTROPY_TYPE"] = self.coefficients.ENTROPY_TYPE
             # FLUX CORRECTED TRANSPORT
             argsDict["dLow"] = self.dLow[ci]
@@ -1690,7 +1698,10 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["epsFact"] = 0.0
             argsDict["ebqe_u"] = self.ebqe[('u',ci)]
             argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux',ci)]
+
             argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
+            argsDict["PSK_TYPE"] = self.coefficients.PSK_TYPE
+            
             argsDict["cE"] = self.coefficients.cE
             argsDict["cK"] = self.coefficients.cK
             argsDict["uL"] = self.coefficients.uL
@@ -1793,6 +1804,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["u_dof_air"] = self.u[1].dof
 
             argsDict["phase"] = ci
+            argsDict["PSK_TYPE"] = self.coefficients.PSK_TYPE
+            
             
 
             

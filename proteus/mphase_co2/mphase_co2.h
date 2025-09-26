@@ -73,180 +73,367 @@ public:
   CompKernelType ck;
   mphase_co2() : nDOF_test_X_trial_element(nDOF_test_element * nDOF_trial_element), ck() { }
 
-  
+inline void PSK_VG(const double psiC,
+                   const double alpha,
+                   const double n_vg,
+                   const double thetaR,
+                   const double thetaSR,
+                   const int    phase, // 0 water, 1 air (only used for psiC<=0 branch parity)
+                   double &thetaW,
+                   double &DthetaW_DpsiC,
+                   double &kr_wet,   double &dkrw_dpsic,
+                   double &kr_nonwet,double &dkrn_dpsic)
+{
+  const double m_vg = 1.0 - 1.0 / n_vg;
+  const double thetaS = thetaR + thetaSR;
 
+  if (psiC > 0.0) {
+    double pcBar = alpha * psiC;
+    double pcBarStar = (pcBar < 1.0e-10) ? 1.0e-10 : pcBar;
+    double pcBar_nM2 = std::pow(pcBarStar, n_vg - 2.0);
+    double pcBar_nM1 = pcBar_nM2 * pcBar;
+    double pcBar_n   = pcBar_nM1 * pcBar;
+    double onePlus_pcBar_n = 1.0 + pcBar_n;
 
-  inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz], 
-                                   const double rho_water, const double rho_air,
-                                   const double beta_water, const double beta_air,
-                                   const double gravity[nSpace], const double alpha, 
-                                   const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], 
-                                   const double &u_water,
-                                   const double &u_air, //newly added
-                                   const int phase,//0 for water, 1 for air
-                                   double &m, double &dm, double f[nSpace], double df[nSpace], 
-                                   double a[nnz], double da[nnz], double as[nnz], 
-                                   double &kr, double &dkr)
-  {
-    const int nSpace2 = nSpace * nSpace;
-    double    psiC;
-    double    pcBar;
-    double    pcBar_n;
-    double    pcBar_nM1;
-    double    pcBar_nM2;
-    double    onePlus_pcBar_n;
-    double    sBar;
-    double    sqrt_sBar;
-    double    DsBar_DpsiC;
-    double    thetaW;
-    double    DthetaW_DpsiC;
-    double    vBar;
-    double    vBar2;
-    double    DvBar_DpsiC;
-    //double    KWr;
-    //double    DKWr_DpsiC;
-     /* CHANGED: pick density by phase (rho not used) */
-    //double    rho2 = rho * rho;
-    const double rho_phase = (phase == 0 /*water*/) ? rho_water : rho_air; // CHANGED
-    double    rho2 = rho_phase * rho_phase; 
-    double    thetaS;
-    double    rhom;
-    double    drhom;
-    double    m_vg;
-    double    pcBarStar;
-    double    sqrt_sBarStar;
-    double kr_wet = 0.0,  dkrw_dpsic  = 0.0;
-    double kr_nonwet = 0.0, dkrn_dpsic = 0.0;
+    double sBar = std::pow(onePlus_pcBar_n, -m_vg);
+    double DsBar_DpsiC = alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
 
+    double vBar  = 1.0 - pcBar_nM1 * sBar;
+    double vBar2 = vBar * vBar;
 
-    //psiC   = -u;
-//    psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
-      psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
+    thetaW        = thetaSR * sBar + thetaR;
+    DthetaW_DpsiC = thetaSR * DsBar_DpsiC;
 
-      //  #ifdef EVALCOEFF_DEBUG
-    // Print once per call; use stderr so it shows even if stdout is buffered.
-    // if (!std::isfinite(psiC) || !std::isfinite(u_water) || !std::isfinite(u_air)) {
-    //   std::fprintf(stderr,
-    //               "[evaluateCoefficients][WARNING non-finite]\n"
-    //               "  psiC=%+.17e  u_water=%+.17e  u_air=%+.17e  phase=%d\n",
-    //               psiC, u_water, u_air, phase);
-    // } else {
-    //   std::fprintf(stderr,
-    //               "[evaluateCoefficients]\n"
-    //               "  psiC=%+.6e  u_water=%+.6e  u_air=%+.6e  phase=%d\n",
-    //               psiC, u_water, u_air, phase);
-    // }
-    // std::fflush(stderr);
-    // #endif
-    
-    m_vg   = 1.0 - 1.0 / n_vg;
-    thetaS = thetaR + thetaSR;
-    if (psiC > 0.0) {
-    //if (psiC > 1e-10) { 
-      pcBar     = alpha * psiC;
-      pcBarStar = pcBar;
-      if (pcBar < 1.0e-10) pcBarStar = 1.0e-10;
-      pcBar_nM2       = pow(pcBarStar, n_vg - 2);
-      pcBar_nM1       = pcBar_nM2 * pcBar;
-      pcBar_n         = pcBar_nM1 * pcBar;
-      onePlus_pcBar_n = 1.0 + pcBar_n;
+    double sqrt_sBar = std::sqrt(std::max(sBar, 0.0));
+    double sqrt_sBarStar = (sqrt_sBar < 1.0e-8) ? 1.0e-8 : sqrt_sBar;
 
-      sBar = pow(onePlus_pcBar_n, -m_vg);
-      /* using -mn = 1-n */
-      DsBar_DpsiC = alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
+    // water (wetting)
+    kr_wet     = sqrt_sBar * vBar2;
+    double DvBar_DpsiC = -alpha * (n_vg - 1.0) * pcBar_nM2 * sBar - pcBar_nM1 * DsBar_DpsiC;
+    dkrw_dpsic = (0.5 / sqrt_sBarStar) * DsBar_DpsiC * vBar2 + 2.0 * sqrt_sBar * vBar * DvBar_DpsiC;
 
-      vBar        = 1.0 - pcBar_nM1 * sBar;
-      vBar2       = vBar * vBar;
-      DvBar_DpsiC = -alpha * (n_vg - 1.0) * pcBar_nM2 * sBar - pcBar_nM1 * DsBar_DpsiC;
-
-      thetaW        = thetaSR * sBar + thetaR; //thetaS;//
-      DthetaW_DpsiC = thetaSR * DsBar_DpsiC;   //0.0;//
- 
-      sqrt_sBar     = sqrt(sBar);
-      sqrt_sBarStar = sqrt_sBar;
-      if (sqrt_sBar < 1.0e-8) sqrt_sBarStar = 1.0e-8;
-      /* CHANGED: branch relative permeability by phase
-       Water (wetting): keep your original KWr & derivative
-       Air (non-wetting): Mualem–VG style k_rn = sqrt(1-se) * (1 - se^{1/m})^{2m}
-       with analytic derivative via chain rule
-    */
-    if (phase == 0 /*water*/) {
-
-      kr_wet        = sqrt_sBar * vBar2;                                                                    
-      dkrw_dpsic = ((0.5 / sqrt_sBarStar) * DsBar_DpsiC * vBar2 + 2.0 * sqrt_sBar * vBar * DvBar_DpsiC); 
-    }
-    else{ //air(non wetting)
-      const double se = sBar; //effective saturation
-      //const double se = clamp(s, 1e-12, 1.0 - 1e-12);  
-      double sn = 1.0 -se;
-      if (sn < 1.0e-8) sn = 1.0e-8;
-      const double root_sn = sqrt(sn);
-      const double inv_m_vg = 1.0 / m_vg; // 1/m
-      const double se_pow_inv_m_vg = pow(se, inv_m_vg); //se^{1/m}
-      const double krn_shape = pow(1.0 - se_pow_inv_m_vg, 2.0 * m_vg); // (1 - se^{1/m})^{2m}
-      // dA/dse = -(1/(2*sqrt(sn)))
-      const double dA_dse = -0.5/ root_sn;
-      // dB/dse = -2 * (1 - t)^{2m-1} * se^{1/m - 1}
-      const double dkrn_shape_dse = -2.0 * pow(1.0 - se_pow_inv_m_vg, 2.0 * m_vg - 1.0) * pow(se, inv_m_vg - 1.0);
-      kr_nonwet        = root_sn * krn_shape;
-      dkrn_dpsic = (dA_dse * krn_shape + root_sn * dkrn_shape_dse) * DsBar_DpsiC;
-    }
-    } else {
-      thetaW        = thetaS;
-      //DthetaW_DpsiC =  -1e-100; //1e-30;
-      //DthetaW_DpsiC == (psiC==0) ? -1e-30: 0.0; // to avoid singularity in dm
-      DthetaW_DpsiC = (phase==0) ? 0.0: 1e-30; // 0.0;
-      
-      // std::fprintf(stderr,
-      //             "  psiC=%+.17e  u_water=%+.17e  u_air=%+.17e  phase=%d, DthetaW_DpsiC=%+ .17e\n",
-      //             psiC, u_water, u_air, phase, DthetaW_DpsiC);
-      std::fflush(stderr);
-      kr_wet        = 1.0; dkrw_dpsic = 0.0;
-      kr_nonwet     = 0.0; dkrn_dpsic = 0.0;
-    }
-    //slight compressibility
-    if (phase==0){
-      rhom = rho_water * exp(beta_water * u_water);
-      drhom = beta_water * rhom;    
-    }
-    else{
-      rhom = rho_air * exp(beta_air * u_air);
-      drhom = beta_air * rhom;
-    }
-//    rhom  = rho_phase * exp(beta * u);
-//    drhom = beta * rhom;
-    double kr_use, dkr_use;
-    if (phase==0){
-      kr_use = kr_wet; dkr_use = dkrw_dpsic;
-    }
-    else{
-      kr_use = kr_nonwet; dkr_use = dkrn_dpsic;//*-1.0; //dkrn_dpsic is dkrn/dpsiC, we need dkrn/du_phase
-    }
-    const double dpsiC_du = (phase==0) ? -1.0 : rho_air/rho_water; // water:-1, air:+1*rho_air/rho_water
-
-    if (phase==0){
-    m     = rhom * thetaW;
-    dm    = rhom * DthetaW_DpsiC* dpsiC_du + drhom * thetaW;
-    }else{
-      const double thetaA = thetaS - thetaW;
-      m     = rhom * thetaA;
-      dm    = -rhom * DthetaW_DpsiC * dpsiC_du + drhom * thetaA;
-    }
-    for (int I = 0; I < nSpace; I++) {
-      f[I]  = 0.0;
-      df[I] = 0.0;
-      for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
-        f[I] += rho2 * kr_use * KWs[ii] * gravity[colind[ii]];
-        df[I] += rho2 * dpsiC_du* dkr_use * KWs[ii] * gravity[colind[ii]]; 
-        a[ii]  = rho_phase * kr_use * KWs[ii];
-        da[ii] = rho_phase * dkr_use * dpsiC_du * KWs[ii];
-        as[ii] = rho_phase * KWs[ii];
-        
-      }
-    }
-    kr     = kr_use;
-    dkr    = dkr_use * dpsiC_du ;
+    // air (non-wetting) — matches your current formulas (kept as-is)
+    const double se = sBar;
+    double sn = 1.0 - se;
+    if (sn < 1.0e-8) sn = 1.0e-8;
+    const double root_sn = std::sqrt(sn);
+    const double inv_m_vg = 1.0 / m_vg;
+    const double se_pow_inv_m_vg = std::pow(se, inv_m_vg);
+    const double krn_shape = std::pow(1.0 - se_pow_inv_m_vg, 2.0 * m_vg);
+    const double dA_dse = -0.5 / root_sn;
+    const double dkrn_shape_dse =
+        -2.0 * std::pow(1.0 - se_pow_inv_m_vg, 2.0 * m_vg - 1.0) * std::pow(se, inv_m_vg - 1.0);
+    kr_nonwet     = root_sn * krn_shape;
+    dkrn_dpsic    = (dA_dse * krn_shape + root_sn * dkrn_shape_dse) * DsBar_DpsiC;
+  } else {
+    thetaW        = thetaS;
+    DthetaW_DpsiC = (phase == 0) ? 0.0 : 1.0e-30; // retained exactly as your code
+    kr_wet        = 1.0;  dkrw_dpsic = 0.0;
+    kr_nonwet     = 0.0;  dkrn_dpsic = 0.0;
   }
+}
+
+inline void PSK_BC(const double psiC,
+                   const double alpha,   // interpreted as 1/pe
+                   const double n_vg,    // interpreted as lambda
+                   const double thetaR,
+                   const double thetaSR,
+                   const int    phase,   // 0 water, 1 air (only used for psiC<=0 branch parity)
+                   double &thetaW,
+                   double &DthetaW_DpsiC,
+                   double &kr_wet,   double &dkrw_dpsic,
+                   double &kr_nonwet,double &dkrn_dpsic)
+{
+  const double lambda_bc = n_vg;
+  const double thetaS = thetaR + thetaSR;
+
+  if (psiC > 0.0) {
+    double pcBar = alpha * psiC;                          // pc/pe
+    double pcBarStar = (pcBar < 1.0e-12) ? 1.0e-12 : pcBar;
+
+    double Se = std::pow(pcBarStar, -lambda_bc);          // Se = (pc/pe)^(-λ)
+    double DsBar_DpsiC = -lambda_bc * std::pow(pcBarStar, -(lambda_bc+1.0)) * alpha;
+
+    thetaW        = thetaSR * Se + thetaR;
+    DthetaW_DpsiC = thetaSR * DsBar_DpsiC;
+
+    // Mualem–BC, l=0.5 (same style as your VG block)
+    // krw = Se^(2 + 3/λ)
+    const double exp_w = 2.0 + 3.0 / lambda_bc;
+    kr_wet = std::pow(std::max(Se, 1.0e-16), exp_w);
+    const double dkrw_dSe = exp_w * std::pow(std::max(Se, 1.0e-16), exp_w - 1.0);
+    dkrw_dpsic = dkrw_dSe * DsBar_DpsiC;
+
+    // krn = (1-Se)^2 * (1 - Se^{(2+λ)/λ})
+    const double one_m_Se = std::max(1.0 - Se, 0.0);
+    const double exp_n = (2.0 / lambda_bc) + 1.0;
+    const double Se_pow = std::pow(std::max(Se, 1.0e-16), exp_n);
+    kr_nonwet = (one_m_Se * one_m_Se) * (1.0 - Se_pow);
+
+    const double dT_dSe = -exp_n * std::pow(std::max(Se, 1.0e-16), exp_n - 1.0);
+    const double dkrn_dSe = -2.0 * one_m_Se * (1.0 - Se_pow) + (one_m_Se * one_m_Se) * dT_dSe;
+    dkrn_dpsic = dkrn_dSe * DsBar_DpsiC;
+  } else {
+    thetaW        = thetaS;
+    DthetaW_DpsiC = (phase == 0) ? 0.0 : 1.0e-30; // match parity with VG helper
+    kr_wet        = 1.0;  dkrw_dpsic = 0.0;
+    kr_nonwet     = 0.0;  dkrn_dpsic = 0.0;
+  }
+}
+inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz], 
+                                 const double rho_water, const double rho_air,
+                                 const double beta_water, const double beta_air,
+                                 const double gravity[nSpace], const double alpha, 
+                                 const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], 
+                                 const double &u_water,
+                                 const double &u_air,
+                                 const int phase,    // 0 water, 1 air
+                                 const int PSK_TYPE, // 0 = VG, 1 = BC   <-- added selector
+                                 double &m, double &dm, double f[nSpace], double df[nSpace], 
+                                 double a[nnz], double da[nnz], double as[nnz], 
+                                 double &kr, double &dkr)
+{
+  // --- locals copied from your structure ---
+  double psiC;
+  double thetaW, DthetaW_DpsiC;
+  double kr_wet=0.0, dkrw_dpsic=0.0, kr_nonwet=0.0, dkrn_dpsic=0.0;
+
+  // capillary pressure potential
+  psiC = (rho_air/rho_water)*u_air - u_water;
+
+  // --- PSK block selection ---
+  if (PSK_TYPE == 0) {
+    // Van Genuchten
+    PSK_VG(psiC, alpha, n_vg, thetaR, thetaSR, phase,
+           thetaW, DthetaW_DpsiC, kr_wet, dkrw_dpsic, kr_nonwet, dkrn_dpsic);
+  } else {
+    // Brooks–Corey
+    PSK_BC(psiC, alpha, n_vg, thetaR, thetaSR, phase,
+           thetaW, DthetaW_DpsiC, kr_wet, dkrw_dpsic, kr_nonwet, dkrn_dpsic);
+  }
+
+  // --- compressibility by phase (unchanged pattern) ---
+  double rhom, drhom;
+  if (phase==0) {
+    rhom  = rho_water * std::exp(beta_water * u_water);
+    drhom = beta_water * rhom;
+  } else {
+    rhom  = rho_air   * std::exp(beta_air * u_air);
+    drhom = beta_air  * rhom;
+  }
+
+  // pick kr and derivative wrt psiC
+  double kr_use, dkr_use;
+  if (phase==0){ kr_use = kr_wet;   dkr_use = dkrw_dpsic; }
+  else         { kr_use = kr_nonwet; dkr_use = dkrn_dpsic; }
+
+  // chain rule factor for active dof
+  const double dpsiC_du = (phase==0) ? -1.0 : (rho_air/rho_water);
+
+  // mass term and derivative (kept with your sign convention using dpsiC_du)
+  const double thetaS = thetaR + thetaSR;
+  if (phase==0){
+    m  = rhom * thetaW;
+    dm = rhom * DthetaW_DpsiC * dpsiC_du + drhom * thetaW;
+  } else {
+    const double thetaA = thetaS - thetaW;
+    m  = rhom * thetaA;
+    dm = -rhom * DthetaW_DpsiC * dpsiC_du + drhom * thetaA;
+  }
+
+  // flux/mobility (unchanged pattern)
+  const double rho_phase = (phase == 0) ? rho_water : rho_air;
+  const double rho2 = rho_phase * rho_phase;
+
+  for (int I = 0; I < nSpace; I++) {
+    f[I]  = 0.0;
+    df[I] = 0.0;
+    for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
+      const int J = colind[ii];
+      f[I]  += rho2 * kr_use * KWs[ii] * gravity[J];
+      df[I] += rho2 * dpsiC_du * dkr_use * KWs[ii] * gravity[J];
+      a[ii]   = rho_phase * kr_use * KWs[ii];
+      da[ii]  = rho_phase * dkr_use * dpsiC_du * KWs[ii];
+      as[ii]  = rho_phase * KWs[ii];
+    }
+  }
+
+  kr  = kr_use;
+  dkr = dkr_use * dpsiC_du;
+}
+
+
+
+//   inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz], 
+//                                    const double rho_water, const double rho_air,
+//                                    const double beta_water, const double beta_air,
+//                                    const double gravity[nSpace], const double alpha, 
+//                                    const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], 
+//                                    const double &u_water,
+//                                    const double &u_air, //newly added
+//                                    const int phase,//0 for water, 1 for air
+//                                    double &m, double &dm, double f[nSpace], double df[nSpace], 
+//                                    double a[nnz], double da[nnz], double as[nnz], 
+//                                    double &kr, double &dkr)
+//   {
+//     const int nSpace2 = nSpace * nSpace;
+//     double    psiC;
+//     double    pcBar;
+//     double    pcBar_n;
+//     double    pcBar_nM1;
+//     double    pcBar_nM2;
+//     double    onePlus_pcBar_n;
+//     double    sBar;
+//     double    sqrt_sBar;
+//     double    DsBar_DpsiC;
+//     double    thetaW;
+//     double    DthetaW_DpsiC;
+//     double    vBar;
+//     double    vBar2;
+//     double    DvBar_DpsiC;
+//     //double    KWr;
+//     //double    DKWr_DpsiC;
+//      /* CHANGED: pick density by phase (rho not used) */
+//     //double    rho2 = rho * rho;
+//     const double rho_phase = (phase == 0 /*water*/) ? rho_water : rho_air; // CHANGED
+//     double    rho2 = rho_phase * rho_phase; 
+//     double    thetaS;
+//     double    rhom;
+//     double    drhom;
+//     double    m_vg;
+//     double    pcBarStar;
+//     double    sqrt_sBarStar;
+//     double kr_wet = 0.0,  dkrw_dpsic  = 0.0;
+//     double kr_nonwet = 0.0, dkrn_dpsic = 0.0;
+
+
+//     //psiC   = -u;
+// //    psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
+//       psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
+
+//       //  #ifdef EVALCOEFF_DEBUG
+//     // Print once per call; use stderr so it shows even if stdout is buffered.
+//     // if (!std::isfinite(psiC) || !std::isfinite(u_water) || !std::isfinite(u_air)) {
+//     //   std::fprintf(stderr,
+//     //               "[evaluateCoefficients][WARNING non-finite]\n"
+//     //               "  psiC=%+.17e  u_water=%+.17e  u_air=%+.17e  phase=%d\n",
+//     //               psiC, u_water, u_air, phase);
+//     // } else {
+//     //   std::fprintf(stderr,
+//     //               "[evaluateCoefficients]\n"
+//     //               "  psiC=%+.6e  u_water=%+.6e  u_air=%+.6e  phase=%d\n",
+//     //               psiC, u_water, u_air, phase);
+//     // }
+//     // std::fflush(stderr);
+//     // #endif
+    
+//     m_vg   = 1.0 - 1.0 / n_vg;
+//     thetaS = thetaR + thetaSR;
+//     if (psiC > 0.0) {
+//       pcBar     = alpha * psiC;
+//       pcBarStar = pcBar;
+//       if (pcBar < 1.0e-10) pcBarStar = 1.0e-10;
+//       pcBar_nM2       = pow(pcBarStar, n_vg - 2);
+//       pcBar_nM1       = pcBar_nM2 * pcBar;
+//       pcBar_n         = pcBar_nM1 * pcBar;
+//       onePlus_pcBar_n = 1.0 + pcBar_n;
+
+//       sBar = pow(onePlus_pcBar_n, -m_vg);
+//       /* using -mn = 1-n */
+//       DsBar_DpsiC = alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
+
+//       vBar        = 1.0 - pcBar_nM1 * sBar;
+//       vBar2       = vBar * vBar;
+//       DvBar_DpsiC = -alpha * (n_vg - 1.0) * pcBar_nM2 * sBar - pcBar_nM1 * DsBar_DpsiC;
+
+//       thetaW        = thetaSR * sBar + thetaR; //thetaS;//
+//       DthetaW_DpsiC = thetaSR * DsBar_DpsiC;   //0.0;//
+ 
+//       sqrt_sBar     = sqrt(sBar);
+//       sqrt_sBarStar = sqrt_sBar;
+//       if (sqrt_sBar < 1.0e-8) sqrt_sBarStar = 1.0e-8;
+//       /* CHANGED: branch relative permeability by phase
+//        Water (wetting): keep your original KWr & derivative
+//        Air (non-wetting): Mualem–VG style k_rn = sqrt(1-se) * (1 - se^{1/m})^{2m}
+//        with analytic derivative via chain rule
+//     */
+//     if (phase == 0 /*water*/) {
+
+//       kr_wet        = sqrt_sBar * vBar2;                                                                    
+//       dkrw_dpsic = ((0.5 / sqrt_sBarStar) * DsBar_DpsiC * vBar2 + 2.0 * sqrt_sBar * vBar * DvBar_DpsiC); 
+//     }
+//     else{ //air(non wetting)
+//       const double se = sBar; //effective saturation
+//       //const double se = clamp(s, 1e-12, 1.0 - 1e-12);  
+//       double sn = 1.0 -se;
+//       if (sn < 1.0e-8) sn = 1.0e-8;
+//       const double root_sn = sqrt(sn);
+//       const double inv_m_vg = 1.0 / m_vg; // 1/m
+//       const double se_pow_inv_m_vg = pow(se, inv_m_vg); //se^{1/m}
+//       const double krn_shape = pow(1.0 - se_pow_inv_m_vg, 2.0 * m_vg); // (1 - se^{1/m})^{2m}
+//       // dA/dse = -(1/(2*sqrt(sn)))
+//       const double dA_dse = -0.5/ root_sn;
+//       // dB/dse = -2 * (1 - t)^{2m-1} * se^{1/m - 1}
+//       const double dkrn_shape_dse = -2.0 * pow(1.0 - se_pow_inv_m_vg, 2.0 * m_vg - 1.0) * pow(se, inv_m_vg - 1.0);
+//       kr_nonwet        = root_sn * krn_shape;
+//       dkrn_dpsic = (dA_dse * krn_shape + root_sn * dkrn_shape_dse) * DsBar_DpsiC;
+//     }
+//     } else {
+//       thetaW        = thetaS;
+//       //DthetaW_DpsiC =  -1e-100; //1e-30;
+//       //DthetaW_DpsiC == (psiC==0) ? -1e-30: 0.0; // to avoid singularity in dm
+//       DthetaW_DpsiC = (phase==0) ? 0.0: 1e-30; // 0.0;
+      
+//       // std::fprintf(stderr,
+//       //             "  psiC=%+.17e  u_water=%+.17e  u_air=%+.17e  phase=%d, DthetaW_DpsiC=%+ .17e\n",
+//       //             psiC, u_water, u_air, phase, DthetaW_DpsiC);
+//       std::fflush(stderr);
+//       kr_wet        = 1.0; dkrw_dpsic = 0.0;
+//       kr_nonwet     = 0.0; dkrn_dpsic = 0.0;
+//     }
+//     //slight compressibility
+//     if (phase==0){
+//       rhom = rho_water * exp(beta_water * u_water);
+//       drhom = beta_water * rhom;    
+//     }
+//     else{
+//       rhom = rho_air * exp(beta_air * u_air);
+//       drhom = beta_air * rhom;
+//     }
+// //    rhom  = rho_phase * exp(beta * u);
+// //    drhom = beta * rhom;
+//     double kr_use, dkr_use;
+//     if (phase==0){
+//       kr_use = kr_wet; dkr_use = dkrw_dpsic;
+//     }
+//     else{
+//       kr_use = kr_nonwet; dkr_use = dkrn_dpsic;//*-1.0; //dkrn_dpsic is dkrn/dpsiC, we need dkrn/du_phase
+//     }
+//     const double dpsiC_du = (phase==0) ? -1.0 : rho_air/rho_water; // water:-1, air:+1*rho_air/rho_water
+
+//     if (phase==0){
+//     m     = rhom * thetaW;
+//     dm    = rhom * DthetaW_DpsiC* dpsiC_du + drhom * thetaW;
+//     }else{
+//       const double thetaA = thetaS - thetaW;
+//       m     = rhom * thetaA;
+//       dm    = -rhom * DthetaW_DpsiC * dpsiC_du + drhom * thetaA;
+//     }
+//     for (int I = 0; I < nSpace; I++) {
+//       f[I]  = 0.0;
+//       df[I] = 0.0;
+//       for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
+//         f[I] += rho2 * kr_use * KWs[ii] * gravity[colind[ii]];
+//         df[I] += rho2 * dpsiC_du* dkr_use * KWs[ii] * gravity[colind[ii]]; 
+//         a[ii]  = rho_phase * kr_use * KWs[ii];
+//         da[ii] = rho_phase * dkr_use * dpsiC_du * KWs[ii];
+//         as[ii] = rho_phase * KWs[ii];
+        
+//       }
+//     }
+//     kr     = kr_use;
+//     dkr    = dkr_use * dpsiC_du ;
+//   }
 
 
   inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], 
@@ -518,7 +705,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<double> &delta_x_ij = args.array<double>("delta_x_ij");
     // PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
     int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
+
     STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+    const int PSK_TYPE = args.scalar<int>("PSK_TYPE");
     int ENTROPY_TYPE = args.scalar<int>("ENTROPY_TYPE");
     // FOR FCT
     xt::pyarray<double> &dLow                 = args.array<double>("dLow");
@@ -607,6 +796,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              u_w,u_a,
                              phase,
+                             PSK_TYPE,
                              m, dm, f, df, a, da, as, Kr, dKr);
         //
         //calculate time derivative at quadrature points
@@ -716,6 +906,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              u_w_ext,u_a_ext, 
                              phase,
+                             PSK_TYPE,
                              m_ext, dm_ext, f_ext, df_ext, a_ext, da_ext, as_ext, Kr, dKr);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), 
                              rho_water, rho_air,
@@ -724,6 +915,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              bc_u_w_ext, bc_u_a_ext, 
                              phase, 
+                             PSK_TYPE,
                              bc_m_ext, bc_dm_ext, bc_f_ext, bc_df_ext, bc_a_ext, bc_da_ext, bc_as_ext, Kr, dKr);
         //
         //calculate the numerical fluxes
@@ -791,6 +983,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     double               rho_air                       = args.scalar<double>("rho_air");
     double               beta_air                      = args.scalar<double>("beta_air");
     int  phase   = args.scalar<int>("phase");
+    const int PSK_TYPE = args.scalar<int>("PSK_TYPE");
+    //const int PSK_TYPE{static_cast<PSK>(args.scalar<int>("PSK_TYPE"))};
     
     
     xt::pyarray<double> &gravity                   = args.array<double>("gravity");
@@ -891,6 +1085,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              u_w,u_a,
                              phase,
+                             PSK_TYPE,
                              m, dm, f, df, a, da, as, Kr, dKr);
         //
         //calculate time derivatives
@@ -991,7 +1186,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              u_w_ext, u_a_ext,
-                             phase, 
+                             phase, PSK_TYPE,
                              m_ext, dm_ext, f_ext, df_ext, a_ext, da_ext, as_ext, Kr, dKr);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), 
                              rho_water, rho_air, 
@@ -999,7 +1194,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              bc_u_w_ext, bc_u_a_ext,
-                             phase,
+                             phase, PSK_TYPE,
                              bc_m_ext, bc_dm_ext, bc_f_ext, bc_df_ext, bc_a_ext, bc_da_ext, bc_as_ext, Kr, dKr);
         //
         //calculate the flux jacobian
@@ -1428,6 +1623,10 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     // PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
     int LUMPED_MASS_MATRIX = args.scalar<int>("LUMPED_MASS_MATRIX");
     STABILIZATION STABILIZATION_TYPE{static_cast<STABILIZATION>(args.scalar<int>("STABILIZATION_TYPE"))};
+    
+    const int PSK_TYPE = args.scalar<int>("PSK_TYPE");
+//    {static_cast<PSK>(args.scalar<int>("PSK_TYPE"))};
+
 
     int ENTROPY_TYPE = args.scalar<int>("ENTROPY_TYPE");
     // FOR FCT
@@ -1621,7 +1820,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes[eN]], n.data()[elementMaterialTypes[eN]], thetaR.data()[elementMaterialTypes[eN]], thetaSR.data()[elementMaterialTypes[eN]],
                              &KWs.data()[elementMaterialTypes[eN] * nnz], 
                              un_w, un_a,
-                             phase,
+                             phase, PSK_TYPE,
                              mn, dmn, fn, dfn, an, dan, asn, Krn, dKrn);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), 
                              rho_water, rho_air,
@@ -1629,7 +1828,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes[eN]], n.data()[elementMaterialTypes[eN]], thetaR.data()[elementMaterialTypes[eN]], thetaSR.data()[elementMaterialTypes[eN]],
                              &KWs.data()[elementMaterialTypes[eN] * nnz], 
                              u_w, u_a,
-                             phase,
+                             phase, PSK_TYPE,
                              m, dm, f, df, a, da, as, Kr, dKr);
         
         un= (phase==0) ? un_w : un_a;
@@ -1789,7 +1988,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              u_w_ext,u_a_ext, 
-                             phase,
+                             phase, PSK_TYPE,
                              m_ext, dm_ext, f_ext, df_ext, a_ext, da_ext, as_ext, bc_Kr, bc_dKr);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), 
                              rho_water, rho_air, 
@@ -1797,7 +1996,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              un_w_ext,un_a_ext, 
-                             phase, 
+                             phase, PSK_TYPE,
                              mn_ext, dmn_ext, fn_ext, dfn_ext, an_ext, dan_ext, asn_ext, bc_Krn, bc_dKrn);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), 
                              rho_water, rho_air,
@@ -1805,7 +2004,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              bc_u_w_ext, bc_u_a_ext, 
-                             phase, 
+                             phase, PSK_TYPE,
                              bc_m_ext, bc_dm_ext, bc_f_ext, bc_df_ext, bc_a_ext, bc_da_ext, bc_as_ext, bc_Kr_ext, bc_dKr_ext);
         //
         //calculate the numerical fluxes
@@ -2018,7 +2217,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], 
                                u_free_dof_water[i],u_free_dof_air[i],
-                               phase, 
+                               phase, PSK_TYPE,
                                m, dm, f, df, a, da, as, Kr, dKr);
           fL = Theta * Kr * fmax(0.0, -TransportMatrix[ij]) * (phi_j - phi_i);
           if (i != j) {
@@ -2035,7 +2234,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], 
                                u_free_dof_water[j],u_free_dof_air[j],  
-                               phase,
+                               phase,PSK_TYPE,
                                m, dm, f, df, a, da, as, Kr, dKr);
           fL = Theta * Kr * fmax(0.0, -TransportMatrix[ij]) * (phi_j - phi_i);
           if (i != j) {
@@ -2053,7 +2252,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], 
                                u_free_dof_old_water[i], u_free_dof_old_air[i],
-                               phase, 
+                               phase, PSK_TYPE,
                                m, dm, f, df, a, da, as, Kr, dKr);
           fL = (1 - Theta) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);
           ith_flux_term += fL;
@@ -2063,7 +2262,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], 
                                u_free_dof_old_water[j],u_free_dof_old_air[j],
-                               phase, 
+                               phase, PSK_TYPE,
                                m, dm, f, df, a, da, as, Kr, dKr);
           fL = (1 - Theta) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);
           ith_flux_term += fL;
@@ -2081,7 +2280,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                            gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                            n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], 
-                           u_free_dof_water[i], u_free_dof_air[i], phase,
+                           u_free_dof_water[i], u_free_dof_air[i], phase,PSK_TYPE,
                            m, dm, f, df, a, da, as, Kr, dKr);
       evaluateCoefficients(a_rowptr.data(), a_colind.data(), 
                            rho_water, rho_air,
@@ -2089,7 +2288,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                            gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                            n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], 
-                           u_free_dof_old_water[i], u_free_dof_old_air[i], phase, 
+                           u_free_dof_old_water[i], u_free_dof_old_air[i], phase, PSK_TYPE,
                            mn.data()[i], dmn, fn, dfn, an, dan, asn, Krn, dKrn);
       mLow.data()[i] = m;
       globalResidual.data()[i] += bc_mask.data()[i] * (MLi * (m - mn.data()[i]) / dt - ith_flux_term);
@@ -2123,6 +2322,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     double               rho_air                  = args.scalar<double>("rho_air");
     double               beta_air                 = args.scalar<double>("beta_air");
     int  phase   = args.scalar<int>("phase");
+
+    
 
     xt::pyarray<double> &gravity              = args.array<double>("gravity");
     xt::pyarray<double> &alpha                = args.array<double>("alpha");
@@ -2207,6 +2408,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     double               rho_air                  = args.scalar<double>("rho_air");
     double               beta_air                 = args.scalar<double>("beta_air");
     int  phase   = args.scalar<int>("phase");
+    const int PSK_TYPE = args.scalar<int>("PSK_TYPE");
+//    PSK PSK_TYPE{static_cast<PSK>(args.scalar<int>("PSK_TYPE"))};
 
     xt::pyarray<double> &gravity              = args.array<double>("gravity");
     xt::pyarray<double> &alpha                = args.array<double>("alpha");
@@ -2299,7 +2502,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], 
                              u_w, u_a,
-                             phase,
+                             phase, PSK_TYPE,
                              m, dm, f, df, a, da, as, Kr, dKr);
         //
         //moving mesh
