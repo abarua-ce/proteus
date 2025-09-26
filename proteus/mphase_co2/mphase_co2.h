@@ -72,6 +72,10 @@ public:
   const int      nDOF_test_X_trial_element;
   CompKernelType ck;
   mphase_co2() : nDOF_test_X_trial_element(nDOF_test_element * nDOF_trial_element), ck() { }
+
+  
+
+
   inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz], 
                                    const double rho_water, const double rho_air,
                                    const double beta_water, const double beta_air,
@@ -218,29 +222,30 @@ public:
     else{
       kr_use = kr_nonwet; dkr_use = dkrn_dpsic;//*-1.0; //dkrn_dpsic is dkrn/dpsiC, we need dkrn/du_phase
     }
+    const double dpsiC_du = (phase==0) ? -1.0 : rho_air/rho_water; // water:-1, air:+1*rho_air/rho_water
+
     if (phase==0){
     m     = rhom * thetaW;
-    dm    = -rhom * DthetaW_DpsiC + drhom * thetaW;
+    dm    = rhom * DthetaW_DpsiC* dpsiC_du + drhom * thetaW;
     }else{
       const double thetaA = thetaS - thetaW;
       m     = rhom * thetaA;
-      dm    = rhom * DthetaW_DpsiC + drhom * thetaA;
+      dm    = -rhom * DthetaW_DpsiC * dpsiC_du + drhom * thetaA;
     }
-    const double sign_psiC = (phase==0) ? -1.0 : rho_air/rho_water; // water:-1, air:+1*rho_air/rho_water
     for (int I = 0; I < nSpace; I++) {
       f[I]  = 0.0;
       df[I] = 0.0;
       for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
         f[I] += rho2 * kr_use * KWs[ii] * gravity[colind[ii]];
-        df[I] += rho2 * sign_psiC* dkr_use * KWs[ii] * gravity[colind[ii]]; 
+        df[I] += rho2 * dpsiC_du* dkr_use * KWs[ii] * gravity[colind[ii]]; 
         a[ii]  = rho_phase * kr_use * KWs[ii];
-        da[ii] = rho_phase * dkr_use * sign_psiC* KWs[ii];
+        da[ii] = rho_phase * dkr_use * dpsiC_du * KWs[ii];
         as[ii] = rho_phase * KWs[ii];
         
       }
     }
     kr     = kr_use;
-    dkr    = dkr_use * sign_psiC;
+    dkr    = dkr_use * dpsiC_du ;
   }
 
 
