@@ -117,7 +117,7 @@ public:
 
     //psiC   = -u;
 //    psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
-      psiC   = u_air - u_water; //newly added
+      psiC   = (rho_air/rho_water)*u_air - u_water; //newly added
 
       //  #ifdef EVALCOEFF_DEBUG
     // Print once per call; use stderr so it shows even if stdout is buffered.
