@@ -21,9 +21,12 @@ class ThetaScheme(TimeIntegration.BackwardEuler):
         TimeIntegration.BackwardEuler.__init__(self,transport, integrateInterpolationPoints)
     def updateTimeHistory(self,resetFromDOF=False):
         TimeIntegration.BackwardEuler.updateTimeHistory(self,resetFromDOF)
-        self.transport.u_dof_old_ci[0][:] = self.u[0] #water
-        self.transport.u_dof_old_ci[1][:] = self.u[1] # air
+        self.transport.u_dof_old_water[:] = self.u[0] #water
+        self.transport.u_dof_old_air[:] = self.u[1] # air
         
+        # self.transport.u_dof_old_ci[0][:] = self.u[0] #water
+        # self.transport.u_dof_old_ci[1][:] = self.u[1] # air
+            
 class RKEV(TimeIntegration.SSP):
     from proteus import TimeIntegration
     """
@@ -317,8 +320,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         except:
             raise ValueError("STABILIZATION_TYPE must be one of "+str(stabilization_types.keys())+" not "+STABILIZATION_TYPE)
         
-        psk_types = {"VG":0, "Brooks-Corey":1}
-
+        
         # EDGE BASED (AND ENTROPY) VISCOSITY
         self.LUMPED_MASS_MATRIX = LUMPED_MASS_MATRIX
         self.MONOLITHIC = MONOLITHIC
@@ -1029,25 +1031,20 @@ class LevelModel(proteus.Transport.OneLevelTransport):
     def getResidual(self,u,r):
         import pdb
         import copy
+        #print("[PY] getResidual start")
         """
         Calculate the element residuals and add in to the global residual
         """
         cfemIntegrals.zeroJacobian_CSR(self.nNonzerosInJacobian,
                                     self.jacobian)
-        if self.u_dof_old is None:
-        # Pass initial condition to u_dof_old
-            self.u_dof_old = np.copy(self.u[0].dof)
-        if not hasattr(self, 'u_dof_old_ci'):
-            self.u_dof_old_ci = {ci: np.copy(self.u[ci].dof) for ci in range(self.nc)}
         
-        # if self.u_dof_old_water is None:
-        # # Pass initial condition to u_dof_old
-        #     self.u_dof_old_water = np.copy(self.u[0].dof)
-        
-        # if self.u_dof_old_air is None:
-        # # Pass initial condition to u_dof_old
-        #     self.u_dof_old_air = np.copy(self.u[1].dof)           
+        if self.u_dof_old_water is None:
+            # Pass initial condition to u_dof_old
+            self.u_dof_old_water = np.copy(self.u[0].dof)
 
+        if self.u_dof_old_air is None:
+            # Pass initial condition to u_dof_old
+            self.u_dof_old_air = np.copy(self.u[1].dof)
         rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
         nnz = nzval.shape[-1]  # number of non-zero entries in sparse matrix
         r.fill(0.0)
@@ -1233,7 +1230,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                                                                     self.cterm_a_transpose[ci][d],
                                                                     colind_ci,
                                                                     rowptr_ci)
-                    cfemIntegrals.zeroJacobian_CSR(nnz, self.cterm_global_transpose[ci][d]) #self.nnz>> nnz
+                    cfemIntegrals.zeroJacobian_CSR(nnz_ci, self.cterm_global_transpose[ci][d]) #self.nnz>> nnz
                     di[:] = 0.0
                     di[..., d] = -1.0
                     cfemIntegrals.updateAdvectionJacobian_weak_lowmem(di,
@@ -1342,7 +1339,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
                         for dofN,g in list(self.dirichletConditionsForceDOF[cj].DOFBoundaryConditionsDict.items()):
                             self.u[cj].dof[dofN] = g(self.dirichletConditionsForceDOF[cj].DOFBoundaryPointDict[dofN],self.timeIntegration.t)
                             self.u_dof_old_ci[ci][dofN] = self.u[cj].dof[dofN]
-                            self.bc_mask[dofN] = 0.0
+                            self.bc_mask[ci][dofN] = 0.0
         degree_polynomial = 1
         try:
             degree_polynomial = max(getattr(self.u[ci].femSpace, 'order', 1) for ci in range(self.nc))
@@ -1423,8 +1420,12 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["u_grad_test_trace_ref"] = self.u[0].femSpace.grad_psi_trace
             argsDict["normal_ref"] = self.u[0].femSpace.elementMaps.boundaryNormals
             argsDict["boundaryJac_ref"] = self.u[0].femSpace.elementMaps.boundaryJacobians            
+            
             argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
             argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
+
+            #argsDict["a_rowptr"] = self.coefficients.sdInfo[(ci,ci)][0]
+            #argsDict["a_colind"] = self.coefficients.sdInfo[(ci,ci)][1]
 
             argsDict["u_l2g"] = self.u[ci].femSpace.dofMap.l2g #okay
             argsDict["r_l2g"] = self.l2g[ci]['freeGlobal']
@@ -1434,11 +1435,20 @@ class LevelModel(proteus.Transport.OneLevelTransport):
 
             argsDict["u_l2g_air"] = self.u[1].femSpace.dofMap.l2g #okay
             argsDict["r_l2g_air"] = self.l2g[1]['freeGlobal']
+            assert np.array_equal(self.u[0].femSpace.dofMap.l2g,
+                      self.u[1].femSpace.dofMap.l2g), "u_l2g differs between phases"
+            #assert np.array_equal(self.l2g[0]['freeGlobal'], self.l2g[1]['freeGlobal']), "r_l2g differs between phases"
             #######################################################
             argsDict["u_dof_water"] = self.u[0].dof
-            argsDict["u_dof_old_water"] = self.u_dof_old_ci[0]    
+#            argsDict["u_dof_old_water"] = self.u_dof_old_ci[0]
+            argsDict["u_dof_old_water"] = self.u_dof_old_water   
             argsDict["u_dof_air"] = self.u[1].dof
-            argsDict["u_dof_old_air"] = self.u_dof_old_ci[1]
+            argsDict["u_dof_old_air"] = self.u_dof_old_air
+            argsDict["u_dof"] = self.u[ci].dof
+            if ci==0:
+                argsDict["u_dof_old"] = self.u_dof_old_water
+            if ci==1:
+                argsDict["u_dof_old"] = self.u_dof_old_air
 
             argsDict["phase"]= ci
             ###########################################################
@@ -1493,7 +1503,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             # PARAMETERS FOR EDGE VISCOSITY
             argsDict["numDOFs"] = len(rowptr_ci) - 1  # num of DOFs
             argsDict["NNZ"] = Cx.size #self.nnz 
-            argsDict["Cx"] = len(Cx)  # num of non-zero entries in the sparsity pattern
+            #argsDict["Cx"] = len(Cx)  # num of non-zero entries in the sparsity pattern
             argsDict["csrRowIndeces_DofLoops"] = rowptr_ci  # Row indices for Sparsity Pattern (convenient for DOF loops)
             argsDict["csrColumnOffsets_DofLoops"] = colind_ci  # Column indices for Sparsity Pattern (convenient for DOF loops)
             argsDict["csrRowIndeces_CellLoops"] = self.csrRowIndeces[(ci, ci)]  # row indices (convenient for element loops)
@@ -1699,7 +1709,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             argsDict["ebqe_u"] = self.ebqe[('u',ci)]
             argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux',ci)]
 
-            argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
+            #argsDict["STABILIZATION_TYPE"] = self.coefficients.STABILIZATION_TYPE
             argsDict["PSK_TYPE"] = self.coefficients.PSK_TYPE
             
             argsDict["cE"] = self.coefficients.cE

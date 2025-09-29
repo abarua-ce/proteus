@@ -112,7 +112,7 @@ inline void PSK_VG(const double psiC,
     double DvBar_DpsiC = -alpha * (n_vg - 1.0) * pcBar_nM2 * sBar - pcBar_nM1 * DsBar_DpsiC;
     dkrw_dpsic = (0.5 / sqrt_sBarStar) * DsBar_DpsiC * vBar2 + 2.0 * sqrt_sBar * vBar * DvBar_DpsiC;
 
-    // air (non-wetting) — matches your current formulas (kept as-is)
+    // air (non-wetting)
     const double se = sBar;
     double sn = 1.0 - se;
     if (sn < 1.0e-8) sn = 1.0e-8;
@@ -127,7 +127,7 @@ inline void PSK_VG(const double psiC,
     dkrn_dpsic    = (dA_dse * krn_shape + root_sn * dkrn_shape_dse) * DsBar_DpsiC;
   } else {
     thetaW        = thetaS;
-    DthetaW_DpsiC = (phase == 0) ? 0.0 : 1.0e-30; // retained exactly as your code
+    DthetaW_DpsiC = (phase == 0) ? 0.0 : 1.0e-30; 
     kr_wet        = 1.0;  dkrw_dpsic = 0.0;
     kr_nonwet     = 0.0;  dkrn_dpsic = 0.0;
   }
@@ -157,7 +157,7 @@ inline void PSK_BC(const double psiC,
     thetaW        = thetaSR * Se + thetaR;
     DthetaW_DpsiC = thetaSR * DsBar_DpsiC;
 
-    // Mualem–BC, l=0.5 (same style as your VG block)
+    // Mualem–BC, l=0.5 
     // krw = Se^(2 + 3/λ)
     const double exp_w = 2.0 + 3.0 / lambda_bc;
     kr_wet = std::pow(std::max(Se, 1.0e-16), exp_w);
@@ -193,13 +193,12 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
                                  double a[nnz], double da[nnz], double as[nnz], 
                                  double &kr, double &dkr)
 {
-  // --- locals copied from your structure ---
   double psiC;
   double thetaW, DthetaW_DpsiC;
   double kr_wet=0.0, dkrw_dpsic=0.0, kr_nonwet=0.0, dkrn_dpsic=0.0;
 
   // capillary pressure potential
-  psiC = (rho_air/rho_water)*u_air - u_water;
+  psiC = u_air - u_water; //(rho_air/rho_water)*
 
   // --- PSK block selection ---
   if (PSK_TYPE == 0) {
@@ -212,7 +211,7 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
            thetaW, DthetaW_DpsiC, kr_wet, dkrw_dpsic, kr_nonwet, dkrn_dpsic);
   }
 
-  // --- compressibility by phase (unchanged pattern) ---
+  // --- compressibility by phase  ---
   double rhom, drhom;
   if (phase==0) {
     rhom  = rho_water * std::exp(beta_water * u_water);
@@ -230,7 +229,7 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
   // chain rule factor for active dof
   const double dpsiC_du = (phase==0) ? -1.0 : (rho_air/rho_water);
 
-  // mass term and derivative (kept with your sign convention using dpsiC_du)
+  // mass term and derivative 
   const double thetaS = thetaR + thetaSR;
   if (phase==0){
     m  = rhom * thetaW;
@@ -353,7 +352,7 @@ inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz]
 //       sqrt_sBarStar = sqrt_sBar;
 //       if (sqrt_sBar < 1.0e-8) sqrt_sBarStar = 1.0e-8;
 //       /* CHANGED: branch relative permeability by phase
-//        Water (wetting): keep your original KWr & derivative
+//        Water (wetting): 
 //        Air (non-wetting): Mualem–VG style k_rn = sqrt(1-se) * (1 - se^{1/m})^{2m}
 //        with analytic derivative via chain rule
 //     */
@@ -1667,6 +1666,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     std::valarray<double> u_free_dof_air(numDOFs);
     std::valarray<double> u_free_dof_old_air(numDOFs);
 
+    const xt::pyarray<int>& r_l2g_phase = (phase==0) ? r_l2g_water : r_l2g_air;
+
 
     std::valarray<double> ML2(numDOFs);
 
@@ -1680,11 +1681,29 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           u_free_dof[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
           u_free_dof_old[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
 
-          u_free_dof_water[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
-          u_free_dof_old_water[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
+          u_free_dof_water[r_l2g_water.data()[eN_nDOF_trial_element + j]]     = u_dof_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
+          u_free_dof_old_water[r_l2g_water.data()[eN_nDOF_trial_element + j]] = u_dof_old_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
 
           u_free_dof_air[r_l2g_air.data()[eN_nDOF_trial_element + j]] = u_dof_air.data()[u_l2g_air.data()[eN_nDOF_trial_element + j]]; 
-          u_free_dof_old[r_l2g_air.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g_air.data()[eN_nDOF_trial_element + j]];
+          u_free_dof_old_air[r_l2g_air.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g_air.data()[eN_nDOF_trial_element + j]];
+
+        //   std::cout
+        // << "[EV] phase=" << phase
+        // << " eN=" << eN << " j=" << j
+        // << " | r_l2g=" << r_l2g.data()[eN_nDOF_trial_element + j]
+        // << " u_l2g=" << u_l2g.data()[eN_nDOF_trial_element + j]
+        // << " | u_dof_air=" << u_dof_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]]
+        // << " u_dof_old_air=" << u_dof_old_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]]
+        // << " | r_l2g_water=" << r_l2g_water.data()[eN_nDOF_trial_element + j]
+        // << " u_l2g_water=" << u_l2g_water.data()[eN_nDOF_trial_element + j]
+        // << " | r_l2g_air=" << r_l2g_air.data()[eN_nDOF_trial_element + j]
+        // << " u_l2g_air=" << u_l2g_air.data()[eN_nDOF_trial_element + j]
+        // << " | u_dof_water=" << u_dof_water.data()[u_l2g_water.data()[eN_nDOF_trial_element + j]]
+        // << " u_dof_old_water=" << u_dof_old_water.data()[u_l2g_water.data()[eN_nDOF_trial_element + j]]
+        // << " | active_u_free=" << u_free_dof[r_l2g.data()[eN_nDOF_trial_element + j]]
+        // << " active_u_free_old=" << u_free_dof_old[r_l2g.data()[eN_nDOF_trial_element + j]]
+        // << std::endl;
+
 
 
         } else // air
@@ -1692,11 +1711,29 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           u_free_dof_water[r_l2g_water.data()[eN_nDOF_trial_element + j]] = u_dof_water.data()[u_l2g_water.data()[eN_nDOF_trial_element + j]]; 
           u_free_dof_old_water[r_l2g_water.data()[eN_nDOF_trial_element + j]] = u_dof_old_water.data()[u_l2g_water.data()[eN_nDOF_trial_element + j]];
 
-          u_free_dof_air[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof_air.data()[u_l2g.data()[u_l2g.data()[eN_nDOF_trial_element + j]]];
-          u_free_dof_old_air[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g.data()[u_l2g.data()[eN_nDOF_trial_element + j]]];          
+          u_free_dof_air[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
+          u_free_dof_old_air[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]];          
 
-          u_free_dof[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof_air.data()[u_l2g.data()[u_l2g.data()[eN_nDOF_trial_element + j]]];
-          u_free_dof_old[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g.data()[u_l2g.data()[eN_nDOF_trial_element + j]]];
+          u_free_dof[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
+          u_free_dof_old[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old_air.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
+
+        //    std::cout
+        // << "[EV] phase=" << phase
+        // << " eN=" << eN << " j=" << j
+        // << " | r_l2g=" << r_l2g.data()[eN_nDOF_trial_element + j]
+        // << " u_l2g=" << u_l2g.data()[eN_nDOF_trial_element + j]
+        // << " | u_dof_water=" << u_dof_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]]
+        // << " u_dof_old_water=" << u_dof_old_water.data()[u_l2g.data()[eN_nDOF_trial_element + j]]
+        // << " | r_l2g_water=" << r_l2g_water.data()[eN_nDOF_trial_element + j]
+        // << " u_l2g_water=" << u_l2g_water.data()[eN_nDOF_trial_element + j]
+        // << " | r_l2g_air=" << r_l2g_air.data()[eN_nDOF_trial_element + j]
+        // << " u_l2g_air=" << u_l2g_air.data()[eN_nDOF_trial_element + j]
+        // << " | u_dof_air=" << u_dof_air.data()[u_l2g_air.data()[eN_nDOF_trial_element + j]]
+        // << " u_dof_old_air=" << u_dof_old_air.data()[u_l2g_air.data()[eN_nDOF_trial_element + j]]
+        // << " | active_u_free=" << u_free_dof[r_l2g.data()[eN_nDOF_trial_element + j]]
+        // << " active_u_free_old=" << u_free_dof_old[r_l2g.data()[eN_nDOF_trial_element + j]]
+        // << std::endl;
+
         }
         // u_free_dof[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
         // u_free_dof_old[r_l2g.data()[eN_nDOF_trial_element + j]] = u_dof_old.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
@@ -1787,12 +1824,14 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         double u_w =0.0, u_a =0.0;
         double un_w =0.0, un_a =0.0;
         
-        ck.valFromDOF(u_dof_water.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_w);
-        ck.valFromDOF(u_dof_air.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_a);
+        ck.valFromDOF(u_dof_water.data(), &u_l2g_water.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_w);
+        ck.valFromDOF(u_dof_air.data(), &u_l2g_air.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u_a);
         
         //get the solution at quad point at tn and tnm1 for entropy viscosity
-        ck.valFromDOF(u_dof_old_water.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], un_w);
-        ck.valFromDOF(u_dof_old_air.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], un_a);
+        ck.valFromDOF(u_dof_old_water.data(), &u_l2g_water.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], un_w);
+        ck.valFromDOF(u_dof_old_air.data(), &u_l2g_air.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], un_a);
+
+
 
         //get the solution gradients at tn for entropy viscosity
         ck.gradTrialFromRef(&u_grad_trial_ref.data()[k * nDOF_trial_element * nSpace], jacInv, u_grad_trial);
@@ -1904,7 +1943,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       ////////////////
       for (int i = 0; i < nDOF_test_element; i++) {
         int eN_i = eN * nDOF_test_element + i;
-        int gi   = offset_u + stride_u * r_l2g.data()[eN_i]; //global i-th index
+        //int gi   = offset_u + stride_u * r_l2g.data()[eN_i]; //global i-th index
+        int gi   = offset_u + stride_u * r_l2g_phase.data()[eN_i]; //global i-th index
         // distribute entropy_residual
         if (STABILIZATION_TYPE == STABILIZATION::EV_Stab) // EV Stab
           global_entropy_residual[gi] += element_entropy_residual[i];
@@ -1973,11 +2013,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         //load the boundary values(Need to take seperate boundary values for each phase) :: will come back later
         //
-        double bc_u_w_ext = isDOFBoundary_u_water.data()[ebNE_kb] * ebqe_bc_u_ext.data()[ebNE_kb] + (1 - isDOFBoundary_u_water.data()[ebNE_kb]) * u_w_ext;
-        double bc_u_a_ext = isDOFBoundary_u_air.data()[ebNE_kb] * ebqe_bc_u_ext.data()[ebNE_kb] + (1 - isDOFBoundary_u_air.data()[ebNE_kb]) * u_a_ext;
-        
-        bc_u_ext = (phase==0) ? bc_u_w_ext : bc_u_a_ext;
-        
+        double bc_u_w_ext = isDOFBoundary_u_water.data()[ebNE_kb] * ebqe_bc_u_ext_water.data()[ebNE_kb] + (1 - isDOFBoundary_u_water.data()[ebNE_kb]) * u_w_ext;
+        double bc_u_a_ext = isDOFBoundary_u_air.data()[ebNE_kb] * ebqe_bc_u_ext_air.data()[ebNE_kb] + (1 - isDOFBoundary_u_air.data()[ebNE_kb]) * u_a_ext;
+               
         //
         //calculate the pde coefficients using the solution and the boundary values for the solution
         //
