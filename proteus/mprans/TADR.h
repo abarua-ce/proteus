@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <valarray>
+#include <random>
 #include "CompKernel.h"
 #include "ModelFactory.h"
 #include "ArgumentsDict.h"
@@ -62,6 +63,7 @@ namespace proteus
     virtual void calculateResidual(arguments_dict& args)=0;
     virtual void calculateJacobian(arguments_dict& args)=0;
     virtual void FCTStep(arguments_dict& args)=0;
+    virtual void Update_concentration_RWPT(arguments_dict& args)=0;
   };
 
   template<class CompKernelType,
@@ -436,6 +438,318 @@ inline
         fluxJacobian = 0.0;
     }
 }
+
+///////////////////////////ADD RWPT////////////////////////////////////
+
+    inline double normal_random()
+    {
+      static thread_local std::mt19937 generator;
+      static thread_local std::normal_distribution<double> distribution(0.0,1.0);
+      return distribution(generator);
+    }
+    // Minimal lower-triangular Cholesky; assumes SPD and succeeds.
+    inline void chol_lower(const double* A, double* L) {
+      for (int i=0;i<nSpace;i++)
+        for (int j=0;j<nSpace;j++)
+          L[i*nSpace+j] = 0.0;
+
+      for (int i=0;i<nSpace;i++) {
+        for (int j=0;j<=i;j++) {
+          double s = A[i*nSpace+j];
+          for (int k=0;k<j;k++) s -= L[i*nSpace+k]*L[j*nSpace+k];
+          if (i==j) L[i*nSpace+j] = std::sqrt(s);
+          else      L[i*nSpace+j] = s / L[j*nSpace+j];
+        }
+      }
+    }
+
+  // --- small fixed-size inverse for nSpace=1/2/3 ---
+inline bool invert_small_matrix(const double* A, double* Ainv)
+{
+  if constexpr (nSpace == 1) {
+    const double det = A[0];
+    if (std::fabs(det) < 1e-16) return false;
+    Ainv[0] = 1.0 / det;
+    return true;
+  } else if constexpr (nSpace == 2) {
+    const double a=A[0], b=A[1], c=A[2], d=A[3];
+    const double det = a*d - b*c;
+    if (std::fabs(det) < 1e-16) return false;
+    const double invDet = 1.0/det;
+    Ainv[0] =  d*invDet; Ainv[1] = -b*invDet;
+    Ainv[2] = -c*invDet; Ainv[3] =  a*invDet;
+    return true;
+  } else { // nSpace==3
+    const double a=A[0], b=A[1], c=A[2],
+                 d=A[3], e=A[4], f=A[5],
+                 g=A[6], h=A[7], i=A[8];
+    const double A11 =  (e*i - f*h);
+    const double A12 = -(d*i - f*g);
+    const double A13 =  (d*h - e*g);
+    const double det = a*A11 + b*A12 + c*A13;
+    if (std::fabs(det) < 1e-16) return false;
+    const double invDet = 1.0/det;
+    Ainv[0] = A11*invDet;
+    Ainv[1] = (c*h - b*i)*invDet;
+    Ainv[2] = (b*f - c*e)*invDet;
+    Ainv[3] = A12*invDet;
+    Ainv[4] = (a*i - c*g)*invDet;
+    Ainv[5] = (c*d - a*f)*invDet;
+    Ainv[6] = A13*invDet;
+    Ainv[7] = (b*g - a*h)*invDet;
+    Ainv[8] = (a*e - b*d)*invDet;
+    return true;
+  }
+}
+
+// --- conservative P1 deposit: particles -> solution DOFs ---
+inline void deposit_particles_to_nodes_conservative(
+    const double*              p_X,                     // [pid * nSpace]
+    const int                  pid,
+    const double               m_p,                     // mass per particle
+    const xt::pyarray<double>& mesh_dof,                // geometry coords [nNodes,3]
+    const xt::pyarray<int>&    mesh_l2g,                // geom connectivity [nElem, nSpace+1]
+    const xt::pyarray<int>&    u_l2g,                   // solution connectivity [nElem, nSpace+1]
+    const int                  nElements_global,
+    const int                  mesh_nDOF_trial_element, // == nSpace+1
+    const int                  u_nDOF_trial_element,    // == nSpace+1
+    xt::pyarray<double>&       b,                       // RHS mass per DOF (accumulate)
+    long long&                 n_outside)
+{
+  if (mesh_nDOF_trial_element != nSpace+1 || u_nDOF_trial_element != nSpace+1) {
+    std::cerr << "[RWPT][deposit] ERROR: need P1 simplex; got mesh="
+              << mesh_nDOF_trial_element << " u=" << u_nDOF_trial_element
+              << " while nSpace+1=" << (nSpace+1) << "\n";
+    return;
+  }
+
+  const double tol = -1e-12; // allow tiny negative lambda due to FP error
+  double total_mass_RHS = 0.0;
+
+  for (int p=0; p<pid; ++p) {
+    const double* xp = &p_X[p*nSpace];
+    bool placed = false;
+
+    for (int e=0; e<nElements_global && !placed; ++e) {
+      const int* l2g_geom = &mesh_l2g.data()[e*mesh_nDOF_trial_element];
+
+      // vertices X0..Xd
+      double X0[nSpace];
+      for (int i=0;i<nSpace;++i)
+        X0[i] = mesh_dof.data()[l2g_geom[0]*3 + i];
+
+      // A = [X1-X0, ..., Xd-X0]
+      double A[nSpace*nSpace];
+      for (int col=0; col<nSpace; ++col) {
+        const int a = col+1;
+        for (int i=0;i<nSpace;++i) {
+          const double Xi = mesh_dof.data()[l2g_geom[a]*3 + i];
+          A[i*nSpace + col] = Xi - X0[i];
+        }
+      }
+
+      double Ainv[nSpace*nSpace];
+      if (!invert_small_matrix(A, Ainv))
+        continue; // degenerate element
+
+      // alpha = A^{-1}(xp - X0)
+      double rhs[nSpace];
+      for (int i=0;i<nSpace;++i) rhs[i] = xp[i] - X0[i];
+      double alpha[nSpace];
+      for (int i=0;i<nSpace;++i) {
+        double s=0; for (int j=0;j<nSpace;++j) s += Ainv[i*nSpace+j]*rhs[j];
+        alpha[i] = s;
+      }
+
+      // barycentric lambdas
+      double lambda[nSpace+1];
+      double sumA=0; for (int i=0;i<nSpace;++i) sumA += alpha[i];
+      lambda[0] = 1.0 - sumA;
+      for (int i=0;i<nSpace;++i) lambda[i+1] = alpha[i];
+
+      // inside test
+      bool inside=true;
+      for (int i=0;i<nSpace+1;++i) if (lambda[i] < tol) { inside=false; break; }
+      if (!inside) continue;
+
+      // deposit to solution DOFs
+      const int* l2g_u = &u_l2g.data()[e*u_nDOF_trial_element];
+      for (int j=0;j<u_nDOF_trial_element;++j) {
+        const int I = l2g_u[j];
+        const double add = m_p * lambda[j];
+        b.data()[I] += add;
+        total_mass_RHS += add;
+      }
+      placed = true;
+    } // elements
+
+    if (!placed) ++n_outside;
+  } // particles
+
+  std::cout << "[RWPT] deposit: pid=" << pid
+            << " outside=" << n_outside
+            << " total_mass_RHS=" << std::setprecision(16) << total_mass_RHS
+            << " (should be pid * m_p = " << (static_cast<double>(pid)*m_p) << ")\n";
+}
+
+
+    //  inline void displacement(const double v[nSpace],
+    //                           const double grad_theta[nSpace],
+    //                           const double divD[nSpace],
+    //                           const double theta,
+    //                           const double alpha_L,
+    //                           const double alpha_T,
+    //                           const double Dm,
+    //                           const double dt,
+    //                           const double Z[nSpace],
+    //                           double dx[nSpace])
+    //   {
+    //     // 1) Velocity magnitude and unit vector e
+    //     double vmag = 0.0;
+    //     for (int i=0;i<nSpace;i++) vmag += v[i]*v[i];
+    //     vmag = std::sqrt(vmag);
+
+    //     double e[nSpace];
+    //     if (vmag > 0.0) {
+    //       for (int i=0;i<nSpace;i++) e[i] = v[i]/vmag;
+    //     } else {
+    //       for (int i=0;i<nSpace;i++) e[i] = 0.0;
+    //     }
+
+    //     // 2) Dispersion tensor D = Dm I + vmag*( alpha_T I + (alpha_L-alpha_T) e e^T )
+    //     double D[nSpace*nSpace];
+    //     for (int I=0; I<nSpace; ++I) {
+    //       for (int J=0; J<nSpace; ++J) {
+    //         const double deltaIJ = (I==J) ? 1.0 : 0.0;
+    //         D[I*nSpace+J] =
+    //             Dm * deltaIJ
+    //           + vmag * ( alpha_T*deltaIJ + (alpha_L - alpha_T)*e[I]*e[J] );
+    //       }
+    //     }
+
+    //     // 3) Drift A = v + divD + (1/theta) D grad_theta
+    //     double D_grad_theta[nSpace];
+    //     for (int i=0;i<nSpace;i++) {
+    //       double s = 0.0;
+    //       for (int j=0;j<nSpace;j++) s += D[i*nSpace+j]*grad_theta[j];
+    //       D_grad_theta[i] = s;
+    //     }
+    //     double A[nSpace];
+    //     for (int i=0;i<nSpace;i++) {
+    //       A[i] = v[i] + divD[i] + (D_grad_theta[i]/theta);
+    //     }
+
+    //     // 4) Cholesky of M = 2D -> L (lower)
+    //     double M[nSpace*nSpace];
+    //     for (int i=0;i<nSpace;i++)
+    //       for (int j=0;j<nSpace;j++)
+    //         M[i*nSpace+j] = 2.0 * D[i*nSpace+j];
+
+    //     double L[nSpace*nSpace];
+    //     chol_lower(M, L);
+
+    //     // 5) Stochastic increment eta = L * Z * sqrt(dt)
+    //     const double sdt = std::sqrt(dt);
+    //     double eta[nSpace];
+    //     for (int i=0;i<nSpace;i++) {
+    //       double s = 0.0;
+    //       for (int j=0;j<=i;j++) s += L[i*nSpace+j]*Z[j];
+    //       eta[i] = s * sdt;
+    //     }
+
+    //     // 6) Final displacement
+    //     for (int i=0;i<nSpace;i++) dx[i] = A[i]*dt + eta[i];
+    //   }
+
+inline void displacement(const double v[nSpace],
+                         const double grad_theta[nSpace],
+                         const double divD[nSpace],
+                         const double theta,
+                         const double alpha_L,
+                         const double alpha_T,
+                         const double Dm,
+                         const double dt,
+                         const double Z[nSpace],   // Z ~ N(0,I)
+                         double dx[nSpace])
+{
+  // ---- guards -------------------------------------------------------------
+  const double eps     = 1e-14;
+  const double sdt     = (dt > 0.0) ? std::sqrt(dt) : 0.0;
+  const double theta_s = (theta > eps) ? theta : 1.0;  // safe θ in drift
+
+  // ---- velocity magnitude and unit direction e ----------------------------
+  double vmag2 = 0.0;
+  for (int i=0;i<nSpace;++i) vmag2 += v[i]*v[i];
+  const double vmag = std::sqrt(vmag2);
+
+  double e[nSpace] = {0.0};
+  if (vmag > eps) {
+    for (int i=0;i<nSpace;++i) e[i] = v[i]/vmag;
+  } else {
+    // no flow: pick arbitrary unit vector (x-axis)
+    e[0] = 1.0;
+    for (int i=1;i<nSpace;++i) e[i] = 0.0;
+  }
+
+  // ---- dispersion scalars (principal values) ------------------------------
+  const double DL = std::max(0.0, Dm + alpha_L*vmag);  // along e
+  const double DT = std::max(0.0, Dm + alpha_T*vmag);  // transverse
+
+  // ---- drift term A = v + divD + (1/θ) D ∇θ --------------------------------
+  double e_dot_grad = 0.0;
+  for (int i=0;i<nSpace;++i) e_dot_grad += e[i]*grad_theta[i];
+
+  double D_grad_theta[nSpace] = {0.0};
+  for (int i=0;i<nSpace;++i) {
+    D_grad_theta[i] = Dm*grad_theta[i]
+                    + vmag*( alpha_T*grad_theta[i]
+                           + (alpha_L - alpha_T)*e_dot_grad*e[i] );
+  }
+
+  double A[nSpace] = {0.0};
+  for (int i=0;i<nSpace;++i)
+    A[i] = v[i] + divD[i] + D_grad_theta[i]/theta_s;
+
+  double t1[nSpace] = {0.0}, t2[nSpace] = {0.0};
+  if (nSpace >= 2) {
+    // pick a vector not colinear with e
+    if (std::fabs(e[0]) < 0.9) { t1[0]=0; t1[1]= (nSpace>2? e[2]:0); t1[2]= (nSpace>2? -e[1]:0); }
+    else                        { t1[0]= (nSpace>2? -e[2]:0); t1[1]=0; t1[2]= e[0]; }
+
+    // normalize t1
+    double n1 = 0.0; for (int i=0;i<nSpace;++i) n1 += t1[i]*t1[i];
+    n1 = std::sqrt(std::max(n1,0.0));
+    if (n1 > eps) for (int i=0;i<nSpace;++i) t1[i] /= n1; else { t1[0]=0; t1[1]=1; if(nSpace>2) t1[2]=0; }
+
+    // t2 = e x t1 (only meaningful for 3D; in 2D we keep t2=0)
+    if (nSpace == 3) {
+      t2[0] = e[1]*t1[2] - e[2]*t1[1];
+      t2[1] = e[2]*t1[0] - e[0]*t1[2];
+      t2[2] = e[0]*t1[1] - e[1]*t1[0];
+    }
+  }
+  // ---- stochastic displ. dW ~ N(0,2D dt) via principal axes ---------------
+  const double sigmaL = std::sqrt(2.0*DL)*sdt;
+  const double sigmaT = std::sqrt(2.0*DT)*sdt;
+
+  // Compose random vector: Z[0] along e, Z[1] (and Z[2]) transverse
+  double dRand[nSpace] = {0.0};
+  for (int i=0;i<nSpace;++i) {
+    dRand[i]  = sigmaL * Z[0] * e[i];
+    if (nSpace >= 2) dRand[i] += sigmaT * Z[1] * t1[i];
+    if (nSpace == 3) dRand[i] += sigmaT * Z[2] * t2[i];
+  }
+
+  // ---- final displacement --------------------------------------------------
+  for (int i=0;i<nSpace;++i) dx[i] = A[i]*dt + dRand[i];
+
+  // ---- last-resort NaN/Inf guard ------------------------------------------
+  for (int i=0;i<nSpace;++i)
+    if (!std::isfinite(dx[i])) dx[i] = 0.0;
+}
+
+
+
 
  void calculateResidual(arguments_dict& args)
     {
@@ -2097,7 +2411,457 @@ inline
         limited_solution.data()[i] = uLow.data()[i] + 1./lumped_mass_matrix.data()[i]*ith_Limiter_times_FluxCorrectionMatrix;
       }
     }//FCTStep
-  };//TADR
+
+
+    // NOTE: expects q_x to be a C-contiguous buffer with trailing dimension == nSpace,
+// e.g. Python side: q['x'].shape == (nElements_global*nQuadraturePoints_element, nSpace)
+// or (nElements_global, nQuadraturePoints_element, nSpace) with order='C'.
+
+
+
+void Update_concentration_RWPT(arguments_dict& args)
+{
+  const double dt = args.scalar<double>("dt");
+
+  // --- mesh / FE ---
+  xt::pyarray<double>& mesh_trial_ref      = args.array<double>("mesh_trial_ref");
+  xt::pyarray<double>& mesh_grad_trial_ref = args.array<double>("mesh_grad_trial_ref");
+  xt::pyarray<double>& mesh_dof            = args.array<double>("mesh_dof");
+  xt::pyarray<int>&    mesh_l2g            = args.array<int>("mesh_l2g");
+  xt::pyarray<double>& dV_ref              = args.array<double>("dV_ref");
+  xt::pyarray<double>& u_trial_ref         = args.array<double>("u_trial_ref");
+  xt::pyarray<double>& u_grad_trial_ref    = args.array<double>("u_grad_trial_ref");
+  xt::pyarray<double>& u_dof               = args.array<double>("u_dof");
+  xt::pyarray<int>&    u_l2g               = args.array<int>("u_l2g");
+  const int            nElements_global    = args.scalar<int>("nElements_global");
+
+  // --- qp fields ---
+  xt::pyarray<double>& q_u        = args.array<double>("q_u");        // concentration C at qp
+  xt::pyarray<double>& q_porosity = args.array<double>("q_porosity"); // porosity at qp
+  xt::pyarray<double>& velocity   = args.array<double>("velocity");   // velocity at qp
+
+  // --- optional inputs for grad porosity (currently unused, grad_phi set to 0) ---
+  xt::pyarray<int>&    phi_l2g    = args.array<int>("phi_l2g");
+
+  // --- parameters ---
+  const double mass_per_particle = args.scalar<double>("mass_per_particle");
+  const double alphaL_val        = args.scalar<double>("alpha_L");
+  const double alphaT_val        = args.scalar<double>("alpha_T");
+  const double Dm_val            = args.scalar<double>("Dm");
+
+  // --- per-qp outputs (pre-allocated) ---
+  xt::pyarray<double>& qp_dV    = args.array<double>("qp_dV");
+  xt::pyarray<double>& qp_mass  = args.array<double>("qp_mass");
+  xt::pyarray<int>&    qp_spawn = args.array<int>("qp_spawn");
+  xt::pyarray<double>& q_x      = args.array<double>("q_x");   // flattened in C order: [nQP_total * nSpace]
+
+  // --- projection data (pre-allocated) ---
+  xt::pyarray<double>& lumped_mass_matrix = args.array<double>("lumped_mass_matrix"); // ML (size: numDOFs)
+  xt::pyarray<double>& u_new              = args.array<double>("u_new");              // accumulator (size: numDOFs)
+  const int            numDOFs            = args.scalar<int>("numDOFs");
+
+  // ---------- DEBUG: input u_dof stats ----------
+  {
+    double umin = 1e300, umax = -1e300;
+    for (int I = 0; I < numDOFs; ++I) {
+      const double v = u_dof.data()[I];
+      if (v < umin) umin = v;
+      if (v > umax) umax = v;
+    }
+    const int showN = (numDOFs < 5 ? numDOFs : 5);
+    std::cerr << "[RWPT] u_dof(in) min=" << umin << " max=" << umax << " head:";
+    for (int i = 0; i < showN; ++i) std::cerr << " " << u_dof.data()[i];
+    std::cerr << " | mpp=" << mass_per_particle << "\n";
+  }
+
+  // clear qp outputs
+  std::fill(qp_dV.begin(),    qp_dV.end(),    0.0);
+  std::fill(qp_mass.begin(),  qp_mass.end(),  0.0);
+  std::fill(qp_spawn.begin(), qp_spawn.end(), 0);
+
+  // ---------------- PASS 1: compute qp stats & spawn counts, record qp coords ----------------
+  long long N_total = 0; // total particles to spawn this step
+
+  // DEBUG accumulators for PASS 1
+  long long qps_with_spawn = 0;
+  int       max_n_particles = 0;
+  double    max_u_qp = 0.0, max_m_qp_init = 0.0, sum_m_qp_init = 0.0;
+  double    lambda_sum = 0.0;          // new: sum of all λ over qps
+  long long qps_ge1    = 0;            // new: qps where λ ≥ 1
+  int       printed_qp = 0;            // print only a few qp samples to avoid spam
+  const int PRINT_QP   = 5;
+
+  for (int eN = 0; eN < nElements_global; ++eN)
+  {
+    for (int k = 0; k < nQuadraturePoints_element; ++k)
+    {
+      const int eN_k                  = eN * nQuadraturePoints_element + k;
+      const int eN_k_nSpace           = eN_k * nSpace;
+      const int eN_nDOF_trial_element = eN * nDOF_trial_element;
+
+      // element mapping + qp coordinates
+      double jac[nSpace*nSpace], jacInv[nSpace*nSpace], jacDet, x=0.0, y=0.0, z=0.0;
+      ck.calculateMapping_element(eN, k,
+                                  mesh_dof.data(), mesh_l2g.data(),
+                                  mesh_trial_ref.data(), mesh_grad_trial_ref.data(),
+                                  jac, jacDet, jacInv, x,y,z);
+
+      // store qp coordinates in q_x (C order, trailing dim = nSpace)
+      const int qFlat = eN*nQuadraturePoints_element + k;
+      double* qx = &q_x.data()[ qFlat * nSpace ];
+      qx[0] = x;
+      if (nSpace > 1) qx[1] = y;
+      if (nSpace > 2) qx[2] = z;
+
+      // qp volume weight: ensure positive (dV_ref may carry sign on some refs)
+      const double dV = std::fabs(jacDet * dV_ref.data()[k]);
+      qp_dV.data()[eN_k] = dV;
+
+      // interpolate concentration at qp
+      double u_qp = 0.0;
+      ck.valFromDOF(u_dof.data(),
+                    &u_l2g.data()[eN_nDOF_trial_element],
+                    &u_trial_ref.data()[k*nDOF_trial_element],
+                    u_qp);
+
+      // include porosity in initial mass (consistent with PASS 4)
+      const double phi        = q_porosity.data()[eN_k];
+      const double m_qp_init  = u_qp * phi * dV;   // mass at this qp
+      qp_mass.data()[eN_k]    = m_qp_init;
+
+      // particles to spawn at this qp
+      const double lambda = (mass_per_particle > 0.0) ? (m_qp_init / mass_per_particle) : 0.0;
+      lambda_sum += lambda;
+      if (lambda >= 1.0) qps_ge1++;
+
+      // ---- MODIFIED: stochastic rounding instead of pure floor ----
+      const double base = std::floor(std::max(lambda, 0.0));
+      const double frac = std::max(lambda - base, 0.0);
+      const double u01  = static_cast<double>(std::rand()) / static_cast<double>(RAND_MAX); // [0,1)
+      const int    n_particles = static_cast<int>(base + (u01 < frac ? 1 : 0));
+      // -------------------------------------------------------------
+
+      qp_spawn.data()[eN_k] = n_particles;
+      N_total              += static_cast<long long>(n_particles);
+
+      // ---------- DEBUG: track and sample-print ----------
+      if (n_particles > 0) qps_with_spawn++;
+      if (n_particles > max_n_particles) max_n_particles = n_particles;
+      if (u_qp > max_u_qp) max_u_qp = u_qp;
+      if (m_qp_init > max_m_qp_init) max_m_qp_init = m_qp_init;
+      sum_m_qp_init += m_qp_init;
+
+      // print first few qp details (element 0 preferred) to see n_particles, u_qp, dV, m_qp_init
+      if (printed_qp < PRINT_QP && eN == 0) {
+        std::cout << "[RWPT] PASS1 sample qp #" << printed_qp
+                  << " (e=" << eN << ", k=" << k << "): "
+                  << "u_qp=" << u_qp << " dV=" << dV
+                  << " phi=" << phi << " m_qp_init=" << m_qp_init
+                  << " lambda=" << lambda << " n_particles=" << n_particles << "\n";
+        printed_qp++;
+      }
+    }
+  }
+
+  // ---------- DEBUG: PASS 1 summary ----------
+  std::cout << "[RWPT] PASS1 summary: "
+            << "N_total=" << N_total
+            << " qps_with_spawn=" << qps_with_spawn
+            << " qps_ge1=" << qps_ge1
+            << " lambda_sum=" << lambda_sum
+            << " max(n_particles)=" << max_n_particles
+            << " max(u_qp)=" << max_u_qp
+            << " max(m_qp_init)=" << max_m_qp_init
+            << " sum(m_qp_init)=" << sum_m_qp_init << "\n";
+
+  // ---------------- PASS 2: spawn & move particles (local, no args for p_X/p_qp) --------------
+  const long long N_cap = (N_total > 0) ? N_total : 0;
+  std::vector<double> p_X(static_cast<size_t>(N_cap) * nSpace, 0.0); // positions after move
+  std::vector<int>    p_qp(static_cast<size_t>(N_cap), 0);           // source qp index
+  int pid = 0;
+
+  for (int eN = 0; eN < nElements_global; ++eN)
+  {
+    for (int k = 0; k < nQuadraturePoints_element; ++k)
+    {
+      const int eN_k        = eN * nQuadraturePoints_element + k;
+      const int eN_k_nSpace = eN_k * nSpace;
+
+      const int n_particles = qp_spawn.data()[eN_k];
+      if (n_particles <= 0) continue;
+
+      // qp coordinates
+      double xq[3] = {0.0, 0.0, 0.0};
+      xq[0] = q_x.data()[eN_k_nSpace + 0];
+      if (nSpace > 1) xq[1] = q_x.data()[eN_k_nSpace + 1];
+      if (nSpace > 2) xq[2] = q_x.data()[eN_k_nSpace + 2];
+
+      // qp velocity
+      double v_qp[3] = {0.0, 0.0, 0.0};
+      for (int I = 0; I < nSpace; ++I)
+        v_qp[I] = velocity.data()[eN_k_nSpace + I];
+
+      // porosity and (currently zero) grad_phi + divD
+      const double phi = q_porosity.data()[eN_k];
+      double grad_phi[3] = {0.0, 0.0, 0.0};
+      double divD[3]     = {0.0, 0.0, 0.0};
+
+      for (int p = 0; p < n_particles; ++p)
+      {
+        // draw Z ~ N(0, I)
+        double Z[3] = {0.0, 0.0, 0.0};
+        for (int I = 0; I < nSpace; ++I)
+          Z[I] = normal_random();
+
+        // displacement over dt
+        double dxp[3] = {0.0, 0.0, 0.0};
+        displacement(v_qp, grad_phi, divD, phi,
+                     alphaL_val, alphaT_val, Dm_val,
+                     dt, Z, dxp);
+
+        // new particle position
+        double xp[3] = {xq[0], xq[1], xq[2]};
+        for (int I = 0; I < nSpace; ++I)
+          xp[I] += dxp[I];
+
+        // store
+        for (int I = 0; I < nSpace; ++I)
+          p_X[static_cast<size_t>(pid)*nSpace + I] = xp[I];
+        p_qp[static_cast<size_t>(pid)] = eN_k;
+
+        ++pid;
+      }
+    }
+  }
+
+  // ---------- DEBUG: PASS 2 summary ----------
+  std::cout << "[RWPT] PASS2 summary: particles_created(pid)=" << pid
+            << " (should equal N_total=" << N_total << ")\n";
+
+  std::fill(u_new.begin(), u_new.end(), 0.0);
+
+// 3b) Deposit each particle's mass m_p to the element nodes with P1 shape values
+  long long n_outside = 0;
+    deposit_particles_to_nodes_conservative(
+    p_X.data(),                // particle positions [pid * nSpace]
+    pid,                       // number of alive particles
+    mass_per_particle,         // m_p
+    mesh_dof,                  // node coordinates (shape: [nNodes, 3], uses first nSpace)
+    mesh_l2g,                  // element->node connectivity
+    u_l2g,                    // element->u_dof connectivity
+    nElements_global,          // number of elements
+    nSpace+1,
+    nDOF_trial_element,        // must be nSpace+1 for P1 simplex
+    u_new,                     // RHS accumulator b_I  (mass per node)
+    n_outside                  // counter for particles outside the mesh
+);
+if (pid > 0) {
+  double Mtot_RHS = 0.0;
+  for (int I = 0; I < numDOFs; ++I) Mtot_RHS += u_new.data()[I];
+  std::cout << "[RWPT] deposit: pid=" << pid
+            << " outside=" << n_outside
+            << " total_mass_RHS=" << std::setprecision(16) << Mtot_RHS
+            << " (should be pid * m_p = " << (static_cast<double>(pid)*mass_per_particle) << ")\n";
+}
+// Convert node mass to concentration using lumped mass matrix
+for (int I = 0; I < numDOFs; ++I) {
+  const double MLI = std::max(lumped_mass_matrix.data()[I], 1e-16);
+  u_dof.data()[I] = u_new.data()[I] / MLI;
+}
+
+// (Optional) Rebuild q_u and qp_mass from u_dof for diagnostics/output
+for (int eN = 0; eN < nElements_global; ++eN) {
+  const int* l2g_e = &u_l2g.data()[eN*nDOF_trial_element];
+  for (int k = 0; k < nQuadraturePoints_element; ++k) {
+    const int q = eN*nQuadraturePoints_element + k;
+    const double* Nk = &u_trial_ref.data()[k*nDOF_trial_element];
+
+    double val = 0.0;
+    for (int j = 0; j < nDOF_trial_element; ++j)
+      val += Nk[j] * u_dof.data()[ l2g_e[j] ];
+
+    q_u.data()[q] = val;
+    const double phi = q_porosity.data()[q];
+    const double dV  = qp_dV.data()[q];
+    qp_mass.data()[q] = val * phi * dV;
+  }
+}
+
+// Final stats
+{
+  double fmin = 1e300, fmax = -1e300;
+  for (int I = 0; I < numDOFs; ++I) {
+    const double v = u_dof.data()[I];
+    if (v < fmin) fmin = v;
+    if (v > fmax) fmax = v;
+  }
+  const int showN = (numDOFs < 5 ? numDOFs : 5);
+  std::cerr << "[RWPT] u_dof(out) min=" << fmin << " max=" << fmax << " head:";
+  for (int i = 0; i < showN; ++i) std::cerr << " " << u_dof.data()[i];
+  std::cerr << "\n";
+}
+}
+
+
+  // // ---------------- PASS 3: map particles to nearest global quadrature point -------------------
+  // const int nQP_total = nElements_global * nQuadraturePoints_element;
+
+  // for (int q = 0; q < std::min(5, nQP_total); ++q) {
+  //   std::cout << "[RWPT] q_x[" << q << "] = (";
+  //   for (int I=0; I<nSpace; ++I) {
+  //     if (I) std::cout << ", ";
+  //     std::cout << q_x.data()[q*nSpace + I];
+  //   }
+  //   std::cout << ")\n";
+  // }
+  // for (int p = 0; p < std::min(5, pid); ++p) {
+  //   std::cout << "[RWPT] p_X[" << p << "] = (";
+  //   for (int I=0; I<nSpace; ++I) {
+  //     if (I) std::cout << ", ";
+  //     std::cout << p_X[static_cast<size_t>(p)*nSpace + I];
+  //   }
+  //   std::cout << ")\n";
+  // }
+
+  // #pragma omp parallel for schedule(static)
+  // for (int p = 0; p < pid; ++p)
+  // {
+  //   const double* xpp = &p_X[static_cast<size_t>(p)*nSpace];
+
+  //   double best_d2 = 1.0e300;
+  //   int    best_q  = 0;
+
+  //   for (int q = 0; q < nQP_total; ++q)
+  //   {
+  //     const double* qx = &q_x.data()[q*nSpace];
+
+  //     double d2 = 0.0;
+  //     for (int I = 0; I < nSpace; ++I)
+  //     {
+  //       const double d = xpp[I] - qx[I];
+  //       d2 += d*d;
+  //     }
+  //     if (d2 <= best_d2)
+  //     {
+  //       best_d2 = d2;
+  //       best_q  = q;
+  //     }
+  //   }
+  //   p_qp[static_cast<size_t>(p)] = best_q;
+  // }
+
+//   // ---------------- PASS 4: counts → mass → concentration at each qp --------------------------
+//   xt::pyarray<int>& qp_counts = args.array<int>("qp_counts"); // pre-allocated: size nQP_total
+//   std::fill(qp_counts.begin(), qp_counts.end(), 0);
+
+//   #pragma omp parallel for schedule(static)
+//   for (int p = 0; p < pid; ++p)
+//   {
+//     const int q = p_qp[static_cast<size_t>(p)];
+//     if (0 <= q && q < nQP_total)
+//     {
+//       #pragma omp atomic
+//       qp_counts.data()[q] += 1;
+//     }
+//   }
+
+//   long long sum_counts = 0;
+//   int       max_count  = 0;
+//   for (int q = 0; q < nQP_total; ++q) {
+//     const int c = qp_counts.data()[q];
+//     sum_counts += c;
+//     if (c > max_count) max_count = c;
+//   }
+//   std::cout << "[RWPT] PASS4 counts: sum_counts=" << sum_counts
+//             << " max_count=" << max_count << "\n";
+
+//   #pragma omp parallel for schedule(static)
+//   for (int q = 0; q < nQP_total; ++q)
+//   {
+//     const double phi = q_porosity.data()[q];
+//     const double dV  = qp_dV.data()[q];
+//     const double m_q = static_cast<double>(qp_counts.data()[q]) * mass_per_particle;
+
+//     qp_mass.data()[q] = m_q;
+
+//     const double denom = phi * dV;
+//     q_u.data()[q] = (denom > 1.0e-16) ? (m_q / denom) : 0.0;
+//   }
+
+//   {
+//     const int PRINT_Q = 5;
+//     for (int q = 0; q < std::min(nQP_total, PRINT_Q); ++q) {
+//       std::cout << "[RWPT] PASS4 sample q=" << q
+//                 << " count=" << qp_counts.data()[q]
+//                 << " m_q=" << qp_mass.data()[q]
+//                 << " q_u=" << q_u.data()[q] << "\n";
+//     }
+//   }
+
+//   // ---------------- scatter back to DOFs (lumped projection with ML) --------------------------
+//   std::fill(u_new.begin(), u_new.end(), 0.0);
+
+//   for (int eN = 0; eN < nElements_global; ++eN)
+//   {
+//     const int* l2g_e = &u_l2g.data()[eN*nDOF_trial_element];
+
+//     for (int k = 0; k < nQuadraturePoints_element; ++k)
+//     {
+//       const int eN_k     = eN*nQuadraturePoints_element + k;
+//       const double w     = std::fabs(qp_dV.data()[eN_k]);            // ensure positive weight
+//       const double val   = q_u.data()[eN_k];                         // updated concentration at qp
+//       const double* Nk   = &u_trial_ref.data()[k*nDOF_trial_element];
+
+//       for (int j = 0; j < nDOF_trial_element; ++j)
+//       {
+//         const int    I  = l2g_e[j];
+//         const double Nj = Nk[j];
+//         u_new.data()[I] += Nj * (val * w);                           // b_i += ∫ N_i * u_h
+//       }
+//     }
+//   }
+
+//   // ---------- DEBUG: u_new (RHS) stats ----------
+//   {
+//     double bmin = 1e300, bmax = -1e300;
+//     for (int I = 0; I < numDOFs; ++I) {
+//       const double v = u_new.data()[I];
+//       if (v < bmin) bmin = v;
+//       if (v > bmax) bmax = v;
+//     }
+//     const int showN = (numDOFs < 5 ? numDOFs : 5);
+//     std::cerr << "[RWPT] u_new(RHS) min=" << bmin << " max=" << bmax << " head:";
+//     for (int i = 0; i < showN; ++i) std::cerr << " " << u_new.data()[i];
+//     std::cerr << "\n";
+//   }
+
+//   // finalize DOFs with precomputed lumped mass (same philosophy as FCTStep)
+//   for (int I = 0; I < numDOFs; ++I)
+//   {
+//     const double mI = (lumped_mass_matrix.data()[I] > 1.0e-16)
+//                       ? lumped_mass_matrix.data()[I] : 1.0e-16;
+//     u_dof.data()[I] = u_new.data()[I] / mI;
+//   }
+
+//   // ---------- DEBUG: u_dof (final) stats ----------
+//   {
+//     double fmin = 1e300, fmax = -1e300;
+//     for (int I = 0; I < numDOFs; ++I) {
+//       const double v = u_dof.data()[I];
+//       if (v < fmin) fmin = v;
+//       if (v > fmax) fmax = v;
+//     }
+//     const int showN = (numDOFs < 5 ? numDOFs : 5);
+//     std::cerr << "[RWPT] u_dof(out) min=" << fmin << " max=" << fmax << " head:";
+//     for (int i = 0; i < showN; ++i) std::cerr << " " << u_dof.data()[i];
+//     std::cerr << "\n";
+//   }
+// }
+
+
+
+};//TADR
+
 
 inline TADR_base* newTADR(int nSpaceIn,
                           int nQuadraturePoints_elementIn,
