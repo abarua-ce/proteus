@@ -415,6 +415,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
     //double anb_seepage_flux=0.0;
     double &anb_seepage_flux(args.scalar<double>("anb_seepage_flux"));
+    xt::pyarray<double> &q_velocity = args.array<double>("q_velocity");
     anb_seepage_flux = 0.0;
 
     //loop over elements to compute volume integrals and load them into element and global residual
@@ -463,6 +464,25 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         double Kr, dKr;
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
+        
+
+        // Darcy Velocity
+
+        double pressure_gradient[nSpace];
+        for (int J=0; J<nSpace; ++J)
+          pressure_gradient[J] = grad_u[J] + gravity.data()[J];
+
+        // for each row I, acc = sum_j (a_{Ij}/rho) * gp[j]
+        for (int I=0; I<nSpace; ++I) {
+          double acc = 0.0;
+          for (int ii = a_rowptr.data()[I]; ii < a_rowptr.data()[I+1]; ++ii) {
+            const int J = a_colind.data()[ii];
+            acc += (a[ii] / rho) * pressure_gradient[J];
+          }
+          // store as a vector field at this qp
+          velocity.data()[eN_k_nSpace + I] = -acc;
+          }
+        
         //
         //calculate time derivative at quadrature points
         //
@@ -557,6 +577,25 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], u_ext, m_ext, dm_ext, f_ext, df_ext, a_ext, da_ext, as_ext, Kr, dKr);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], bc_u_ext, bc_m_ext, bc_dm_ext, bc_f_ext, bc_df_ext, bc_a_ext, bc_da_ext, bc_as_ext, Kr, dKr);
+        
+        //
+        //Calculate Darcy velocity on exterior face : v_ext = -(a_ext/rho) * (grad_u_ext + gravity) ---
+        //
+        
+        double ext_pressure_gradient[nSpace];
+        for (int J=0; J<nSpace; ++J)
+          ext_pressure_gradient[J] = grad_u_ext[J] + gravity.data()[J];
+
+        for (int I=0; I<nSpace; ++I) {
+          double acc = 0.0;
+          for (int ii = a_rowptr.data()[I]; ii < a_rowptr.data()[I+1]; ++ii) {
+            const int J = a_colind.data()[ii];
+            acc += (a_ext[ii] / rho) * ext_pressure_gradient[J];
+          }
+          ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = -acc;  // store vector at this boundary qp
+        }
+
+
         //
         //calculate the numerical fluxes
         //
@@ -1196,7 +1235,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<double> &limited_solution          = args.array<double>("limited_solution");
 
     xt::pyarray<double> &anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
-    xt::pyarray<double> &q_velocity = args.array<double>("q_velocity");
+    //xt::pyarray<double> &q_velocity = args.array<double>("q_velocity");
     double &anb_seepage_flux(args.scalar<double>("anb_seepage_flux"));
     anb_seepage_flux = 0.0;
     xt::pyarray<int>    &csrRowIndeces_u_u                          = args.array<int>("csrRowIndeces_u_u");
@@ -1316,11 +1355,27 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              &KWs.data()[elementMaterialTypes[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
 
         // Darcy velocity calculation
-        for (int I = 0; I < nSpace; I++) { velocity_loc[I] = 0.0; }
-        for (int I = 0; I < nSpace; I++) {
-          for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * grad_u[J]; }
+        // for (int I = 0; I < nSpace; I++) { velocity_loc[I] = 0.0; }
+        // for (int I = 0; I < nSpace; I++) {
+        //   for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * grad_u[J]; }
+        // }
+        // for (int I = 0; I < nSpace; I++) { q_velocity.data()[eN_k_nSpace + I] = velocity_loc[I]; }
+
+
+
+                // v = - (a / rho) * (grad_u + g)
+        double pressure_gradient[nSpace];
+        for (int J = 0; J < nSpace; ++J)
+          pressure_gradient[J] = grad_u[J] + gravity.data()[J];
+
+        for (int I = 0; I < nSpace; ++I) {
+          double acc = 0.0;
+          for (int ii = a_rowptr.data()[I]; ii < a_rowptr.data()[I+1]; ++ii) {
+            const int J = a_colind.data()[ii];
+            acc += (a[ii] / rho) * pressure_gradient[J];
+          }
+          velocity.data()[eN_k_nSpace + I] = -acc;
         }
-        for (int I = 0; I < nSpace; I++) { q_velocity.data()[eN_k_nSpace + I] = velocity_loc[I]; }
 
         //
         //moving mesh
@@ -1447,6 +1502,22 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], un_ext, mn_ext, dmn_ext, fn_ext, dfn_ext, an_ext, dan_ext, asn_ext, bc_Krn, bc_dKrn);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], bc_u_ext, bc_m_ext, bc_dm_ext, bc_f_ext, bc_df_ext, bc_a_ext, bc_da_ext, bc_as_ext, bc_Kr_ext, bc_dKr_ext);
+        
+        //
+        //Calculate Darcy Velocity at external faces
+        //
+        double ext_pressure_gradient[nSpace];
+        for (int J = 0; J < nSpace; ++J)
+          ext_pressure_gradient[J] = grad_u_ext[J] + gravity.data()[J];
+
+        for (int I = 0; I < nSpace; ++I) {
+          double acc = 0.0;
+          for (int ii = a_rowptr.data()[I]; ii < a_rowptr.data()[I+1]; ++ii) {
+            const int J = a_colind.data()[ii];
+            acc += (a_ext[ii] / rho) * ext_pressure_gradient[J];
+          }
+          ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = -acc;
+        }
         //
         //calculate the numerical fluxes
         //

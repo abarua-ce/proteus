@@ -247,7 +247,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.SC=SC
         self.anb_seepage_flux= 0.00
         #self.anb_seepage_flux_n =0.0
-        variableNames=['pressure_head']
+        variableNames=['pressure_head', 'velocity']
         nc=1
         mass={0:{0:'nonlinear'}}
         advection={0:{0:'nonlinear'}}
@@ -946,6 +946,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.coefficients.forceStrongConditions:
             for cj in range(self.nc):
                 self.dirichletConditionsForceDOF[cj] = DOFBoundaryConditions(self.u[cj].femSpace,dofBoundaryConditionsSetterDict[cj],weakDirichletConditions=False)
+    def export_q_velocity_xdmf(self, tCount=None, init=False, name="velocity"):
+        qv = self.q['velocity']
+        #assert qv.ndim == 3, "q['velocity'] must be (nElements, nQuad, nComp)"
+
+        self.elementQuadratureDictionaryWriter.writeVectorFunctionXdmf_MonomialDGPK(
+            ar, qv, name, tCount=tCount, init=init
+        )
+
     def FCTStep(self):
         rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         limited_solution = np.zeros((len(rowptr) - 1),'d')
