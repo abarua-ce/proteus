@@ -466,69 +466,13 @@ class Coefficients(TC_base):
         self.model.auxTaylorGalerkinFlag = 1
         # Skip velocity field as a function check
         if hasattr(self.model, "updateVelocityFieldAsFunction"):
-            self.model.updateVelocityFieldAsFunction()
-        
-        # COMPUTE NEW VELOCITY (if given by user) #
-#        if self.model.hasVelocityFieldAsFunction:
-#            self.model.updateVelocityFieldAsFunction()
-         # Explicitly update velocity if grad(u) is available
-        if ('grad(u_v)', 0) in self.model.q:
-            self.model.q[('velocity', 0)] = self.model.q[('grad(u_v)', 0)]
-            #self.model.q[('velocity', 0)] = np.copy(self.model.q[('grad(u_v)', 0)])
-            logEvent(f"From pre Step:: Velocity updated in preStep: mean={self.model.q[('grad(u_v)', 0)].mean()}, "
-                 f"min={self.model.q[('grad(u_v)', 0)].min()}, max={self.model.q[('grad(u_v)', 0)].max()}")
-            if not np.any(self.model.q[('grad(u_v)', 0)]):
-                logEvent("Warning: grad(u_v) is zero, velocity will also be zero!")
-         # Log coefficients velocity fields
-        logEvent(f"Coefficients velocity field (q_v): "
-                 f"mean={np.mean(self.q_v)}, min={np.min(self.q_v)}, max={np.max(self.q_v)}")
-        logEvent(f"Coefficients boundary velocity field (ebqe_v): "
-                 f"mean={np.mean(self.ebqe_v)}, min={np.min(self.ebqe_v)}, max={np.max(self.ebqe_v)}")
-        # Compute velocity and update q_a_mod
-        nElements_global, nQuadraturePoints_element, _ = self.q_v.shape  # Extract dimensions from q_v
-
-        # Update q_a_mod (diffusion tensor) if initialized
-        if hasattr(self, 'q_a_mod') and self.q_a_mod is not None:
-            logEvent("Updating diffusion tensor q_a_mod in preStep...")
-            a_rowptr = self.sdInfo[(0, 0)][0]
-            a_colind = self.sdInfo[(0, 0)][1]
-            for eN in range(nElements_global):  # Loop over elements
-                for k in range(nQuadraturePoints_element):  # Loop over valid quadrature points
-                    #if eN >= self.q_v.shape[0] or k >= self.q_v.shape[1]:
-                    #    raise IndexError(f"Index out of bounds: eN={eN}, k={k}, q_v shape={self.q_v.shape}")
-                    # Access velocity and position
-                    velocity = self.q_v[eN, k, :] if self.q_v is not None else np.zeros(self.nd)
-                    #logEvent(f"D is: mean={np.mean(velocity)}, min={np.min(velocity)}, max={np.max(velo)}")
-
-                    #logEvent("velocity is ", f"{np.mean(velocity)}")
-                    v_mag = np.linalg.norm(velocity) 
-                    if v_mag > 1e-8:
-                        v_unit = velocity / v_mag
-                    else:
-                        v_unit = np.zeros_like(velocity)
-                    # Compute dispersion tensor
-                    dispersion_tensor = (
-                        self.Dm * np.eye(self.nd)  # Molecular diffusion
-                        + self.alpha_L * np.outer(v_unit, v_unit) * v_mag  # Longitudinal dispersion
-                        + self.alpha_T * v_mag * (np.eye(self.nd) - np.outer(v_unit, v_unit))  # Transverse dispersion
-                    )
-                    # Map the diffusion tensor to the sparsity pattern
-                    a_val = np.array([dispersion_tensor[row, col] for row, col in zip(a_rowptr[:-1], a_colind)])
-                    if a_val.shape == (a_rowptr[-1],):
-                        self.q_a_mod[eN, k, :] = a_val
-                    else:
-                        raise ValueError(f"Unexpected shape {a_val.shape} for a_val. Expected ({self.a_rowptr[-1]},)")
-                    #logEvent(f"D is: mean={np.mean(self.q_a_mod)}, min={np.min(self.q_a_mod)}, max={np.max(self.q_a_mod)}")
-
-        #if self.ebq_v is not None:
-        #    logEvent(f"Coefficients edge velocity field (ebq_v): "
-        #             f"mean={np.mean(self.ebq_v)}, min={np.min(self.ebq_v)}, max={np.max(self.ebq_v)}")
+            self.model.updateVelocityFieldAsFunction()   
         if self.checkMass:
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
                                                     self.model.q[('m', 0)],
                                                     self.model.mesh.nElements_owned)
             logEvent("Phase  0 mass before TADR step = %12.5e" % (self.m_pre,), level=2)
-        
+        ## if RWPT enbled
         if getattr(self, "RWPT", False):
             last = getattr(self.model, "_rwpt_done_at_t", None)
             if last is None or abs(t - last) > 1e-15:
