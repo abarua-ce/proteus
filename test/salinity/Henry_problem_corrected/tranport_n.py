@@ -40,8 +40,8 @@ else:
 
 stepController = Min_dt_controller
 runCFL = 0.5
-timeOrder = SSPOrder
-nStagesTime = SSPOrder
+timeOrder = 1 # SSPOrder
+nStagesTime = 1 #SSPOrder
 
 if useHex:
     hex=True
