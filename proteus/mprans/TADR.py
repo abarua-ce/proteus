@@ -301,11 +301,13 @@ class Coefficients(TC_base):
                  FCT=True,
                  outputQuantDOFs=False,
                  RWPT=False,
+                 specified_velocity=False,
                  #NULLSPACE INFO
                  nullSpace='NoNullSpace',
                  initialize=True,
                  physicalDiffusion=0.0):
         self.RWPT = RWPT
+        self.specified_velocity=specified_velocity
         self.mass_per_particle = mass_per_particle
         self.variableNames = ['u']
         self.LS_modelIndex = LS_model
@@ -456,7 +458,6 @@ class Coefficients(TC_base):
         else:
             self.flowCoefficients = None
 
-        
     def preStep(self, t, firstStep=False):
         # SAVE OLD SOLUTION #
         self.model.u_dof_old[:] = self.model.u[0].dof
@@ -465,8 +466,9 @@ class Coefficients(TC_base):
         self.model.stage = 1
         self.model.auxTaylorGalerkinFlag = 1
         # Skip velocity field as a function check
-        if hasattr(self.model, "updateVelocityFieldAsFunction"):
-            self.model.updateVelocityFieldAsFunction()   
+        if self.specified_velocity:
+            if hasattr(self.model, "updateVelocityFieldAsFunction"):
+                self.model.updateVelocityFieldAsFunction()   
         if self.checkMass:
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
                                                     self.model.q[('m', 0)],
@@ -497,64 +499,49 @@ class Coefficients(TC_base):
         copyInstructions = {}
         return copyInstructions
 
-    def evaluate(self, t, c):
-        import pdb
-        pdb.set_trace()
+    # def evaluate(self, t, c):
+    #     import pdb
+    #     pdb.set_trace()
 
-        if c[('f', 0)].shape == self.q_v.shape:
-            v = self.q_v
-            phi = self.q_phi
+    #     if c[('f', 0)].shape == self.q_v.shape:
+    #         v = self.q_v
+    #         phi = self.q_phi
 
-        elif c[('f', 0)].shape == self.ebqe_v.shape:
-            v = self.ebqe_v
-            phi = self.ebqe_phi
+    #     elif c[('f', 0)].shape == self.ebqe_v.shape:
+    #         v = self.ebqe_v
+    #         phi = self.ebqe_phi
 
-        elif ((self.ebq_v is not None and self.ebq_phi is not None) and c[('f', 0)].shape == self.ebq_v.shape):
-            v = self.ebq_v
-            phi = self.ebq_phi
+    #     elif ((self.ebq_v is not None and self.ebq_phi is not None) and c[('f', 0)].shape == self.ebq_v.shape):
+    #         v = self.ebq_v
+    #         phi = self.ebq_phi
 
-        else:
-            v = None
-            phi = None
-        if v is not None:
-            if not np.any(v):
-                logEvent("Warning: Velocity (v) is zero in evaluate!")
-            c[('m',0)] = c[('u',0)]
-            c[('dm',0,0)] = np.ones_like(c[('u',0)])
-            c[('f',0)][:] = v*c[('u',0)]
-            c[('df',0,0)][:] = v
-            #c[('a',0,0)][:] = self.physicalDiffusion 
-            nd = self.nd
-            for i in range(len(c[('r', 0)].flat)):
-                #x_i = c['x'].flat[3*i:3*(i+1)]
-                velocity = v.flat[nd*i:nd*(i+1)] 
-                #c[('a', 0, 0)].flat[nd*nd*i:nd*nd*(i+1)] = self.aOfX[0](x_i).flat
-            ## Add dispersion
-                v_mag = np.linalg.norm(velocity)  # Magnitude of the velocity vector
-
-                if v_mag > 1e-8:  # Avoid division by zero
-                    v_unit = velocity / v_mag  # Unit vector of velocity
-                else:
-                    v_unit = np.zeros_like(velocity)
-
-                # Dispersion-diffusion tensor D
-                dispersion_tensor = (
-                    self.phi * self.D_m * np.eye(nd)  # Molecular diffusion
-                    + self.alpha_L * np.outer(v_unit, v_unit) * v_mag  # Longitudinal dispersion
-                    + self.alpha_T * v_mag * (np.eye(nd) - np.outer(v_unit, v_unit))  # Transverse dispersion
-                )
-
-                # Assign the dispersion tensor to the coefficient matrix
-                c[('a', 0, 0)].flat[nd*nd*i:nd*nd*(i+1)] = dispersion_tensor.flat
-                    #print(c[('a', 0, 0)])
-                    # Store the dispersion tensor in the coefficient dictionary
-            #c[('dispersion_tensor', 0)] = dispersion_tensor
-            
-            # Compute diffusion coefficients at each quadrature point
-            #for i in range(len(c['x'])):
-            #    x_i = c['x'][i]
-            #    diffusion_matrix = self.aOfX[0](x_i)
-            #    c[('a', 0, 0)][i] = diffusion_matrix
+    #     else:
+    #         v = None
+    #         phi = None
+    #     if v is not None:
+    #         if not np.any(v):
+    #             logEvent("Warning: Velocity (v) is zero in evaluate!")
+    #         c[('m',0)] = c[('u',0)]
+    #         c[('dm',0,0)] = np.ones_like(c[('u',0)])
+    #         c[('f',0)][:] = v*c[('u',0)]
+    #         c[('df',0,0)][:] = v
+    #         #c[('a',0,0)][:] = self.physicalDiffusion 
+    #         nd = self.nd
+    #         for i in range(len(c[('r', 0)].flat)):
+    #             velocity = v.flat[nd*i:nd*(i+1)] 
+    #             v_mag = np.linalg.norm(velocity)  # Magnitude of the velocity vector
+    #             if v_mag > 1e-8:  # Avoid division by zero
+    #                 v_unit = velocity / v_mag  # Unit vector of velocity
+    #             else:
+    #                 v_unit = np.zeros_like(velocity)
+    #             # Dispersion-diffusion tensor D
+    #             dispersion_tensor = (
+    #                 self.phi * self.D_m * np.eye(nd)  # Molecular diffusion
+    #                 + self.alpha_L * np.outer(v_unit, v_unit) * v_mag  # Longitudinal dispersion
+    #                 + self.alpha_T * v_mag * (np.eye(nd) - np.outer(v_unit, v_unit))  # Transverse dispersion
+    #             )
+    #             # Assign the dispersion tensor to the coefficient matrix
+    #             c[('a', 0, 0)].flat[nd*nd*i:nd*nd*(i+1)] = dispersion_tensor.flat
 
 
 class LevelModel(OneLevelTransport):
