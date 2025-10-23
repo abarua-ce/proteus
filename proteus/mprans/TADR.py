@@ -359,6 +359,7 @@ class Coefficients(TC_base):
         self.flowCoefficients = None
         self.physicalDiffusion=physicalDiffusion
         self.sparseDiffusionTensors = sdInfo
+        self.vModel = None
         if initialize:
             self.initialize()
         
@@ -446,10 +447,17 @@ class Coefficients(TC_base):
             self.ebqe_phi = np.zeros(self.model.ebqe[('u', 0)].shape, 'd') # cek hack, we don't need this
         # flow model(Richards)
         if self.V_model is not None:
-            vModel = modelList[self.V_model]
-            self.q_v = vModel.q['velocity']
-            self.ebqe_v = vModel.ebqe['velocity']
+            self.vModel = modelList[self.V_model]
+            self.q_v = self.vModel.q['velocity']
+            self.ebqe_v = self.vModel.ebqe['velocity']
+            if 'x' not in self.vModel.q:
+            # re-use TADR's element quad coordinates (shapes already match per your logs)
+                self.vModel.q['x'] = self.model.q['x']
+            if 'x' not in self.vModel.ebqe:
+                self.vModel.ebqe['x'] = self.model.ebqe['x']
+            
         else:
+            #self.vModel  = None
             self.q_v = np.ones(self.model.q[('u',0)].shape+(self.model.nSpace_global,),'d')
             self.ebqe_v = np.ones(self.model.ebqe[('u',0)].shape+(self.model.nSpace_global,),'d')
         # VRANS
@@ -459,6 +467,10 @@ class Coefficients(TC_base):
             self.flowCoefficients = None
 
     def preStep(self, t, firstStep=False):
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        
         # SAVE OLD SOLUTION #
         self.model.u_dof_old[:] = self.model.u[0].dof
 
@@ -468,7 +480,11 @@ class Coefficients(TC_base):
         # Skip velocity field as a function check
         if self.specified_velocity:
             if hasattr(self.model, "updateVelocityFieldAsFunction"):
-                self.model.updateVelocityFieldAsFunction()   
+                self.model.updateVelocityFieldAsFunction() 
+        else:
+            self.q_v= self.vModel.q['velocity']
+            self.ebqe_v = self.vModel.ebqe['velocity']  
+            logEvent("Taking velocity from Flow Model") 
         if self.checkMass:
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
                                                     self.model.q[('m', 0)],
