@@ -782,6 +782,7 @@ class LevelModel(OneLevelTransport):
         self.q[('m', 0)] = self.q[('m_tmp', 0)]
         self.q[('cfl', 0)] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element), 'd')
         self.q[('numDiff', 0, 0)] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element), 'd')
+        self.q['rho'] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element), 'd')
         ###################################################
 
         # self.q['qp_mass'] = np.zeros((self.mesh.nElements_global, self.nQuadraturePoints_element),dtype='d')
@@ -812,6 +813,8 @@ class LevelModel(OneLevelTransport):
         self.ebqe['penalty'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
         self.ebqe[('diffusiveFlux_bc_flag',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'i')
         self.ebqe[('diffusiveFlux_bc',0,0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
+
+        self.ebqe['rho'] = np.zeros((self.mesh.nExteriorElementBoundaries_global, self.nElementBoundaryQuadraturePoints_elementBoundary), 'd')
         
         self.points_elementBoundaryQuadrature = set()
         self.scalars_elementBoundaryQuadrature = set([('u', ci) for ci in range(self.nc)])
@@ -1520,6 +1523,10 @@ class LevelModel(OneLevelTransport):
     
         argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
         argsDict["a_colind"] = sdInfo[(0, 0)][1]
+
+        argsDict["q_rho"] = self.q['rho']
+        argsDict["ebqe_rho"] = self.ebqe['rho']
+        
         
         argsDict["alpha_L"] = self.coefficients.alpha_L  # Longitudinal dispersion coefficient
         argsDict["alpha_T"] = self.coefficients.alpha_T  # Transverse dispersion coefficient

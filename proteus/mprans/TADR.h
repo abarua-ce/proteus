@@ -140,7 +140,8 @@ void evaluateCoefficients(const int rowptr[nSpace],
       double f[nSpace],
       double df[nSpace], 
       double a[nnz],
-      double da[nnz])
+      double da[nnz], 
+      double rho_out)
 {
    double rhom;
    double epsilon = (rho_sw - rho_fw)/rho_fw;
@@ -149,6 +150,7 @@ void evaluateCoefficients(const int rowptr[nSpace],
    m = rhom* u;
 
    dm = rhom + u* drho_du;
+   rho_out = rhom;
 
 // Compute velocity magnitude
     double v_mag = 0.0;
@@ -797,6 +799,9 @@ inline void displacement(const double v[nSpace],
       xt::pyarray<double>& q_m = args.array<double>("q_m");
       xt::pyarray<double>& q_u = args.array<double>("q_u");
 
+      xt::pyarray<double>& q_rho    = args.array<double>("q_rho");
+      xt::pyarray<double>& ebqe_rho = args.array<double>("ebqe_rho");
+
       xt::pyarray<double>& q_a = args.array<double>("q_a");
       xt::pyarray<double>& q_r = args.array<double>("q_r");
       xt::pyarray<double>& ebqe_a = args.array<double>("ebq_a");
@@ -873,7 +878,7 @@ inline void displacement(const double v[nSpace],
       const double rho_sw = args.scalar<double>("rho_sw");         // Saline water density
       const double rho_fw = args.scalar<double>("rho_fw");         // Fresh water density
 
-
+      double rho_out, rho_un;
 
 
       double meanEntropy = 0., meanOmega = 0., maxEntropy = -1E10, minEntropy = 1E10;
@@ -1047,7 +1052,7 @@ inline void displacement(const double v[nSpace],
                                    f,
                                    df,
                                    a,
-                                   da);
+                                   da, rho_out);
 
             //D.data()[eN * nQuadraturePoints_element * nnz + k * nnz] calculates 
             //the correct starting index for D for the current element eN and 
@@ -1065,7 +1070,7 @@ inline void displacement(const double v[nSpace],
                                    fn,
                                    dfn, 
                                    an, 
-                                   dan);
+                                   dan, rho_un);
               //an= &q_a.data()[eN_k * sd_rowptr.data()[nSpace]];
 
               //
@@ -1297,6 +1302,7 @@ inline void displacement(const double v[nSpace],
               //
               q_u.data()[eN_k] = u;
               q_m.data()[eN_k] = m;
+              q_rho.data()[eN_k] = rho_out; // for proteus_mprans
               }//k
           //
           //load element into global residual and save element residual
@@ -1480,6 +1486,7 @@ inline void displacement(const double v[nSpace],
               //calculate the pde coefficients using the solution and the boundary values for the solution
               //
               const double* qb_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
+              double rho_u_ext = 0.0, rho_bc_ext = 0.0;
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
@@ -1491,7 +1498,8 @@ inline void displacement(const double v[nSpace],
                                    f_ext,
                                    df_ext,
                                    a_ext,
-                                   da_ext);
+                                   da_ext,
+                                   rho_u_ext);
               
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
@@ -1504,7 +1512,8 @@ inline void displacement(const double v[nSpace],
                                    bc_f_ext,
                                    bc_df_ext,
                                    bc_a_ext,
-                                   bc_da_ext);         
+                                   bc_da_ext, 
+                                   rho_bc_ext);         
               //moving mesh
               //
               double mesh_velocity[3];
@@ -1556,9 +1565,16 @@ inline void displacement(const double v[nSpace],
               ebqe_flux.data()[ebNE_kb] = flux_ext;
               //save for other models? cek need to be consistent with numerical flux
               if(flux_ext >= 0.0)
+              {
                 ebqe_u.data()[ebNE_kb] = u_ext;
-              else
-                ebqe_u.data()[ebNE_kb] = bc_u_ext;              
+                ebqe_rho.data()[ebNE_kb] = rho_u_ext;
+              }
+                
+              else{
+                ebqe_u.data()[ebNE_kb] = bc_u_ext;   
+                ebqe_rho.data()[ebNE_kb] = rho_bc_ext;
+              }
+                           
               if (STABILIZATION_TYPE==STABILIZATION::TaylorGalerkinEV)
                 {
                   if (stage == 1)
@@ -1898,7 +1914,7 @@ inline void displacement(const double v[nSpace],
       xt::pyarray<int>& isDiffusiveFluxBoundary_u = args.array<int>("isDiffusiveFluxBoundary_u");
       xt::pyarray<double>& ebqe_penalty_ext = args.array<double>("ebqe_penalty_ext");
       
-
+      double rho_out;
       //
       //loop over elements to compute volume integrals and load them into the element Jacobians and global Jacobian
       //
@@ -1991,7 +2007,7 @@ inline void displacement(const double v[nSpace],
                                    f,
                                    df,
                                    a,
-                                   da);
+                                   da, rho_out);
               //
               //moving mesh
               //
@@ -2248,7 +2264,7 @@ inline void displacement(const double v[nSpace],
                                        f_ext,
                                        df_ext,
                                        a_ext,
-                                       da_ext
+                                       da_ext, rho_out
                                        );
 
                   evaluateCoefficients(a_rowptr.data(),
@@ -2262,7 +2278,7 @@ inline void displacement(const double v[nSpace],
                                        bc_f_ext,
                                        bc_df_ext,
                                        bc_a_ext,
-                                       bc_da_ext);
+                                       bc_da_ext, rho_out);
                   //
                   //moving domain
                   //
