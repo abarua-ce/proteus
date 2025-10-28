@@ -132,7 +132,8 @@ void evaluateCoefficients(const int rowptr[nSpace],
       const double alpha_L,
       const double alpha_T,
       const double Dm, // Molecular diffusion term
-      //const double* q_a,
+      const double rho_fw,
+      const double rho_sw,
       const double& u,
       double& m,
       double& dm,
@@ -141,8 +142,13 @@ void evaluateCoefficients(const int rowptr[nSpace],
       double a[nnz],
       double da[nnz])
 {
-    m = u;
-    dm = 1.0;
+   double rhom;
+   double epsilon = (rho_sw - rho_fw)/rho_fw;
+   rhom =  rho_fw*(1+epsilon * u) ;
+   const double drho_du = rho_fw * epsilon; 
+   m = rhom* u;
+
+   dm = rhom + u* drho_du;
 
 // Compute velocity magnitude
     double v_mag = 0.0;
@@ -160,8 +166,8 @@ void evaluateCoefficients(const int rowptr[nSpace],
       }
 
     for (int I = 0; I < nSpace; I++) {
-    f[I] = v[I] * u;
-    df[I] = v[I];
+    f[I] = rhom* v[I] * u;
+    df[I] = (rhom + drho_du * u) * v[I];
 
     for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
     int J = colind[ii]; // Column index
@@ -173,8 +179,8 @@ void evaluateCoefficients(const int rowptr[nSpace],
     alpha_L * v_unit[I] * v_unit[J] * v_mag +  // Longitudinal dispersion
     alpha_T * v_mag * (deltaIJ - v_unit[I] * v_unit[J]);  // Transverse dispersion
 
-    a[ii] = dispersion_ij;
-    da[ii] = 0.0; // Assuming no dependency of dispersion on u
+    a[ii] = rhom* dispersion_ij;
+    da[ii] = drho_du* dispersion_ij; //0.0; // Assuming no dependency of dispersion on u
       }
       }
     }
@@ -864,6 +870,12 @@ inline void displacement(const double v[nSpace],
       const double alphaT_val = args.scalar<double>("alpha_T"); // Transverse dispersion coefficient
       const double Dm_val = args.scalar<double>("Dm");         // Molecular diffusion coefficient
 
+      const double rho_sw = args.scalar<double>("rho_sw");         // Saline water density
+      const double rho_fw = args.scalar<double>("rho_fw");         // Fresh water density
+
+
+
+
       double meanEntropy = 0., meanOmega = 0., maxEntropy = -1E10, minEntropy = 1E10;
       maxVel.resize(nElements_global, 0.0);
       maxEntRes.resize(nElements_global, 0.0);
@@ -1027,7 +1039,7 @@ inline void displacement(const double v[nSpace],
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   alphaL_val, alphaT_val, Dm_val, 
+                                   alphaL_val, alphaT_val, Dm_val, rho_fw, rho_sw,
                                    //q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    u,
                                    m,
@@ -1045,7 +1057,7 @@ inline void displacement(const double v[nSpace],
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   alphaL_val, alphaT_val, Dm_val, 
+                                   alphaL_val, alphaT_val, Dm_val, rho_fw, rho_sw,
                                    //q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    un,
                                    mn,
@@ -1471,7 +1483,7 @@ inline void displacement(const double v[nSpace],
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                   alphaL_val, alphaT_val, Dm_val, 
+                                   alphaL_val, alphaT_val, Dm_val, rho_fw, rho_sw,
                                    //qb_a_ptr, //&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
                                    u_ext,
                                    m_ext,
@@ -1484,7 +1496,7 @@ inline void displacement(const double v[nSpace],
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                   alphaL_val, alphaT_val, Dm_val, 
+                                   alphaL_val, alphaT_val, Dm_val, rho_fw, rho_sw,
                                    //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
                                    bc_u_ext,
                                    bc_m_ext,
@@ -1870,6 +1882,8 @@ inline void displacement(const double v[nSpace],
       const double alphaL_val = args.scalar<double>("alpha_L"); // Longitudinal dispersion coefficient
       const double alphaT_val = args.scalar<double>("alpha_T"); // Transverse dispersion coefficient
       const double Dm_val = args.scalar<double>("Dm");         // Molecular diffusion coefficient
+      const double rho_sw = args.scalar<double>("rho_sw");         // Saline water density
+      const double rho_fw = args.scalar<double>("rho_fw");         // Fresh water density
 
 
       double Ct_sge = 4.0;
@@ -1969,7 +1983,7 @@ inline void displacement(const double v[nSpace],
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
-                                   alphaL_val, alphaT_val, Dm_val, 
+                                   alphaL_val, alphaT_val, Dm_val, rho_fw, rho_sw,
                                    //q_a_ptr, //&q_a.data()[eN * nQuadraturePoints_element * nnz + k * nnz],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
                                    u,
                                    m,
@@ -2226,7 +2240,7 @@ inline void displacement(const double v[nSpace],
                   evaluateCoefficients(a_rowptr.data(),
                                        a_colind.data(),
                                        &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                       alphaL_val, alphaT_val, Dm_val, 
+                                       alphaL_val, alphaT_val, Dm_val, rho_fw, rho_sw,
                                        //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
                                        u_ext,
                                        m_ext,
@@ -2240,7 +2254,7 @@ inline void displacement(const double v[nSpace],
                   evaluateCoefficients(a_rowptr.data(),
                                        a_colind.data(),
                                        &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
-                                       alphaL_val, alphaT_val, Dm_val, 
+                                       alphaL_val, alphaT_val, Dm_val, rho_fw, rho_sw,
                                        //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
                                        bc_u_ext,
                                        bc_m_ext,

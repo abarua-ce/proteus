@@ -271,6 +271,8 @@ class Coefficients(TC_base):
                  alpha_L,
                  alpha_T,
                  Dm,
+                 rho_fw,
+                 rho_sw,
                  LS_model=None,
                  nd=2,
                  V_model=0,
@@ -337,6 +339,8 @@ class Coefficients(TC_base):
         self.alpha_L= alpha_L
         self.alpha_T= alpha_T
         self.Dm= Dm        
+        self.rho_fw= rho_fw
+        self.rho_sw= rho_sw
         self.diagonal_conductivity = diagonal_conductivity
 
         if self.diagonal_conductivity:
@@ -1159,6 +1163,8 @@ class LevelModel(OneLevelTransport):
         argsDict["alpha_L"]            = self.coefficients.alpha_L
         argsDict["alpha_T"]            = self.coefficients.alpha_T
         argsDict["Dm"]                 = self.coefficients.Dm
+        argsDict["rho_fw"]              = self.coefficients.rho_fw
+        argsDict["rho_sw"]              = self.coefficients.rho_sw
         argsDict["mass_per_particle"]  = self.coefficients.mass_per_particle
 
         argsDict["qp_dV"]              = self.q['dV']          # overwritten by kernel each call
@@ -1518,6 +1524,8 @@ class LevelModel(OneLevelTransport):
         argsDict["alpha_L"] = self.coefficients.alpha_L  # Longitudinal dispersion coefficient
         argsDict["alpha_T"] = self.coefficients.alpha_T  # Transverse dispersion coefficient
         argsDict["Dm"] = self.coefficients.Dm           # Molecular diffusion coefficient
+        argsDict["rho_fw"]              = self.coefficients.rho_fw
+        argsDict["rho_sw"]              = self.coefficients.rho_sw
 
 
 
@@ -1640,6 +1648,8 @@ class LevelModel(OneLevelTransport):
         argsDict["alpha_L"] = self.coefficients.alpha_L  # Longitudinal dispersion coefficient
         argsDict["alpha_T"] = self.coefficients.alpha_T  # Transverse dispersion coefficient
         argsDict["Dm"] = self.coefficients.Dm    
+        argsDict["rho_fw"]              = self.coefficients.rho_fw
+        argsDict["rho_sw"]              = self.coefficients.rho_sw
         
    
         self.adr.calculateJacobian(argsDict)
