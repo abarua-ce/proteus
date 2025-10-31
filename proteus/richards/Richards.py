@@ -225,6 +225,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  beta,
                  diagonal_conductivity=True,
                  getSeepageFace=None,
+                 DENSITY_MODEL= None,
                 # FOR EDGE BASED EV
                  STABILIZATION_TYPE='Implicit_FCT',
                  ENTROPY_TYPE=2,  # logarithmic
@@ -244,6 +245,8 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  outputQuantDOFs=False,
                   ):
         self.VMS=VMS
+        self.DENSITY_MODEL=DENSITY_MODEL
+        self.modelIndex=1
         self.SC=SC
         self.anb_seepage_flux= 0.00
         #self.anb_seepage_flux_n =0.0
@@ -445,6 +448,27 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             import pdb
             pdb.set_trace()
     
+    def attachModels(self, modelList):
+        # Keep self.model for symmetry with other coeffs
+        self.model = modelList[self.modelIndex] 
+        if self.DENSITY_MODEL is None:
+            return
+        densityModel = modelList[self.DENSITY_MODEL]
+        self.model.q['rho']    = densityModel.q['rho']
+        self.model.ebqe['rho'] = densityModel.ebqe['rho']
+
+
+    def preStep(self, t, firstStep=False):
+        dm = getattr(self, 'densityModel', None)
+        if dm is None:
+            return {}
+
+        self.model.q['rho'] = dm.q['rho']
+        self.model.ebqe['rho'] = dm.ebqe['rho']
+        
+        return {}
+
+  
     # def postStep(self, t, firstStep=False):
     #     comm = Comm.get()
     #     if comm.isMaster():
@@ -747,6 +771,13 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.ebqe[('advectiveFlux_bc',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
         self.ebqe[('advectiveFlux',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
         self.ebqe[('penalty')] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
+        
+        self.q['rho'] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element),'d')
+        self.ebqe['rho'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
+        self.q['rho'][:] = self.coefficients.rho
+        self.ebqe['rho'][:] = self.coefficients.rho
+        
+        
         self.points_elementBoundaryQuadrature= set()
         self.scalars_elementBoundaryQuadrature= set([('u',ci) for ci in range(self.nc)])
         self.vectors_elementBoundaryQuadrature= set()
@@ -1307,6 +1338,10 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
         argsDict["rho"] = self.coefficients.rho
         argsDict["beta"] = self.coefficients.beta
+
+        argsDict["q_rho"]= self.q['rho']
+        argsDict["ebqe_rho"]= self.ebqe['rho']
+        
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
         argsDict["n"] = self.coefficients.vgm_n_types
