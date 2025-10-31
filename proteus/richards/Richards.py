@@ -465,7 +465,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
 
         self.model.q['rho'] = dm.q['rho']
         self.model.ebqe['rho'] = dm.ebqe['rho']
-        
+
         return {}
 
   
@@ -1704,6 +1704,10 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
         argsDict["rho"] = self.coefficients.rho
         argsDict["beta"] = self.coefficients.beta
+
+        argsDict["q_rho"]= self.q['rho']
+        argsDict["ebqe_rho"]= self.ebqe['rho']
+        
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
         argsDict["n"] = self.coefficients.vgm_n_types
