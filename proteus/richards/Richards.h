@@ -476,7 +476,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
         double pressure_gradient[nSpace];
         for (int J=0; J<nSpace; ++J)
-          pressure_gradient[J] = grad_u[J] + gravity.data()[J];
+          pressure_gradient[J] = grad_u[J] + (rho_local/rho)* gravity.data()[J];
 
         // for each row I, acc = sum_j (a_{Ij}/rho) * gp[j]
         for (int I=0; I<nSpace; ++I) {
@@ -591,7 +591,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         
         double ext_pressure_gradient[nSpace];
         for (int J=0; J<nSpace; ++J)
-          ext_pressure_gradient[J] = grad_u_ext[J] + gravity.data()[J];
+          ext_pressure_gradient[J] = grad_u_ext[J] + (rho_ext/rho)* gravity.data()[J];
 
         for (int I=0; I<nSpace; ++I) {
           double acc = 0.0;
@@ -1401,7 +1401,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         // Darcy velocity calculation
          for (int I = 0; I < nSpace; I++) { velocity_loc[I] = 0.0; }
          for (int I = 0; I < nSpace; I++) {
-           for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u[J]+ gravity.data()[J]); }
+           for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u[J]+ (rho_local/rho) * gravity.data()[J]); }
          }
          for (int I = 0; I < nSpace; I++) { velocity.data()[eN_k_nSpace + I] = velocity_loc[I]; }
 
@@ -1558,7 +1558,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
          double  velocity_loc_ext[nSpace];
          for (int I = 0; I < nSpace; I++) { velocity_loc_ext[I] = 0.0; }
         for (int I = 0; I < nSpace; I++) {
-          for (int J = 0; J < nSpace; J++) { velocity_loc_ext[I] -= bc_Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u_ext[J]+ gravity.data()[J]); }
+          for (int J = 0; J < nSpace; J++) { velocity_loc_ext[I] -= bc_Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u_ext[J]+ (rho_ext/rho) * gravity.data()[J]); }
         }
         for (int I = 0; I < nSpace; I++) { ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = velocity_loc_ext[I]; }
 
@@ -1772,14 +1772,11 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         int j = csrColumnOffsets_DofLoops.data()[offset];
         if (i == j) ii = ij;
         double phi_j  = u_free_dof[j], phin_j = u_free_dof_old[j];
-
         const double rho_j = rho_dof[j];
-
         for (int I = 0; I < nSpace; I++) {
           phi_j -= rho_j * gravity.data()[I] * mesh_dof.data()[j * 3 + I];
           phin_j -= rho_j * gravity.data()[I] * mesh_dof.data()[j * 3 + I];
         }
-
         double dLowij, dLij, dEVij, dHij, fH, fL, fA=0.0;
         fH = -Theta * TransportMatrixConsistent[ij] * (phi_j - phi_i) - (1 - Theta) * TransportMatrixConsistentn[ij] * (phin_j - phin_i);
         ith_consistent_flux_term += fH;
@@ -1825,7 +1822,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         dt_times_fH_minus_fL.data()[ij] = dt * fA;
         ij += 1;
       }
-
       mDotLow.data()[i] = ith_flux_term/MLi;
       cflux[i] = ith_consistent_flux_term;
       evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_i, beta, gravity.data(),
@@ -1922,6 +1918,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &a_colind             = args.array<int>("a_colind");
     double               rho                  = args.scalar<double>("rho");
     double               beta                 = args.scalar<double>("beta");
+
+    xt::pyarray<double> &q_rho                = args.array<double>("q_rho");
+
     xt::pyarray<double> &gravity              = args.array<double>("gravity");
     xt::pyarray<double> &alpha                = args.array<double>("alpha");
     xt::pyarray<double> &n                    = args.array<double>("n");
@@ -1997,7 +1996,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //calculate pde coefficients and derivatives at quadrature points
         //
         double Kr, dKr;
-        evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
+        const double rho_local = q_rho.data()[eN_k];
+        evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_local, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
         //
         //moving mesh
