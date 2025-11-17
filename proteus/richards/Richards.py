@@ -449,24 +449,24 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             pdb.set_trace()
     
     def attachModels(self, modelList):
+        if self.DENSITY_MODEL is None:
+            return 
         # Keep self.model for symmetry with other coeffs
         self.model = modelList[self.modelIndex] 
-        if self.DENSITY_MODEL is None:
-            return
         densityModel = modelList[self.DENSITY_MODEL]
         self.model.q['rho']    = densityModel.q['rho']
         self.model.ebqe['rho'] = densityModel.ebqe['rho']
 
 
-    def preStep(self, t, firstStep=False):
-        dm = getattr(self, 'densityModel', None)
-        if dm is None:
-            return {}
+    # def preStep(self, t, firstStep=False):
+    #     dm = getattr(self, 'densityModel', None)
+    #     if dm is None:
+    #         return {}
 
-        self.model.q['rho'] = dm.q['rho']
-        self.model.ebqe['rho'] = dm.ebqe['rho']
+    #     self.model.q['rho'] = dm.q['rho']
+    #     self.model.ebqe['rho'] = dm.ebqe['rho']
 
-        return {}
+    #     return {}
 
   
     # def postStep(self, t, firstStep=False):
