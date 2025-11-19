@@ -219,6 +219,23 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
 
 
 
+  // inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
+  // {
+  //   double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
+  //   m_vg   = 1.0 - 1.0 / n_vg;
+  //   thetaS = thetaR + thetaSR;
+  //   thetaW = m / rho;
+  //   if (thetaW > 1.01*thetaR && thetaW < thetaS) {
+  //     sBar    = (thetaW - thetaR) / thetaSR;
+  //     pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
+  //     pcBar   = pow(pcBar_n, 1.0 / n_vg);
+  //     psiC    = pcBar / alpha;
+  //     u       = -psiC;
+  //   }
+  // }
+
+  
+
   inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
   {
     double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
@@ -227,12 +244,19 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
     thetaW = m / rho;
     if (thetaW > 1.01*thetaR && thetaW < thetaS) {
       sBar    = (thetaW - thetaR) / thetaSR;
-      pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
-      pcBar   = pow(pcBar_n, 1.0 / n_vg);
-      psiC    = pcBar / alpha;
-      u       = -psiC;
+      u = std::log(sBar) / alpha;
+    // if (thetaW > 1.01*thetaR && thetaW < thetaS) {
+    //   sBar    = (thetaW - thetaR) / thetaSR;
+    //   pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
+    //   pcBar   = pow(pcBar_n, 1.0 / n_vg);
+    //   psiC    = pcBar / alpha;
+    //   u       = -psiC;
+
     }
   }
+
+
+
   inline void calculateCFL(const double &elementDiameter, const double df[nSpace], double &cfl)
   {
     double h, nrm_v;
@@ -1377,10 +1401,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       boundary_integral[i] = 0.;
       ML2[i]               = 0.0;
     }
-
-
-
-
 
     //////////////////////////////////////////////
     // ** LOOP IN CELLS FOR CELL BASED TERMS ** //
