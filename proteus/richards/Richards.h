@@ -1088,6 +1088,142 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     }
   }
 
+  // void FCTStep(arguments_dict &args)
+  // {
+  //   xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
+  //   int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
+  //   int                  numDOFs                   = args.scalar<int>("numDOFs"); //number of DOFs
+  //   double               dt                        = args.scalar<double>("dt");
+  //   xt::pyarray<double> &ML                        = args.array<double>("ML"); //lumped mass matrix (as vector)
+  //   xt::pyarray<double> &mn                        = args.array<double>("mn");               //DOFs of solution at time tn
+  //   xt::pyarray<double> &mHigh                     = args.array<double>("mHigh");               //DOFs of high order solution at tnp1
+  //   xt::pyarray<double> &mLow                      = args.array<double>("mLow");
+  //   xt::pyarray<double> &mDotHigh                     = args.array<double>("mDotHigh");               //DOFs of high order solution at tnp1
+  //   xt::pyarray<double> &mDotLow                      = args.array<double>("mDotLow");
+  //   xt::pyarray<double> &limited_solution          = args.array<double>("limited_solution");
+  //   xt::pyarray<int>    &csrRowIndeces_DofLoops    = args.array<int>("csrRowIndeces_DofLoops");    //csr row indeces
+  //   xt::pyarray<int>    &csrColumnOffsets_DofLoops = args.array<int>("csrColumnOffsets_DofLoops"); //csr column offsets
+  //   xt::pyarray<double> &MC                        = args.array<double>("MC");             //mass matrix
+  //   xt::pyarray<double> &dt_times_fH_minus_fL      = args.array<double>("dt_times_fH_minus_fL");   //low minus high order dissipative matrices
+  //   xt::pyarray<double> &min_m_bc                  = args.array<double>("min_m_bc");               //min/max value at BCs. If DOF is not at boundary then min=1E10, max=-1E10
+  //   xt::pyarray<double> &max_m_bc                  = args.array<double>("max_m_bc");
+  //   xt::pyarray<double> &fluxCorrection                  = args.array<double>("fluxCorrection");
+  //   //flags
+  //   int                  LUMPED_MASS_MATRIX        = args.scalar<int>("LUMPED_MASS_MATRIX");
+  //   int                  MONOLITHIC                = args.scalar<int>("MONOLITHIC");
+  //   double               Rpos[numDOFs], Rneg[numDOFs];
+  //   double               FluxCorrectionMatrix[NNZ];
+  //   double               mDot[numDOFs];
+
+  //   //////////////////
+  //   // LOOP in DOFs //
+  //   //////////////////
+  //   int ij = 0;
+  //   for (int i = 0; i < numDOFs; i++) {
+  //     mDot[i] = (mLow.data()[i] - mn.data()[i])/dt;
+  //     //cek todo: add boundary data--these are just initialized
+  //     //will need to pass p_bc at DOF and calc M
+  //     double mini=min_m_bc.data()[i], maxi=max_m_bc.data()[i];
+  //     //we're doing local FCT
+  //     //if (GLOBAL_FCT == 1) {
+  //     //  mini = 0.;
+  //     //  maxi = 1.;
+  //     //}
+
+  //     double Pposi = 0, Pnegi = 0;
+  //     // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
+  //     for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+  //       int j = csrColumnOffsets_DofLoops.data()[offset];
+  //       ////////////////////////
+  //       // COMPUTE THE BOUNDS //
+  //       ////////////////////////
+  //       if (GLOBAL_FCT == 0) {
+  //         if (MONOLITHIC == 0) {
+  //           mini = fmin(mini, mLow[j]);
+  //           maxi = fmax(maxi, mLow[j]);
+  //         } else {
+  //           mini = fmin(mini, mn.data()[j]);
+  //           maxi = fmax(maxi, mn.data()[j]);
+  //         }
+  //       }
+  //       // i-th row of flux correction matrix
+  //       //double I_plus_ML_minus_MC = (i == j ? 1. : 0.) * (1. + ML.data()[i]) - MC.data()[ij];
+  //       //mDot[i] += I_plus_ML_minus_MC * (mHigh.data()[j] - mn.data()[j]) / ML.data()[i];
+  //       mDot[j] = (mLow.data()[j] - mn.data()[j])/dt;
+  //       if (MONOLITHIC == 0) {
+  //         FluxCorrectionMatrix[ij] = (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * MC.data()[ij] * (mDotLow.data()[i] - mDotLow.data()[j]) + dt_times_fH_minus_fL.data()[ij];
+  //       } else {
+  //         FluxCorrectionMatrix[ij] = dt_times_fH_minus_fL.data()[ij];
+  //       }
+  //       ///////////////////////
+  //       // COMPUTE P VECTORS //
+  //       ///////////////////////
+  //       Pposi += FluxCorrectionMatrix[ij] * ((FluxCorrectionMatrix[ij] > 0) ? 1. : 0.);
+  //       Pnegi += FluxCorrectionMatrix[ij] * ((FluxCorrectionMatrix[ij] < 0) ? 1. : 0.);
+
+  //       //update ij
+  //       ij += 1;
+  //     }
+  //     ///////////////////////
+  //     // COMPUTE Q VECTORS //
+  //     ///////////////////////
+  //     double gamma;
+  //     double Qposi;
+  //     double Qnegi;
+  //     if (MONOLITHIC == 0) {
+  //       Qposi = ML.data()[i] * (maxi - mLow[i]);
+  //       Qnegi = ML.data()[i] * (mini - mLow[i]);
+  //     } else {
+  //       //cek todo: don't think this is right for Richards
+  //       gamma = 10.0 * ML.data()[i];
+  //       Qposi = fmin(0.5 * ML.data()[i] * (1.0 - mn.data()[i]), gamma * (maxi - mn[i]));
+  //       Qnegi = fmax(0.5 * ML.data()[i] * (0.0 - mn.data()[i]), gamma * (mini - mn[i]));
+  //     }
+  //     ///////////////////////
+  //     // COMPUTE R VECTORS //
+  //     ///////////////////////
+  //     Rpos[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
+  //     Rneg[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
+  //   } // i DOFs
+
+  //   //////////////////////
+  //   // COMPUTE LIMITERS //
+  //   //////////////////////
+  //   ij = 0;
+  //   for (int i = 0; i < numDOFs; i++) {
+  //     double ith_Limiter_times_FluxCorrectionMatrix = 0.;
+  //     double alpha_fA, alpha_dot, beta_ij = 1.0;
+  //     // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
+  //     for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
+  //       int j = csrColumnOffsets_DofLoops.data()[offset];
+  //       alpha_fA     = ((FluxCorrectionMatrix[ij] > 0) ? fmin(Rpos[i], Rneg[j]) : fmin(Rneg[i], Rpos[j])) * FluxCorrectionMatrix[ij];
+  //       alpha_dot    = fmin(1.0, beta_ij * fabs(alpha_fA) / MC.data()[ij] / fmax(1.0e-8, fabs(mDot[i] - mDot[j])));
+  //       if (MONOLITHIC == 0) {
+  //         ith_Limiter_times_FluxCorrectionMatrix += alpha_fA;
+  //       } else {
+  //         ith_Limiter_times_FluxCorrectionMatrix += alpha_fA + (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * alpha_dot * MC.data()[ij] * (mDot[i] - mDot[j]);
+  //       }
+  //       ij += 1;
+  //     }
+
+  //     fluxCorrection.data()[i] = -ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i]/dt;
+  //     limited_solution.data()[i] = mLow[i] + 1. / ML.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask[i];
+
+  //     //cek todo: double check that the below is not necesary. The limted_solution should already be within the bounds
+  //     //Calculate the min and max mass bounds
+  //     //double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
+  //     //double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
+
+  //     // Check if the limited mass is within bounds
+  //     //if (limited_mass < mMin || limited_mass > mMax) {
+  //     //  limited_solution.data()[i] = solL[i]; // Fallback to lower-order solution
+  //     //} else {
+  //     //  limited_solution.data()[i] = limited_mass; // Assign the limited mass
+  //     //}
+  //   }
+  // }
+
+
   void kth_FCT_step(arguments_dict &args)
   {
     int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
@@ -1225,6 +1361,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
   void calculateResidual_entropy_viscosity(arguments_dict &args)
   {
+    // std::cout << "\n=== ENTER EV FUNCTION ===" << std::endl;
+    // std::cout << "Reading arguments..." << std::endl;
+
     xt::pyarray<double> &globalJacobian            = args.array<double>("globalJacobian");
     double               Theta                     = args.scalar<double>("Theta");
     xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
@@ -1258,11 +1397,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &a_colind                                   = args.array<int>("a_colind");
     double               rho                                        = args.scalar<double>("rho");
     double               beta                                       = args.scalar<double>("beta");
-    //////////////////////////////Density Coupling ///////////////////////////////
-    xt::pyarray<double> &q_rho                                     = args.array<double>("q_rho");
-    xt::pyarray<double> &ebqe_rho                                  = args.array<double>("ebqe_rho");
-    ////////////////////////////////////////////////////////////////////////////
-
+   
 
     xt::pyarray<double> &gravity                                    = args.array<double>("gravity");
     xt::pyarray<double> &alpha                                      = args.array<double>("alpha");
@@ -1359,21 +1494,62 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &csrColumnOffsets_u_u                       = args.array<int>("csrColumnOffsets_u_u");
     xt::pyarray<int>    &csrColumnOffsets_eb_u_u                    = args.array<int>("csrColumnOffsets_eb_u_u");
     
-    double Rpos[numDOFs], Rneg[numDOFs];
-    //double FluxCorrectionMatrix[NNZ];
+    // std::cout << "EV: nElements_global = " << nElements_global << std::endl;
+    // std::cout << "EV: numDOFs = " << numDOFs 
+    //           << ", NNZ = " << NNZ << std::endl;
+
+    // std::cout << "EV: u_dof.size = " << u_dof.size()
+    //           << ", u_l2g.size = " << u_l2g.size()
+    //           << ", r_l2g.size = " << r_l2g.size() << std::endl;
+
+  
+    // std::cout << "EV: gravity ndim = " << gravity.dimension()
+    //           << " size = " << gravity.size() << std::endl;
+
+    // std::cout << "EV: elementMaterialTypes.size = "
+    //           << elementMaterialTypes.size() << std::endl;
+
+    // std::cout << "EV: Finished argument scanning." << std::endl;
+
+     //////////////////////////////Density Coupling ///////////////////////////////
+    xt::pyarray<double> &q_rho                                     = args.array<double>("q_rho");
+    xt::pyarray<double> &ebqe_rho                                  = args.array<double>("ebqe_rho");
+    ////////////////////////////////////////////////////////////////////////////
+      // std::cout << "EV: q_rho.size = " << q_rho.size()
+      //         << ", KWs.size = " << KWs.size() << std::endl;
+
+    
+    // double Rpos[numDOFs], Rneg[numDOFs];
+    // //double FluxCorrectionMatrix[NNZ];
+    // // NOTE: This function follows a different (but equivalent) implementation of the smoothness based indicator than NCLS.h
+    // // Allocate space for the transport matrices
+    // // This is used for first order KUZMIN'S METHOD
+    // double                TransportMatrix[NNZ], TransportMatrixConsistent[NNZ];
+    // double                TransportMatrixn[NNZ], TransportMatrixConsistentn[NNZ];
+    // std::valarray<double> u_free_dof(numDOFs);
+    // std::valarray<double> u_free_dof_old(numDOFs);
+    // std::valarray<double> ML2(numDOFs);
+    // // Lumped L2 projection buffers for density
+    // std::vector<double> rho_dof(numDOFs, 0.0);
+    // std::vector<double> ML_rho(numDOFs, 0.0);
+
+
+    std::vector<double> Rpos(numDOFs, 0.0), Rneg(numDOFs, 0.0);
     // NOTE: This function follows a different (but equivalent) implementation of the smoothness based indicator than NCLS.h
-    // Allocate space for the transport matrices
-    // This is used for first order KUZMIN'S METHOD
-    double                TransportMatrix[NNZ], TransportMatrixConsistent[NNZ];
-    double                TransportMatrixn[NNZ], TransportMatrixConsistentn[NNZ];
+    // Allocate space for the transport matrices (heap)
+    std::vector<double> TransportMatrix(NNZ, 0.0),
+                        TransportMatrixConsistent(NNZ, 0.0),
+                        TransportMatrixn(NNZ, 0.0),
+                        TransportMatrixConsistentn(NNZ, 0.0);
+
     std::valarray<double> u_free_dof(numDOFs);
     std::valarray<double> u_free_dof_old(numDOFs);
     std::valarray<double> ML2(numDOFs);
-    // Lumped L2 projection buffers for density
     std::vector<double> rho_dof(numDOFs, 0.0);
     std::vector<double> ML_rho(numDOFs, 0.0);
 
 
+    
 
     for (int eN = 0; eN < nElements_global; eN++)
       for (int j = 0; j < nDOF_trial_element; j++) {
@@ -1387,6 +1563,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       TransportMatrixn[i]           = 0.;
       TransportMatrixConsistentn[i] = 0.;
     }
+    
+    // std::cout << "EV: preparing to allocate big arrays: "
+    //           << "numDOFs=" << numDOFs << ", NNZ=" << NNZ << std::endl;
 
     // compute entropy and init global_entropy_residual and boundary_integral
     double psi[numDOFs], eta[numDOFs], global_entropy_residual[numDOFs], boundary_integral[numDOFs];
@@ -1714,6 +1893,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         //update the element and global residual storage
         //
+
         for (int i = 0; i < nDOF_test_element; i++) {
           int eN_i = eN * nDOF_test_element + i;
           for (int j = 0; j < nDOF_trial_element; j++) {
