@@ -242,7 +242,7 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
     m_vg   = 1.0 - 1.0 / n_vg;
     thetaS = thetaR + thetaSR;
     thetaW = m / rho;
-    if (thetaW > 1.01*thetaR && thetaW < thetaS) {
+    if (thetaW > thetaR+ 1e-7 && thetaW < thetaS) {
       sBar    = (thetaW - thetaR) / thetaSR;
       u = std::log(sBar) / alpha;
     // if (thetaW > 1.01*thetaR && thetaW < thetaS) {
@@ -953,141 +953,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     } //ebNE
   } //computeJacobian
 
-  void FCTStep(arguments_dict &args)
-  {
-    xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
-    int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
-    int                  numDOFs                   = args.scalar<int>("numDOFs"); //number of DOFs
-    double               dt                        = args.scalar<double>("dt");
-    xt::pyarray<double> &ML                        = args.array<double>("ML"); //lumped mass matrix (as vector)
-    xt::pyarray<double> &mn                        = args.array<double>("mn");               //DOFs of solution at time tn
-    xt::pyarray<double> &mHigh                     = args.array<double>("mHigh");               //DOFs of high order solution at tnp1
-    xt::pyarray<double> &mLow                      = args.array<double>("mLow");
-    xt::pyarray<double> &mDotHigh                     = args.array<double>("mDotHigh");               //DOFs of high order solution at tnp1
-    xt::pyarray<double> &mDotLow                      = args.array<double>("mDotLow");
-    xt::pyarray<double> &limited_solution          = args.array<double>("limited_solution");
-    xt::pyarray<int>    &csrRowIndeces_DofLoops    = args.array<int>("csrRowIndeces_DofLoops");    //csr row indeces
-    xt::pyarray<int>    &csrColumnOffsets_DofLoops = args.array<int>("csrColumnOffsets_DofLoops"); //csr column offsets
-    xt::pyarray<double> &MC                        = args.array<double>("MC");             //mass matrix
-    xt::pyarray<double> &dt_times_fH_minus_fL      = args.array<double>("dt_times_fH_minus_fL");   //low minus high order dissipative matrices
-    xt::pyarray<double> &min_m_bc                  = args.array<double>("min_m_bc");               //min/max value at BCs. If DOF is not at boundary then min=1E10, max=-1E10
-    xt::pyarray<double> &max_m_bc                  = args.array<double>("max_m_bc");
-    xt::pyarray<double> &fluxCorrection                  = args.array<double>("fluxCorrection");
-    //flags
-    int                  LUMPED_MASS_MATRIX        = args.scalar<int>("LUMPED_MASS_MATRIX");
-    int                  MONOLITHIC                = args.scalar<int>("MONOLITHIC");
-    double               Rpos[numDOFs], Rneg[numDOFs];
-    double               FluxCorrectionMatrix[NNZ];
-    double               mDot[numDOFs];
-
-    //////////////////
-    // LOOP in DOFs //
-    //////////////////
-    int ij = 0;
-    for (int i = 0; i < numDOFs; i++) {
-      mDot[i] = (mLow.data()[i] - mn.data()[i])/dt;
-      //cek todo: add boundary data--these are just initialized
-      //will need to pass p_bc at DOF and calc M
-      double mini=min_m_bc.data()[i], maxi=max_m_bc.data()[i];
-      //we're doing local FCT
-      //if (GLOBAL_FCT == 1) {
-      //  mini = 0.;
-      //  maxi = 1.;
-      //}
-
-      double Pposi = 0, Pnegi = 0;
-      // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-        int j = csrColumnOffsets_DofLoops.data()[offset];
-        ////////////////////////
-        // COMPUTE THE BOUNDS //
-        ////////////////////////
-        if (GLOBAL_FCT == 0) {
-          if (MONOLITHIC == 0) {
-            mini = fmin(mini, mLow[j]);
-            maxi = fmax(maxi, mLow[j]);
-          } else {
-            mini = fmin(mini, mn.data()[j]);
-            maxi = fmax(maxi, mn.data()[j]);
-          }
-        }
-        // i-th row of flux correction matrix
-        //double I_plus_ML_minus_MC = (i == j ? 1. : 0.) * (1. + ML.data()[i]) - MC.data()[ij];
-        //mDot[i] += I_plus_ML_minus_MC * (mHigh.data()[j] - mn.data()[j]) / ML.data()[i];
-        mDot[j] = (mLow.data()[j] - mn.data()[j])/dt;
-        if (MONOLITHIC == 0) {
-          FluxCorrectionMatrix[ij] = (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * MC.data()[ij] * (mDotLow.data()[i] - mDotLow.data()[j]) + dt_times_fH_minus_fL.data()[ij];
-        } else {
-          FluxCorrectionMatrix[ij] = dt_times_fH_minus_fL.data()[ij];
-        }
-        ///////////////////////
-        // COMPUTE P VECTORS //
-        ///////////////////////
-        Pposi += FluxCorrectionMatrix[ij] * ((FluxCorrectionMatrix[ij] > 0) ? 1. : 0.);
-        Pnegi += FluxCorrectionMatrix[ij] * ((FluxCorrectionMatrix[ij] < 0) ? 1. : 0.);
-
-        //update ij
-        ij += 1;
-      }
-      ///////////////////////
-      // COMPUTE Q VECTORS //
-      ///////////////////////
-      double gamma;
-      double Qposi;
-      double Qnegi;
-      if (MONOLITHIC == 0) {
-        Qposi = ML.data()[i] * (maxi - mLow[i]);
-        Qnegi = ML.data()[i] * (mini - mLow[i]);
-      } else {
-        //cek todo: don't think this is right for Richards
-        gamma = 10.0 * ML.data()[i];
-        Qposi = fmin(0.5 * ML.data()[i] * (1.0 - mn.data()[i]), gamma * (maxi - mn[i]));
-        Qnegi = fmax(0.5 * ML.data()[i] * (0.0 - mn.data()[i]), gamma * (mini - mn[i]));
-      }
-      ///////////////////////
-      // COMPUTE R VECTORS //
-      ///////////////////////
-      Rpos[i] = ((Pposi == 0) ? 1. : fmin(1.0, Qposi / Pposi));
-      Rneg[i] = ((Pnegi == 0) ? 1. : fmin(1.0, Qnegi / Pnegi));
-    } // i DOFs
-
-    //////////////////////
-    // COMPUTE LIMITERS //
-    //////////////////////
-    ij = 0;
-    for (int i = 0; i < numDOFs; i++) {
-      double ith_Limiter_times_FluxCorrectionMatrix = 0.;
-      double alpha_fA, alpha_dot, beta_ij = 1.0;
-      // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
-      for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-        int j = csrColumnOffsets_DofLoops.data()[offset];
-        alpha_fA     = ((FluxCorrectionMatrix[ij] > 0) ? fmin(Rpos[i], Rneg[j]) : fmin(Rneg[i], Rpos[j])) * FluxCorrectionMatrix[ij];
-        alpha_dot    = fmin(1.0, beta_ij * fabs(alpha_fA) / MC.data()[ij] / fmax(1.0e-8, fabs(mDot[i] - mDot[j])));
-        if (MONOLITHIC == 0) {
-          ith_Limiter_times_FluxCorrectionMatrix += alpha_fA;
-        } else {
-          ith_Limiter_times_FluxCorrectionMatrix += alpha_fA + (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * alpha_dot * MC.data()[ij] * (mDot[i] - mDot[j]);
-        }
-        ij += 1;
-      }
-
-      fluxCorrection.data()[i] = -ith_Limiter_times_FluxCorrectionMatrix*bc_mask[i]/dt;
-      limited_solution.data()[i] = mLow[i] + 1. / ML.data()[i] * ith_Limiter_times_FluxCorrectionMatrix * bc_mask[i];
-
-      //cek todo: double check that the below is not necesary. The limted_solution should already be within the bounds
-      //Calculate the min and max mass bounds
-      //double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
-      //double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
-
-      // Check if the limited mass is within bounds
-      //if (limited_mass < mMin || limited_mass > mMax) {
-      //  limited_solution.data()[i] = solL[i]; // Fallback to lower-order solution
-      //} else {
-      //  limited_solution.data()[i] = limited_mass; // Assign the limited mass
-      //}
-    }
-  }
-
   // void FCTStep(arguments_dict &args)
   // {
   //   xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
@@ -1111,9 +976,17 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
   //   //flags
   //   int                  LUMPED_MASS_MATRIX        = args.scalar<int>("LUMPED_MASS_MATRIX");
   //   int                  MONOLITHIC                = args.scalar<int>("MONOLITHIC");
-  //   double               Rpos[numDOFs], Rneg[numDOFs];
-  //   double               FluxCorrectionMatrix[NNZ];
-  //   double               mDot[numDOFs];
+  //   // double               Rpos[numDOFs], Rneg[numDOFs];
+  //   // double               FluxCorrectionMatrix[NNZ];
+  //   // double               mDot[numDOFs];
+
+  //   std::vector<double> Rpos(numDOFs, 0.0);
+  //   std::vector<double> Rneg(numDOFs, 0.0);
+  //   std::vector<double> FluxCorrectionMatrix(NNZ, 0.0);
+  //   std::vector<double> mDot(numDOFs, 0.0);
+
+
+  
 
   //   //////////////////
   //   // LOOP in DOFs //
@@ -1133,7 +1006,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
   //     double Pposi = 0, Pnegi = 0;
   //     // LOOP OVER THE SPARSITY PATTERN (j-LOOP)//
   //     for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
-  //       int j = csrColumnOffsets_DofLoops.data()[offset];
+
+  //      int j = csrColumnOffsets_DofLoops.data()[offset];
   //       ////////////////////////
   //       // COMPUTE THE BOUNDS //
   //       ////////////////////////
@@ -1223,7 +1097,382 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
   //   }
   // }
 
+void FCTStep(arguments_dict &args)
+{
+  xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
+  int                  NNZ                       = args.scalar<int>("NNZ");     // number of non-zero entries
+  int                  numDOFs                   = args.scalar<int>("numDOFs"); // number of DOFs
+  double               dt                        = args.scalar<double>("dt");
+  xt::pyarray<double> &ML                        = args.array<double>("ML");    // lumped mass matrix (as vector)
+  xt::pyarray<double> &mn                        = args.array<double>("mn");    // DOFs at time tn
+  xt::pyarray<double> &mHigh                     = args.array<double>("mHigh"); // high-order mass at t^{n+1}
+  xt::pyarray<double> &mLow                      = args.array<double>("mLow");  // low-order mass at t^{n+1}
+  xt::pyarray<double> &mDotHigh                  = args.array<double>("mDotHigh");
+  xt::pyarray<double> &mDotLow                   = args.array<double>("mDotLow");
+  xt::pyarray<double> &limited_solution          = args.array<double>("limited_solution");
+  xt::pyarray<int>    &csrRowIndeces_DofLoops    = args.array<int>("csrRowIndeces_DofLoops");
+  xt::pyarray<int>    &csrColumnOffsets_DofLoops = args.array<int>("csrColumnOffsets_DofLoops");
+  xt::pyarray<double> &MC                        = args.array<double>("MC");              // consistent mass matrix
+  xt::pyarray<double> &dt_times_fH_minus_fL      = args.array<double>("dt_times_fH_minus_fL");
+  xt::pyarray<double> &min_m_bc                  = args.array<double>("min_m_bc");
+  xt::pyarray<double> &max_m_bc                  = args.array<double>("max_m_bc");
+  xt::pyarray<double> &fluxCorrection            = args.array<double>("fluxCorrection");
+  // flags
+  int                  LUMPED_MASS_MATRIX        = args.scalar<int>("LUMPED_MASS_MATRIX");
+  int                  MONOLITHIC                = args.scalar<int>("MONOLITHIC");
 
+  // heap arrays instead of VLAs
+  std::vector<double> Rpos(numDOFs, 0.0);
+  std::vector<double> Rneg(numDOFs, 0.0);
+  std::vector<double> FluxCorrectionMatrix(NNZ, 0.0);
+  std::vector<double> mDot(numDOFs, 0.0);
+
+  // for debugging bounds
+  std::vector<double> localMin(numDOFs, 0.0);
+  std::vector<double> localMax(numDOFs, 0.0);
+
+  //
+  // Global debug header
+  //
+  std::cout << "\n=== FCT DEBUG CHECK ===\n";
+  std::cout << "numDOFs = " << numDOFs
+            << ", NNZ = " << NNZ << std::endl;
+
+  std::cout << "csrRowIndeces_DofLoops.size = "
+            << csrRowIndeces_DofLoops.size() << std::endl;
+
+  std::cout << "csrColumnOffsets_DofLoops.size = "
+            << csrColumnOffsets_DofLoops.size() << std::endl;
+
+  std::cout << "ML.size = " << ML.size()
+            << ", mn.size = " << mn.size()
+            << ", mLow.size = " << mLow.size()
+            << ", mHigh.size = " << mHigh.size()
+            << ", mDotLow.size = " << mDotLow.size()
+            << ", dt_times_fH_minus_fL.size = " << dt_times_fH_minus_fL.size()
+            << ", MC.size = " << MC.size()
+            << ", fluxCorrection.size = " << fluxCorrection.size()
+            << ", limited_solution.size = " << limited_solution.size()
+            << std::endl;
+
+  // 1) Row pointer length
+  if (csrRowIndeces_DofLoops.size() != static_cast<std::size_t>(numDOFs + 1)) {
+    std::cerr << "FCT WARNING: csrRowIndeces_DofLoops.size() = "
+              << csrRowIndeces_DofLoops.size()
+              << " but expected numDOFs+1 = " << (numDOFs+1) << std::endl;
+  }
+
+  // 2) Last row pointer equals NNZ
+  int lastRow = csrRowIndeces_DofLoops.at(numDOFs);
+  std::cout << "csrRowIndeces_DofLoops[numDOFs] = " << lastRow << std::endl;
+  if (lastRow != NNZ) {
+    std::cerr << "FCT WARNING: csrRowIndeces_DofLoops[numDOFs] = "
+              << lastRow << " but NNZ = " << NNZ << std::endl;
+  }
+
+  // 3) Column offsets length
+  if (csrColumnOffsets_DofLoops.size() != static_cast<std::size_t>(NNZ)) {
+    std::cerr << "FCT WARNING: csrColumnOffsets_DofLoops.size() = "
+              << csrColumnOffsets_DofLoops.size()
+              << " but expected NNZ = " << NNZ << std::endl;
+  }
+
+  // 4) MC / dt_times_fH_minus_fL lengths
+  if (MC.size() != static_cast<std::size_t>(NNZ)) {
+    std::cerr << "FCT WARNING: MC.size() = " << MC.size()
+              << " but expected NNZ = " << NNZ << std::endl;
+  }
+  if (dt_times_fH_minus_fL.size() != static_cast<std::size_t>(NNZ)) {
+    std::cerr << "FCT WARNING: dt_times_fH_minus_fL.size() = "
+              << dt_times_fH_minus_fL.size()
+              << " but expected NNZ = " << NNZ << std::endl;
+  }
+
+  std::cout << "=== END FCT DEBUG CHECK HEADER ===\n";
+
+  //////////////////
+  // LOOP in DOFs //
+  //////////////////
+  int ij = 0;
+
+  std::cout << "FCT: entering first DOF loop (building mDot, FluxCorrectionMatrix, Rpos/Rneg bounds)...\n";
+
+  for (int i = 0; i < numDOFs; i++) {
+    // Debug: print info for the first few DOFs
+    if (i < 3) {
+      std::cout << "FCT: [1st loop] i = " << i
+                << ", row range = [" << csrRowIndeces_DofLoops.at(i)
+                << "," << csrRowIndeces_DofLoops.at(i+1) << ")\n";
+    }
+
+    // local time derivative from low-order mass
+    mDot.at(i) = (mLow.at(i) - mn.at(i)) / dt;
+
+    // initialize local min/max from BC
+    double mini = min_m_bc.at(i);
+    double maxi = max_m_bc.at(i);
+
+    double Pposi = 0.0, Pnegi = 0.0;
+
+    // LOOP OVER THE SPARSITY PATTERN (j-LOOP)
+    for (int offset = csrRowIndeces_DofLoops.at(i);
+         offset < csrRowIndeces_DofLoops.at(i + 1);
+         offset++)
+    {
+      // bounds check on offset
+      if (offset < 0 || offset >= static_cast<int>(csrColumnOffsets_DofLoops.size())) {
+        std::cerr << "FCT FATAL (1st loop): offset=" << offset
+                  << " out of [0," << csrColumnOffsets_DofLoops.size()-1
+                  << "] at i=" << i << std::endl;
+        abort();
+      }
+
+      int j = csrColumnOffsets_DofLoops.at(offset);
+
+      // bounds check on j
+      if (j < 0 || j >= numDOFs) {
+        std::cerr << "FCT FATAL (1st loop): j=" << j
+                  << " out of [0," << numDOFs-1
+                  << "] at i=" << i
+                  << ", offset=" << offset << std::endl;
+        abort();
+      }
+
+      // bounds check on ij
+      if (ij < 0 || ij >= NNZ) {
+        std::cerr << "FCT FATAL (1st loop): ij=" << ij
+                  << " out of [0," << NNZ-1
+                  << "] at i=" << i
+                  << ", offset=" << offset
+                  << " (csrRowIndeces_DofLoops[i]="
+                  << csrRowIndeces_DofLoops.at(i) << ")" << std::endl;
+        abort();
+      }
+
+      // small debug for first couple of rows
+      if (i < 2 && (offset - csrRowIndeces_DofLoops.at(i)) < 5) {
+        std::cout << "  FCT: [1st loop] i=" << i
+                  << " local j=" << j
+                  << " offset=" << offset
+                  << " ij=" << ij << std::endl;
+      }
+
+      ////////////////////////
+      // COMPUTE THE BOUNDS //
+      ////////////////////////
+      if (GLOBAL_FCT == 0) {
+        if (MONOLITHIC == 0) {
+          mini = fmin(mini, mLow.at(j));
+          maxi = fmax(maxi, mLow.at(j));
+        } else {
+          mini = fmin(mini, mn.at(j));
+          maxi = fmax(maxi, mn.at(j));
+        }
+      }
+
+      // original logic: update mDot[j] (this only matters for MONOLITHIC != 0)
+      mDot.at(j) = (mLow.at(j) - mn.at(j)) / dt;
+
+      if (MONOLITHIC == 0) {
+        FluxCorrectionMatrix.at(ij) =
+          (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * MC.at(ij) *
+          (mDotLow.at(i) - mDotLow.at(j)) +
+          dt_times_fH_minus_fL.at(ij);
+      } else {
+        FluxCorrectionMatrix.at(ij) = dt_times_fH_minus_fL.at(ij);
+      }
+
+      ///////////////////////
+      // COMPUTE P VECTORS //
+      ///////////////////////
+      Pposi += FluxCorrectionMatrix.at(ij) *
+               ((FluxCorrectionMatrix.at(ij) > 0) ? 1. : 0.);
+      Pnegi += FluxCorrectionMatrix.at(ij) *
+               ((FluxCorrectionMatrix.at(ij) < 0) ? 1. : 0.);
+
+      // update ij
+      ij += 1;
+    } // j-loop
+
+    ///////////////////////
+    // COMPUTE Q VECTORS //
+    ///////////////////////
+    double gamma;
+    double Qposi;
+    double Qnegi;
+
+    if (MONOLITHIC == 0) {
+      Qposi = ML.at(i) * (maxi - mLow.at(i));
+      Qnegi = ML.at(i) * (mini - mLow.at(i));
+    } else {
+      // cek todo: don't think this is right for Richards
+      gamma = 10.0 * ML.at(i);
+      Qposi = fmin(0.5 * ML.at(i) * (1.0 - mn.at(i)),
+                   gamma * (maxi - mn.at(i)));
+      Qnegi = fmax(0.5 * ML.at(i) * (0.0 - mn.at(i)),
+                   gamma * (mini - mn.at(i)));
+    }
+
+    ///////////////////////
+    // COMPUTE R VECTORS //
+    ///////////////////////
+    Rpos.at(i) = ((Pposi == 0.0)
+                 ? 1.0
+                 : fmin(1.0, Qposi / Pposi));
+    Rneg.at(i) = ((Pnegi == 0.0)
+                 ? 1.0
+                 : fmin(1.0, Qnegi / Pnegi));
+
+    // store local bounds for later bound check
+    localMin.at(i) = mini;
+    localMax.at(i) = maxi;
+
+    if (i < 3) {
+      std::cout << "FCT: [1st loop] i=" << i
+                << " Pposi=" << Pposi
+                << " Pnegi=" << Pnegi
+                << " Qposi=" << Qposi
+                << " Qnegi=" << Qnegi
+                << " Rpos[i]=" << Rpos.at(i)
+                << " Rneg[i]=" << Rneg.at(i) << std::endl;
+    }
+  } // i DOFs
+
+  std::cout << "FCT: after first ij loop: ij = " << ij
+            << " (NNZ = " << NNZ << ")\n";
+  if (ij != NNZ) {
+    std::cerr << "FCT WARNING: after first loop ij = " << ij
+              << " but NNZ = " << NNZ << std::endl;
+  }
+
+  //////////////////////
+  // COMPUTE LIMITERS //
+  //////////////////////
+  ij = 0;
+  std::cout << "FCT: entering second DOF loop (applying limiters)...\n";
+
+  for (int i = 0; i < numDOFs; i++) {
+    double ith_Limiter_times_FluxCorrectionMatrix = 0.0;
+    double alpha_fA, alpha_dot, beta_ij = 1.0;
+
+    if (i < 3) {
+      std::cout << "FCT: [2nd loop] i = " << i
+                << ", row range = [" << csrRowIndeces_DofLoops.at(i)
+                << "," << csrRowIndeces_DofLoops.at(i+1) << ")\n";
+    }
+
+    // LOOP OVER THE SPARSITY PATTERN (j-LOOP)
+    for (int offset = csrRowIndeces_DofLoops.at(i);
+         offset < csrRowIndeces_DofLoops.at(i + 1);
+         offset++)
+    {
+      if (offset < 0 || offset >= static_cast<int>(csrColumnOffsets_DofLoops.size())) {
+        std::cerr << "FCT FATAL (2nd loop): offset=" << offset
+                  << " out of [0," << csrColumnOffsets_DofLoops.size()-1
+                  << "] at i=" << i << std::endl;
+        abort();
+      }
+
+      int j = csrColumnOffsets_DofLoops.at(offset);
+
+      if (j < 0 || j >= numDOFs) {
+        std::cerr << "FCT FATAL (2nd loop): j=" << j
+                  << " out of [0," << numDOFs-1
+                  << "] at i=" << i
+                  << ", offset=" << offset << std::endl;
+        abort();
+      }
+
+      if (ij < 0 || ij >= NNZ) {
+        std::cerr << "FCT FATAL (2nd loop): ij=" << ij
+                  << " out of [0," << NNZ-1
+                  << "] at i=" << i
+                  << ", offset=" << offset
+                  << " (csrRowIndeces_DofLoops[i]="
+                  << csrRowIndeces_DofLoops.at(i) << ")" << std::endl;
+        abort();
+      }
+
+      if (i < 2 && (offset - csrRowIndeces_DofLoops.at(i)) < 5) {
+        std::cout << "  FCT: [2nd loop] i=" << i
+                  << " j=" << j
+                  << " offset=" << offset
+                  << " ij=" << ij
+                  << " FluxCorrectionMatrix[ij]=" << FluxCorrectionMatrix.at(ij)
+                  << " Rpos[i]=" << Rpos.at(i)
+                  << " Rneg[i]=" << Rneg.at(i)
+                  << " Rpos[j]=" << Rpos.at(j)
+                  << " Rneg[j]=" << Rneg.at(j)
+                  << std::endl;
+      }
+
+      alpha_fA =
+        ((FluxCorrectionMatrix.at(ij) > 0.0)
+           ? fmin(Rpos.at(i), Rneg.at(j))
+           : fmin(Rneg.at(i), Rpos.at(j))) * FluxCorrectionMatrix.at(ij);
+
+      alpha_dot =
+        fmin(1.0,
+             beta_ij * fabs(alpha_fA) / MC.at(ij) /
+             fmax(1.0e-8, fabs(mDot.at(i) - mDot.at(j))));
+
+      if (MONOLITHIC == 0) {
+        ith_Limiter_times_FluxCorrectionMatrix += alpha_fA;
+      } else {
+        ith_Limiter_times_FluxCorrectionMatrix +=
+          alpha_fA +
+          (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt *
+          alpha_dot * MC.at(ij) * (mDot.at(i) - mDot.at(j));
+      }
+
+      ij += 1;
+    } // j-loop
+
+    fluxCorrection.at(i) =
+      -ith_Limiter_times_FluxCorrectionMatrix * bc_mask.at(i) / dt;
+
+    limited_solution.at(i) =
+      mLow.at(i) + 1.0 / ML.at(i) *
+      ith_Limiter_times_FluxCorrectionMatrix * bc_mask.at(i);
+
+    // bound check: is limited_solution inside [localMin, localMax]?
+    {
+      double u    = limited_solution.at(i);
+      double umin = localMin.at(i);
+      double umax = localMax.at(i);
+      double tol  = 1e-10; // small tolerance
+
+      if (u < umin - tol || u > umax + tol) {
+        std::cerr << "FCT BOUND VIOLATION at i=" << i
+                  << " u=" << u
+                  << " localMin=" << umin
+                  << " localMax=" << umax
+                  << " (bc_mask=" << bc_mask.at(i) << ")\n";
+      }
+    }
+
+    if (i < 3) {
+      std::cout << "FCT: [2nd loop] i=" << i
+                << " ith_Limiter_times_FluxCorrectionMatrix="
+                << ith_Limiter_times_FluxCorrectionMatrix
+                << " fluxCorrection[i]=" << fluxCorrection.at(i)
+                << " limited_solution[i]=" << limited_solution.at(i)
+                << std::endl;
+    }
+  } // i DOFs
+
+  std::cout << "FCT: after second ij loop: ij = " << ij
+            << " (NNZ = " << NNZ << ")\n";
+  if (ij != NNZ) {
+    std::cerr << "FCT WARNING: after second loop ij = " << ij
+              << " but NNZ = " << NNZ << std::endl;
+  }
+
+  std::cout << "FCT: finished FCTStep\n";
+}
+
+
+  
   void kth_FCT_step(arguments_dict &args)
   {
     int                  NNZ                       = args.scalar<int>("NNZ");     //number on non-zero entries on sparsity pattern
