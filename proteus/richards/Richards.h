@@ -1208,10 +1208,13 @@ void FCTStep(arguments_dict &args)
     // initialize local min/max from BC
     double mini = min_m_bc.at(i);
     double maxi = max_m_bc.at(i);
+
     double Pposi = 0.0, Pnegi = 0.0;
 
     // LOOP OVER THE SPARSITY PATTERN (j-LOOP)
-    for (int offset = csrRowIndeces_DofLoops.at(i); offset < csrRowIndeces_DofLoops.at(i + 1);offset++)
+    for (int offset = csrRowIndeces_DofLoops.at(i);
+         offset < csrRowIndeces_DofLoops.at(i + 1);
+         offset++)
     {
       // // bounds check on offset
       // if (offset < 0 || offset >= static_cast<int>(csrColumnOffsets_DofLoops.size())) {
@@ -1268,7 +1271,10 @@ void FCTStep(arguments_dict &args)
       mDot.at(j) = (mLow.at(j) - mn.at(j)) / dt;
 
       if (MONOLITHIC == 0) {
-        FluxCorrectionMatrix.at(ij) = (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * MC.at(ij) *(mDotLow.at(i) - mDotLow.at(j)) +dt_times_fH_minus_fL.at(ij);
+        FluxCorrectionMatrix.at(ij) =
+          (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * MC.at(ij) *
+          (mDotLow.at(i) - mDotLow.at(j)) +
+          dt_times_fH_minus_fL.at(ij);
       } else {
         FluxCorrectionMatrix.at(ij) = dt_times_fH_minus_fL.at(ij);
       }
@@ -1276,8 +1282,10 @@ void FCTStep(arguments_dict &args)
       ///////////////////////
       // COMPUTE P VECTORS //
       ///////////////////////
-      Pposi += FluxCorrectionMatrix.at(ij) * ((FluxCorrectionMatrix.at(ij) > 0) ? 1. : 0.);
-      Pnegi += FluxCorrectionMatrix.at(ij) * ((FluxCorrectionMatrix.at(ij) < 0) ? 1. : 0.);
+      Pposi += FluxCorrectionMatrix.at(ij) *
+               ((FluxCorrectionMatrix.at(ij) > 0) ? 1. : 0.);
+      Pnegi += FluxCorrectionMatrix.at(ij) *
+               ((FluxCorrectionMatrix.at(ij) < 0) ? 1. : 0.);
 
       // update ij
       ij += 1;
@@ -1303,8 +1311,8 @@ void FCTStep(arguments_dict &args)
     ///////////////////////
     // COMPUTE R VECTORS //
     ///////////////////////
-    Rpos.at(i) = ((Pposi == 0.0)? 1.0: fmin(1.0, Qposi / Pposi));
-    Rneg.at(i) = ((Pnegi == 0.0)? 1.0: fmin(1.0, Qnegi / Pnegi));
+    Rpos.at(i) = ((Pposi == 0.0) ? 1.0 : fmin(1.0, Qposi / Pposi));
+    Rneg.at(i) = ((Pnegi == 0.0) ? 1.0 : fmin(1.0, Qnegi / Pnegi));
 
     // store local bounds for later bound check
     localMin.at(i) = mini;
@@ -1345,7 +1353,7 @@ void FCTStep(arguments_dict &args)
     // }
 
     // LOOP OVER THE SPARSITY PATTERN (j-LOOP)
-    for (int offset = csrRowIndeces_DofLoops.at(i); offset < csrRowIndeces_DofLoops.at(i + 1); offset++)
+    for (int offset = csrRowIndeces_DofLoops.at(i);  offset < csrRowIndeces_DofLoops.at(i + 1); offset++)
     {
       // if (offset < 0 || offset >= static_cast<int>(csrColumnOffsets_DofLoops.size())) {
       //   std::cerr << "FCT FATAL (2nd loop): offset=" << offset
@@ -1387,20 +1395,24 @@ void FCTStep(arguments_dict &args)
       //             << std::endl;
       // }
 
-      alpha_fA = ((FluxCorrectionMatrix.at(ij) > 0.0)? fmin(Rpos.at(i), Rneg.at(j)): fmin(Rneg.at(i), Rpos.at(j))) * FluxCorrectionMatrix.at(ij);
+      alpha_fA = ((FluxCorrectionMatrix.at(ij) > 0.0) ? fmin(Rpos.at(i), Rneg.at(j)) : fmin(Rneg.at(i), Rpos.at(j))) * FluxCorrectionMatrix.at(ij);
 
-      alpha_dot =fmin(1.0, beta_ij * fabs(alpha_fA) / MC.at(ij) /fmax(1.0e-8, fabs(mDot.at(i) - mDot.at(j))));
+      alpha_dot = fmin(1.0, beta_ij * fabs(alpha_fA) / MC.at(ij) / fmax(1.0e-8, fabs(mDot.at(i) - mDot.at(j))));
 
       if (MONOLITHIC == 0) {
         ith_Limiter_times_FluxCorrectionMatrix += alpha_fA;
       } else {
-        ith_Limiter_times_FluxCorrectionMatrix += alpha_fA +(LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt *alpha_dot * MC.at(ij) * (mDot.at(i) - mDot.at(j));
+        ith_Limiter_times_FluxCorrectionMatrix +=
+          alpha_fA +
+          (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt *
+          alpha_dot * MC.at(ij) * (mDot.at(i) - mDot.at(j));
       }
 
       ij += 1;
     } // j-loop
 
     fluxCorrection.at(i) = -ith_Limiter_times_FluxCorrectionMatrix * bc_mask.at(i) / dt;
+
     limited_solution.at(i) = mLow.at(i) + 1.0 / ML.at(i) * ith_Limiter_times_FluxCorrectionMatrix * bc_mask.at(i);
 
     // bound check: is limited_solution inside [localMin, localMax]?
@@ -1419,6 +1431,24 @@ void FCTStep(arguments_dict &args)
       }
     }
 
+    // if (i < 3) {
+    //   std::cout << "FCT: [2nd loop] i=" << i
+    //             << " ith_Limiter_times_FluxCorrectionMatrix="
+    //             << ith_Limiter_times_FluxCorrectionMatrix
+    //             << " fluxCorrection[i]=" << fluxCorrection.at(i)
+    //             << " limited_solution[i]=" << limited_solution.at(i)
+    //             << std::endl;
+    // }
+  } // i DOFs
+
+  // std::cout << "FCT: after second ij loop: ij = " << ij
+  //           << " (NNZ = " << NNZ << ")\n";
+  // if (ij != NNZ) {
+  //   std::cerr << "FCT WARNING: after second loop ij = " << ij
+  //             << " but NNZ = " << NNZ << std::endl;
+  // }
+
+  // std::cout << "FCT: finished FCTStep\n";
 }
 
 
