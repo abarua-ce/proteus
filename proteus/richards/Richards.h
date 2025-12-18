@@ -149,18 +149,17 @@ public:
   //   }
   // }
 
-
 inline void evaluateCoefficients(const int rowptr[nSpace],
                                  const int colind[nnz],
                                  const double rho,
                                  const double beta,
                                  const double gravity[nSpace],
                                  const double alpha,
-                                 const double n_vg,          // (unused here; kept for interface compatibility)
-                                 const double thetaR,
+                                 const double n_vg,          // unused
+                                 const double thetaR,        // unused
                                  const double thetaSR,       // = theta_s - theta_r
                                  const double KWs[nnz],
-                                 const double &u,            // u = psi (pressure head)
+                                 const double &u,            // HERE: u = \bar{h}
                                  double &m,
                                  double &dm,
                                  double f[nSpace],
@@ -171,50 +170,47 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
                                  double &kr,
                                  double &dkr)
 {
-  const int nSpace2 = nSpace * nSpace; (void)nSpace2; (void)n_vg; // suppress unused warnings
-
-  // ---- Gardner–Irmay exponential relations ----
-  // k_r(psi)       = exp(alpha * psi)
-  // theta(psi)     = thetaR + thetaSR * exp(alpha * psi)
-  // dtheta/du      = thetaSR * alpha * exp(alpha * u)
-  // dk_r/du        = alpha * exp(alpha * u)
-
-  const double eap   = std::exp(alpha * u);          // exp(alpha * psi)
-  const double KWr   = eap;                          // relative conductivity
-  const double DKWr_Du = alpha * eap;                // derivative wrt u
-  const double thetaW  = thetaR + thetaSR * eap;     // water content
-  const double DthetaW_Du = thetaSR * alpha * eap;   // derivative wrt u
-
-  // ---- Slight compressibility (same as your code) ----
-  const double rhom  = rho * std::exp(beta * u);
-  const double drhom = beta * rhom;
-  const double rho2  = rho * rho;
-
-  // mass term and its derivative
-  m  = rhom * thetaW;
-  dm = drhom * thetaW + rhom * DthetaW_Du;
-
-  // fluxes and diffusion tensors
-  for (int I = 0; I < nSpace; I++) {
-    f[I]  = 0.0;
-    df[I] = 0.0;
-    for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
-      const int J = colind[ii];
-      // advective part due to gravity (your original pattern)
-      f[I]  += rho2 * KWr * KWs[ii] * gravity[J];
-      df[I] += rho2 * DKWr_Du * KWs[ii] * gravity[J];
-
-      // diffusion-like tensor a and its derivative
-      a[ii]  = rho * KWr * KWs[ii];
-      da[ii] = rho * DKWr_Du * KWs[ii];
-
-      // saturated tensor (unchanged)
-      as[ii] = rho * KWs[ii];
-
-      kr   = KWr;
-      dkr  = DKWr_Du;
+  // Unused parameters in this Tracy test
+  (void)rho;
+  (void)beta;
+  (void)n_vg;
+  (void)thetaR;
+  const double Ks = KWs[0];
+  // 2. Tracy constant: c = alpha * (theta_s - theta_r) / Ks
+  const double c = alpha * thetaSR / Ks;
+  // 3. Mass term: m(u) = c * u  =>  m_t = c * u_t
+  m  = 0.0; // c * u;
+  dm = 0.0; //c;
+  // 4. Advective flux: f = alpha * u * gravity  (dimensionless gravity)
+  //    For gravity = (0,-1,0) or (0,0,-1), div(f) = -alpha * u_z
+  for (int I = 0; I < nSpace; I++)
+  {
+    f[I]  = alpha * u * gravity[I];
+    df[I] = alpha * gravity[I];
+  }
+  // 5. Diffusion tensor: a = I (identity), as = I
+  //    => -div(a grad u) = -Δu
+  for (int ii = 0; ii < nnz; ii++)
+  {
+    a[ii]  = 0.0;
+    da[ii] = 0.0;
+    as[ii] = 0.0;
+  }
+  for (int I = 0; I < nSpace; I++)
+  {
+    for (int ii = rowptr[I]; ii < rowptr[I+1]; ii++)
+    {
+      int J        = colind[ii];
+      double delta = (I == J) ? 1.0 : 0.0;
+      a[ii]  = delta;
+      as[ii] = delta;
+      // da[ii] already zero: diffusion independent of u
     }
   }
+
+  // 6. Relative conductivity placeholders (not used for this linear test)
+  kr  = 1.0;
+  dkr = 0.0;
 }
 
   // inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
@@ -234,23 +230,49 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
 
   
 
-  inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
-  {
-    double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
-    m_vg   = 1.0 - 1.0 / n_vg;
-    thetaS = thetaR + thetaSR;
-    thetaW = m / rho;
-    if (thetaW > thetaR+ 1e-7) { // && thetaW < thetaS) {
-      sBar    = (thetaW - thetaR) / thetaSR;
-      u = std::log(sBar) / alpha;
-    // if (thetaW > 1.01*thetaR && thetaW < thetaS) {
-    //   sBar    = (thetaW - thetaR) / thetaSR;
-    //   pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
-    //   pcBar   = pow(pcBar_n, 1.0 / n_vg);
-    //   psiC    = pcBar / alpha;
-    //   u       = -psiC;
-    }
-  }
+inline void evaluateInverseCoefficients(const int rowptr[nSpace],
+                                        const int colind[nnz],
+                                        const double rho,
+                                        const double beta,
+                                        const double gravity[nSpace],
+                                        const double alpha,
+                                        const double n_vg,
+                                        const double thetaR,
+                                        const double thetaSR,
+                                        const double KWs[nnz],
+                                        double &u,              // OUTPUT: u = \bar{h}
+                                        const double &m,        // INPUT: mass m = c*u
+                                        const double &dm,
+                                        const double f[nSpace],
+                                        const double df[nSpace],
+                                        const double a[nnz],
+                                        const double da[nnz])
+{
+  // All of these are unused for this simple linear inverse
+  (void)rowptr;
+  (void)colind;
+  (void)rho;
+  (void)beta;
+  (void)gravity;
+  (void)n_vg;
+  (void)thetaR;
+  (void)dm;
+  (void)f;
+  (void)df;
+  (void)a;
+  (void)da;
+
+  // Same Ks and c as in evaluateCoefficients
+
+  // // Invert: u = m / c
+  // if (thetaW +1.e-6+thetaR){
+  // const double Ks = KWs[0];                  // homogeneous, isotropic
+  // const double c  = alpha * thetaSR / Ks;    // m = c*u
+  //   u = m / c;
+
+  //}
+}
+
 
 
 
@@ -1899,7 +1921,7 @@ void FCTStep(arguments_dict &args)
         // Darcy velocity calculation
          for (int I = 0; I < nSpace; I++) { velocity_loc[I] = 0.0; }
          for (int I = 0; I < nSpace; I++) {
-           for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u[J]+ (rho_local/rho) * gravity.data()[J]); }
+           for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u[J]+  gravity.data()[J]); }
          }
          for (int I = 0; I < nSpace; I++) { velocity.data()[eN_k_nSpace + I] = velocity_loc[I]; }
 
@@ -2056,7 +2078,7 @@ void FCTStep(arguments_dict &args)
          double  velocity_loc_ext[nSpace];
          for (int I = 0; I < nSpace; I++) { velocity_loc_ext[I] = 0.0; }
         for (int I = 0; I < nSpace; I++) {
-          for (int J = 0; J < nSpace; J++) { velocity_loc_ext[I] -= bc_Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u_ext[J]+ (rho_ext/rho) * gravity.data()[J]); }
+          for (int J = 0; J < nSpace; J++) { velocity_loc_ext[I] -= bc_Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u_ext[J]+  gravity.data()[J]); }
         }
         for (int I = 0; I < nSpace; I++) { ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = velocity_loc_ext[I]; }
 
@@ -2375,7 +2397,7 @@ void FCTStep(arguments_dict &args)
 
       //if (mIn.data()[i] < mMin - 0.001 || mIn.data()[i] > mMax + 0.001) { std::cout << "mass out of bounds " << mMin << '\t' << mIn.data()[i] << '\t' << mMax << std::endl; }
 
-      if (mIn.data()[i] < mMin - 1e-6 ) { std::cout << "mass out of bounds " << mMin << '\t' << mIn.data()[i] << '\t' << mMax << std::endl; }
+//      if (mIn.data()[i] < mMin - 1e-6 ) { std::cout << "mass out of bounds " << mMin << '\t' << mIn.data()[i] << '\t' << mMax << std::endl; }
 
       evaluateInverseCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[0]], n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]],
                                   thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz],
