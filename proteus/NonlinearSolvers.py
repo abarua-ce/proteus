@@ -155,8 +155,26 @@ class NonlinearSolver(object):
         self.fullResidual=True
 
     def computeResidual(self,u,r,b):
+        import numpy as np
         if self.fullResidual:
+            if not np.isfinite(u).all():
+                bad = np.where(~np.isfinite(u))[0]
+                print("NaN/Inf already in u before getResidual")
+                print("  first indices:", bad[:20])
+                print("  values:", u[bad[:20]])
+                raise RuntimeError("u contains NaN/Inf BEFORE model residual")
             self.F.getResidual(u,r)
+            # ---- DEBUG TRAP ----
+            
+            if not np.isfinite(r).all():
+                bad = np.where(~np.isfinite(r))[0]
+                print("NaN/Inf in residual after F.getResidual")
+                print("  count:", bad.size)
+                print("  first indices:", bad[:20])
+                print("  first values:", r[bad[:20]])
+                print("  min/max finite:", np.nanmin(r), np.nanmax(r))
+                raise RuntimeError("Residual contains NaN/Inf (coming from model getResidual).")
+
             if b is not None:
                 r-=b
         else:

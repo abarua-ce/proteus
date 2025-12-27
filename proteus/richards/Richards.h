@@ -185,8 +185,8 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
   //    For gravity = (0,-1,0) or (0,0,-1), div(f) = -alpha * u_z
   for (int I = 0; I < nSpace; I++)
   {
-    f[I]  = alpha * u * gravity[I];
-    df[I] = alpha * gravity[I];
+    f[I]  = 0.0; //alpha * u * gravity[I];
+    df[I] = 0.0; //alpha * gravity[I];
   }
   // 5. Diffusion tensor: a = I (identity), as = I
   //    => -div(a grad u) = -Δu
@@ -535,6 +535,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     double &anb_seepage_flux(args.scalar<double>("anb_seepage_flux"));
     xt::pyarray<double> &q_velocity = args.array<double>("q_velocity");
     anb_seepage_flux = 0.0;
+    const double pi = M_PI;
 
     //loop over elements to compute volume integrals and load them into element and global residual
     //
@@ -584,6 +585,9 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_local, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
         
+        // Add source Term: s = 2*pi^2*sin(pi*x)*sin(pi*y)
+        
+        const double s = 2.0*pi*pi*std::sin(pi*x)*std::sin(pi*y);
 
         // Darcy Velocity
 
@@ -610,32 +614,34 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //calculate subgrid error (strong residual and adjoint)
         //
         //calculate strong residual
-        pdeResidual_u = ck.Mass_strong(m_t) + ck.Advection_strong(df, grad_u);
-        //calculate adjoint
-        for (int i = 0; i < nDOF_test_element; i++) {
-          int i_nSpace = i * nSpace;
-          Lstar_u[i]   = ck.Advection_adjoint(df, &u_grad_test_dV[i_nSpace]);
-        }
-        //calculate tau and tau*Res
-        calculateSubgridError_tau(elementDiameter[eN], dm_t, df, cfl[eN_k], tau0);
-        calculateSubgridError_tau(Ct_sge, G, dm_t, df, tau1, cfl[eN_k]);
+        // pdeResidual_u = ck.Mass_strong(m_t) + ck.Advection_strong(df, grad_u);
+        // //calculate adjoint
+        // for (int i = 0; i < nDOF_test_element; i++) {
+        //   int i_nSpace = i * nSpace;
+        //   Lstar_u[i]   = ck.Advection_adjoint(df, &u_grad_test_dV[i_nSpace]);
+        // }
+        // //calculate tau and tau*Res
+        // calculateSubgridError_tau(elementDiameter[eN], dm_t, df, cfl[eN_k], tau0);
+        // calculateSubgridError_tau(Ct_sge, G, dm_t, df, tau1, cfl[eN_k]);
 
-        tau = useMetrics * tau1 + (1.0 - useMetrics) * tau0;
+        // tau = useMetrics * tau1 + (1.0 - useMetrics) * tau0;
 
-        subgridError_u = -tau * pdeResidual_u;
+        // subgridError_u = -tau * pdeResidual_u;
         //
         //calculate shock capturing diffusion
         //
-        ck.calculateNumericalDiffusion(shockCapturingDiffusion, elementDiameter[eN], pdeResidual_u, grad_u, numDiff0);
-        ck.calculateNumericalDiffusion(shockCapturingDiffusion, sc_uref, sc_alpha, G, G_dd_G, pdeResidual_u, grad_u, numDiff1);
-        q_numDiff_u[eN_k] = useMetrics * numDiff1 + (1.0 - useMetrics) * numDiff0;
+        //ck.calculateNumericalDiffusion(shockCapturingDiffusion, elementDiameter[eN], pdeResidual_u, grad_u, numDiff0);
+        //ck.calculateNumericalDiffusion(shockCapturingDiffusion, sc_uref, sc_alpha, G, G_dd_G, pdeResidual_u, grad_u, numDiff1);
+        //q_numDiff_u[eN_k] = useMetrics * numDiff1 + (1.0 - useMetrics) * numDiff0;
         //
         //update element residual
         //
         for (int i = 0; i < nDOF_test_element; i++) {
           int eN_k_i = eN_k * nDOF_test_element + i, eN_k_i_nSpace = eN_k_i * nSpace, i_nSpace = i * nSpace;
 
-          elementResidual_u[i] += ck.Mass_weak(m_t, u_test_dV[i]) + ck.Advection_weak(f, &u_grad_test_dV[i_nSpace]) + ck.Diffusion_weak(a_rowptr.data(), a_colind.data(), a, grad_u, &u_grad_test_dV[i_nSpace]) + VMS * ck.SubgridError(subgridError_u, Lstar_u[i]) + VMS * ck.NumericalDiffusion(q_numDiff_u_last[eN_k], grad_u, &u_grad_test_dV[i_nSpace]);
+          elementResidual_u[i] += ck.Mass_weak(m_t, u_test_dV[i]) + ck.Advection_weak(f, &u_grad_test_dV[i_nSpace]) + ck.Diffusion_weak(a_rowptr.data(), a_colind.data(), a, grad_u, &u_grad_test_dV[i_nSpace]) 
+                                 // + VMS * ck.SubgridError(subgridError_u, Lstar_u[i]) + VMS * ck.NumericalDiffusion(q_numDiff_u_last[eN_k], grad_u, &u_grad_test_dV[i_nSpace])
+                                  - s * u_test_dV[i];
         } //i
         //
         q_m.data()[eN_k] = m;
@@ -697,6 +703,10 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], u_ext, m_ext, dm_ext, f_ext, df_ext, a_ext, da_ext, as_ext, Kr, dKr);
         evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_ext, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[eN]], n.data()[elementMaterialTypes.data()[eN]], thetaR.data()[elementMaterialTypes.data()[eN]],
                              thetaSR.data()[elementMaterialTypes.data()[eN]], &KWs.data()[elementMaterialTypes.data()[eN] * nnz], bc_u_ext, bc_m_ext, bc_dm_ext, bc_f_ext, bc_df_ext, bc_a_ext, bc_da_ext, bc_as_ext, Kr, dKr);
+        
+        //const double s_ext = 2.0*pi*pi*std::sin(pi*x_ext)*std::sin(pi*y_ext);
+
+
         
         //
         //Calculate Darcy velocity on exterior face : v_ext = -(a_ext/rho) * (grad_u_ext + gravity) ---
@@ -869,31 +879,32 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         //calculate time derivatives
         //
-        ck.bdf(alphaBDF, q_m_betaBDF.data()[eN_k], m, dm, m_t, dm_t);
-        //
-        //calculate subgrid error contribution to the Jacobian (strong residual, adjoint, jacobian of strong residual)
-        //
-        //calculate the adjoint times the test functions
-        for (int i = 0; i < nDOF_test_element; i++) {
-          int i_nSpace = i * nSpace;
-          Lstar_u[i]   = ck.Advection_adjoint(df, &u_grad_test_dV[i_nSpace]);
-        }
-        //calculate the Jacobian of strong residual
-        for (int j = 0; j < nDOF_trial_element; j++) {
-          int j_nSpace        = j * nSpace;
-          dpdeResidual_u_u[j] = ck.MassJacobian_strong(dm_t, u_trial_ref[k * nDOF_trial_element + j]) + ck.AdvectionJacobian_strong(df, &u_grad_trial[j_nSpace]);
-        }
-        //tau and tau*Res
-        calculateSubgridError_tau(elementDiameter[eN], dm_t, df, cfl[eN_k], tau0);
-        calculateSubgridError_tau(Ct_sge, G, dm_t, df, tau1, cfl[eN_k]);
-        tau = useMetrics * tau1 + (1.0 - useMetrics) * tau0;
+        // ck.bdf(alphaBDF, q_m_betaBDF.data()[eN_k], m, dm, m_t, dm_t);
+        // //
+        // //calculate subgrid error contribution to the Jacobian (strong residual, adjoint, jacobian of strong residual)
+        // //
+        // //calculate the adjoint times the test functions
+        // for (int i = 0; i < nDOF_test_element; i++) {
+        //   int i_nSpace = i * nSpace;
+        //   Lstar_u[i]   = ck.Advection_adjoint(df, &u_grad_test_dV[i_nSpace]);
+        // }
+        // //calculate the Jacobian of strong residual
+        // for (int j = 0; j < nDOF_trial_element; j++) {
+        //   int j_nSpace        = j * nSpace;
+        //   dpdeResidual_u_u[j] = ck.MassJacobian_strong(dm_t, u_trial_ref[k * nDOF_trial_element + j]) + ck.AdvectionJacobian_strong(df, &u_grad_trial[j_nSpace]);
+        // }
+        // //tau and tau*Res
+        // calculateSubgridError_tau(elementDiameter[eN], dm_t, df, cfl[eN_k], tau0);
+        // calculateSubgridError_tau(Ct_sge, G, dm_t, df, tau1, cfl[eN_k]);
+        // tau = useMetrics * tau1 + (1.0 - useMetrics) * tau0;
         for (int j = 0; j < nDOF_trial_element; j++) dsubgridError_u_u[j] = -tau * dpdeResidual_u_u[j];
         for (int i = 0; i < nDOF_test_element; i++) {
           for (int j = 0; j < nDOF_trial_element; j++) {
             int j_nSpace = j * nSpace;
             int i_nSpace = i * nSpace;
             elementJacobian_u_u[i][j] += ck.MassJacobian_weak(dm_t, u_trial_ref.data()[k * nDOF_trial_element + j], u_test_dV[i]) + ck.AdvectionJacobian_weak(df, u_trial_ref.data()[k * nDOF_trial_element + j], &u_grad_test_dV[i_nSpace]) +
-                                         ck.DiffusionJacobian_weak(a_rowptr.data(), a_colind.data(), a, da, grad_u, &u_grad_test_dV[i_nSpace], 1.0, u_trial_ref.data()[k * nDOF_trial_element + j], &u_grad_trial[j_nSpace]) + VMS * ck.SubgridErrorJacobian(dsubgridError_u_u[j], Lstar_u[i]) + VMS * ck.NumericalDiffusionJacobian(q_numDiff_u_last[eN_k], &u_grad_trial[j_nSpace], &u_grad_test_dV[i_nSpace]);
+                                         ck.DiffusionJacobian_weak(a_rowptr.data(), a_colind.data(), a, da, grad_u, &u_grad_test_dV[i_nSpace], 1.0, u_trial_ref.data()[k * nDOF_trial_element + j], &u_grad_trial[j_nSpace]); 
+//                                         + VMS * ck.SubgridErrorJacobian(dsubgridError_u_u[j], Lstar_u[i]) + VMS * ck.NumericalDiffusionJacobian(q_numDiff_u_last[eN_k], &u_grad_trial[j_nSpace], &u_grad_test_dV[i_nSpace]);
           } //j
         } //i
       } //k

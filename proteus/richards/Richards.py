@@ -1071,6 +1071,12 @@ class LevelModel(proteus.Transport.OneLevelTransport):
     def getResidual(self,u,r):
         import pdb
         import copy
+        import numpy
+        if not numpy.isfinite(u).all():
+            bad = numpy.where(~numpy.isfinite(u))[0][:20]
+            print("BAD: input u to Richards.getResidual has NaN/Inf", bad, u[bad])
+            raise RuntimeError("Bad input u")
+
         """
         Calculate the element residuals and add in to the global residual
         """
@@ -1279,7 +1285,23 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #Load the unknowns into the finite element dof
         self.timeIntegration.calculateCoefs()
         self.timeIntegration.calculateU(u)
+
+        ###debugging
+        if not numpy.isfinite(self.timeIntegration.u).all():
+            bad = numpy.where(~numpy.isfinite(self.timeIntegration.u))[0][:20]
+            print("BAD: timeIntegration.u has NaN/Inf after calculateU", bad, self.timeIntegration.u[bad])
+            raise RuntimeError("Bad timeIntegration.u")
+        
+        
         self.setUnknowns(self.timeIntegration.u)
+
+        ##debugging
+        if not numpy.isfinite(self.u[0].dof).all():
+            bad = numpy.where(~numpy.isfinite(self.u[0].dof))[0][:20]
+            print("BAD: self.u[0].dof has NaN/Inf after setUnknowns", bad, self.u[0].dof[bad])
+            raise RuntimeError("Bad unknown DOFs before C++ residual")
+
+
         #cek can put in logic to skip of BC's don't depend on t or u
         #Dirichlet boundary conditions
         self.numericalFlux.setDirichletValues(self.ebqe)
@@ -1512,6 +1534,13 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.delta_x_ij is None:
             self.delta_x_ij = -np.ones((self.nNonzerosInJacobian*3,),'d')
         self.calculateResidual(argsDict)
+
+        ####debugging
+        if not numpy.isfinite(r).all():
+            bad = numpy.where(~numpy.isfinite(r))[0][:20]
+            print("BAD: residual NaN/Inf immediately after calculateResidual", bad, r[bad])
+            raise RuntimeError("Bad residual from C++ kernel")
+
         
 
 
@@ -1661,7 +1690,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
         argsDict["limited_solution"] = u
         argsDict["mLow"] = self.u[0].dof
-        self.richards.invert(argsDict)
+        self.u[0].dof[:] = u
+        #self.richards.invert(argsDict)
      
     def getJacobian(self,jacobian):
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
