@@ -1807,11 +1807,8 @@ void FCTStep(arguments_dict &args)
     std::valarray<double> u_free_dof(numDOFs);
     std::valarray<double> u_free_dof_old(numDOFs);
     std::valarray<double> ML2(numDOFs);
-    std::vector<double> rho_dof(numDOFs, 0.0);
-    std::vector<double> ML_rho(numDOFs, 0.0);
-
-
-    
+    // std::vector<double> rho_dof(numDOFs, 0.0);
+    // std::vector<double> ML_rho(numDOFs, 0.0);  
 
     for (int eN = 0; eN < nElements_global; eN++)
       for (int j = 0; j < nDOF_trial_element; j++) {
@@ -1902,13 +1899,13 @@ void FCTStep(arguments_dict &args)
 
         const double rho_q = q_rho.data()[eN_k];
             // accumulate to nodal dofs with shape functions
-        for (int j = 0; j < nDOF_trial_element; ++j)
-        {
-          const int gi = u_l2g.data()[eN_nDOF_trial_element + j];
-          const double Nj = u_trial_ref.data()[k * nDOF_trial_element + j];
-          rho_dof[gi] += rho_q * Nj * dV;
-          ML_rho[gi]  += Nj * dV;
-        }
+        // for (int j = 0; j < nDOF_trial_element; ++j)
+        // {
+        //   const int gi = u_l2g.data()[eN_nDOF_trial_element + j];
+        //   const double Nj = u_trial_ref.data()[k * nDOF_trial_element + j];
+        //   rho_dof[gi] += rho_q * Nj * dV;
+        //   ML_rho[gi]  += Nj * dV;
+        // }
         
         for (int j = 0; j < nDOF_trial_element; j++) {
           u_test_dV[j] = u_test_ref.data()[k * nDOF_trial_element + j] * dV;
@@ -2275,9 +2272,9 @@ void FCTStep(arguments_dict &args)
     /////////////////////////////////////////////
     // ** LOOP IN DOFs FOR EDGE BASED TERMS ** //
     /////////////////////////////////////////////
-    for (int i = 0; i < numDOFs; ++i) {
-  if (ML_rho[i] > 0.0) rho_dof[i] /= ML_rho[i];
-  }
+  //   for (int i = 0; i < numDOFs; ++i) {
+  // if (ML_rho[i] > 0.0) rho_dof[i] /= ML_rho[i];
+  // }
 
     ij = 0;
     for (int i = 0; i < numDOFs; i++) {
@@ -2293,28 +2290,28 @@ void FCTStep(arguments_dict &args)
       double m, dm, f[nSpace], df[nSpace], a[nnz], da[nnz], as[nnz];
       double dmn, fn[nSpace], dfn[nSpace], an[nnz], dan[nnz], asn[nnz];
 
-      const double rho_i = rho_dof[i];
+      //const double rho_i = rho_dof[i];
 
       for (int I = 0; I < nSpace; I++) {
-        phi_i -= rho_i * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
-        phin_i -= rho_i * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
+        phi_i -= rho * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
+        phin_i -= rho * gravity.data()[I] * mesh_dof.data()[i * 3 + I];
       }
       // loop over the sparsity pattern of the i-th DOF
       for (int offset = csrRowIndeces_DofLoops.data()[i]; offset < csrRowIndeces_DofLoops.data()[i + 1]; offset++) {
         int j = csrColumnOffsets_DofLoops.data()[offset];
         if (i == j) ii = ij;
         double phi_j  = u_free_dof[j], phin_j = u_free_dof_old[j];
-        const double rho_j = rho_dof[j];
+        //const double rho_j = rho_dof[j];
         for (int I = 0; I < nSpace; I++) {
-          phi_j -= rho_j * gravity.data()[I] * mesh_dof.data()[j * 3 + I];
-          phin_j -= rho_j * gravity.data()[I] * mesh_dof.data()[j * 3 + I];
+          phi_j -= rho * gravity.data()[I] * mesh_dof.data()[j * 3 + I];
+          phin_j -= rho * gravity.data()[I] * mesh_dof.data()[j * 3 + I];
         }
         double dLowij, dLij, dEVij, dHij, fH, fL, fA=0.0;
         fH = -Theta * TransportMatrixConsistent[ij] * (phi_j - phi_i) - (1 - Theta) * TransportMatrixConsistentn[ij] * (phin_j - phin_i);
         ith_consistent_flux_term += fH;
         fA = fH;
         if (-TransportMatrix[ij] * (phi_j - phi_i) <= 0.0) {
-          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_i, beta, gravity.data(),
+          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], u_free_dof[i], m, dm, f, df, a, da, as, Kr, dKr);
           fL = Theta * Kr * fmax(0.0, -TransportMatrix[ij]) * (phi_j - phi_i);
@@ -2325,7 +2322,7 @@ void FCTStep(arguments_dict &args)
           ith_flux_term += fL;
           fA -= fL;
         } else {
-          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_j, beta, gravity.data(),
+          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], u_free_dof[j], m, dm, f, df, a, da, as, Kr, dKr);
           fL = Theta * Kr * fmax(0.0, -TransportMatrix[ij]) * (phi_j - phi_i);
@@ -2337,14 +2334,14 @@ void FCTStep(arguments_dict &args)
           fA -= fL;
         }
         if (-TransportMatrixn[ij] * (phin_j - phin_i) <= 0.0) {
-          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_i, beta, gravity.data(),
+          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], u_free_dof_old[i], m, dm, f, df, a, da, as, Kr, dKr);
           fL = (1 - Theta) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);
           ith_flux_term += fL;
           fA -= fL;
         } else {
-          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_j, beta, gravity.data(),
+          evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                                n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], u_free_dof_old[j], m, dm, f, df, a, da, as, Kr, dKr);
           fL = (1 - Theta) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);
@@ -2356,14 +2353,23 @@ void FCTStep(arguments_dict &args)
       }
       mDotLow.data()[i] = ith_flux_term/MLi;
       cflux[i] = ith_consistent_flux_term;
-      evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_i, beta, gravity.data(),
+      evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                            n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], u_free_dof[i], m, dm, f, df, a, da, as, Kr, dKr);
-      evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho_i, beta, gravity.data(),
+      evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
                            alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
                            n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]], thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz], u_free_dof_old[i], mn.data()[i], dmn, fn, dfn, an, dan, asn, Krn, dKrn);
       mLow.data()[i] = m;
-      globalResidual.data()[i] += bc_mask.data()[i] * (MLi * (m - mn.data()[i]) / dt - ith_flux_term);
+
+      // coordinates of dof i
+      const double x_i = mesh_dof.data()[i*3 + 0];
+      const double y_i = mesh_dof.data()[i*3 + 1];
+
+      // source at dof
+      const double pi = M_PI;
+      const double source_term = 2.0*pi*pi*std::sin(pi*x_i)*std::sin(pi*y_i);
+
+      globalResidual.data()[i] += bc_mask.data()[i] * (MLi * (m - mn.data()[i]) / dt - ith_flux_term - MLi * source_term);
       globalJacobian.data()[ii] += bc_mask.data()[i] * (MLi * dm / dt + J_ii) + (1.0 - bc_mask.data()[i]);
     }
     ij = 0;

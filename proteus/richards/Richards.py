@@ -1013,7 +1013,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes,
         self.richards.FCTStep(argsDict)
         old_dof = self.u[0].dof.copy()
-        self.invert(u=limited_solution, ulow=self.u[0].dof)
+        #self.invert(u=limited_solution, ulow=self.u[0].dof)
         #print("FCT - low",np.linalg.norm(self.u[0].dof- old_dof))
         self.timeIntegration.u[:] = self.u[0].dof
     def kth_FCT_step(self):
@@ -1690,8 +1690,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
         argsDict["limited_solution"] = u
         argsDict["mLow"] = self.u[0].dof
-        self.u[0].dof[:] = u
-        #self.richards.invert(argsDict)
+        #self.u[0].dof[:] = u
+        self.richards.invert(argsDict)
      
     def getJacobian(self,jacobian):
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
