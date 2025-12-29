@@ -448,14 +448,14 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             import pdb
             pdb.set_trace()
     
-    def attachModels(self, modelList):
-        # Keep self.model for symmetry with other coeffs
-        self.model = modelList[self.modelIndex] 
-        if self.DENSITY_MODEL is None:
-            return
-        densityModel = modelList[self.DENSITY_MODEL]
-        self.model.q['rho']    = densityModel.q['rho']
-        self.model.ebqe['rho'] = densityModel.ebqe['rho']
+    # def attachModels(self, modelList):
+    #     # Keep self.model for symmetry with other coeffs
+    #     self.model = modelList[self.modelIndex] 
+    #     if self.DENSITY_MODEL is None:
+    #         return
+    #     densityModel = modelList[self.DENSITY_MODEL]
+    #     self.model.q['rho']    = densityModel.q['rho']
+    #     self.model.ebqe['rho'] = densityModel.ebqe['rho']
 
 
     def preStep(self, t, firstStep=False):
