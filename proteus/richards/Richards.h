@@ -149,7 +149,7 @@ public:
   //   }
   // }
 
-  inline void evaluateCoefficients(const int rowptr[nSpace],
+inline void evaluateCoefficients(const int rowptr[nSpace],
                                  const int colind[nnz],
                                  const double rho,
                                  const double beta,
@@ -170,47 +170,43 @@ public:
                                  double &kr,
                                  double &dkr)
 {
-  // Unused parameters in this Tracy test
-  (void)rho;
-  (void)beta;
-  (void)n_vg;
-  (void)thetaR;
-  const double Ks = KWs[0];
-  // 2. Tracy constant: c = alpha * (theta_s - theta_r) / Ks
-  const double c = alpha * thetaSR / Ks;
-  // 3. Mass term: m(u) = c * u  =>  m_t = c * u_t
-  m  = c * u;
-  dm = c;
-  // 4. Advective flux: f = alpha * u * gravity  (dimensionless gravity)
-  //    For gravity = (0,-1,0) or (0,0,-1), div(f) = -alpha * u_z
-  for (int I = 0; I < nSpace; I++)
-  {
-    f[I]  = 0.0; //alpha * u * gravity[I];
-    df[I] = 0.0; //alpha * gravity[I];
-  }
-  // 5. Diffusion tensor: a = I (identity), as = I
-  //    => -div(a grad u) = -Δu
-  for (int ii = 0; ii < nnz; ii++)
-  {
-    a[ii]  = 0.0;
-    da[ii] = 0.0;
-    as[ii] = 0.0;
-  }
-  for (int I = 0; I < nSpace; I++)
-  {
-    for (int ii = rowptr[I]; ii < rowptr[I+1]; ii++)
-    {
-      int J        = colind[ii];
-      double delta = (I == J) ? 1.0 : 0.0;
-      a[ii]  = delta;
-      as[ii] = delta;
-      // da[ii] already zero: diffusion independent of u
-    }
-  }
+  const int nSpace2 = nSpace * nSpace;
+  // 1. Relative permeability KWr(u)
+  const double KWr = std::exp(alpha * u); //Gardner model for relative permeability
+  const double DKWr_Du = alpha * KWr;
+  //2. Moisture content theta(u)
+  const double thetaS = thetaR + thetaSR;
+  const double thetaW = thetaR + (thetaS - thetaR) * (std::exp(alpha*u)); //Irmay Model for Moisture content
+  const double DthetaW_Du = alpha * (thetaS - thetaR) * (std::exp(alpha*u));
+  //3. Density rho(u), Compressibility>> this function is okay for beta=0 but wrong if I use compressibility
+  const double rhom  = rho * std::exp(beta * u);
+  const double drhom = beta * rhom;   
+  const double rho2 = rho * rho;
+  // Expressing Richards equation in terms of mass balance 
+  //  dm/dt + nabla.f(u) - nabla.(a(u) . grad u) =0
+  // 3. Mass term: m(u) = rho(u) * theta(u)
+  m  = rhom * thetaW;
+  dm = rhom * DthetaW_Du + drhom * thetaW;
+  // 4. Advective flux: f and Diffusion tensor: a
 
-  // 6. Relative conductivity placeholders (not used for this linear test)
-  kr  = 1.0;
-  dkr = 0.0;
+  for (int I = 0; I < nSpace; I++)
+  {
+    f[I]  = 0.0; 
+    df[I] = 0.0; 
+  for (int ii = rowptr[I]; ii < rowptr[I+1] ; ii++)
+  {
+    const int J =  colind[ii];
+    f[I] += rho2 * KWr * KWs[ii] * gravity[J];
+    df[I] += rho2 * DKWr_Du * KWs[ii] * gravity[J];
+    // diffusion like tensor and its derivative
+    a[ii]  = rhom * KWr * KWs[ii];
+    da[ii] = rhom * DKWr_Du * KWs[ii];
+
+    as[ii] = rhom * KWs[ii];
+    kr     = KWr;
+    dkr    = DKWr_Du;  
+  }
+  }
 }
 
 
@@ -234,28 +230,14 @@ inline void evaluateInverseCoefficients(const int rowptr[nSpace],
                                         const double da[nnz])
 {
   // All of these are unused for this simple linear inverse
-  (void)rowptr;
-  (void)colind;
-  (void)rho;
-  (void)beta;
-  (void)gravity;
-  (void)n_vg;
-  (void)thetaR;
-  (void)dm;
-  (void)f;
-  (void)df;
-  (void)a;
-  (void)da;
-
-  // Same Ks and c as in evaluateCoefficients
-
-  // // Invert: u = m / c
-  // if (thetaW +1.e-6+thetaR){
-   const double Ks = KWs[0];                  // homogeneous, isotropic
-    const double c  = alpha * thetaSR / Ks;    // m = c*u
-    u = m / c;
-
-  //}
+  double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
+  const double rhom = rho * std::exp(beta * u);
+  thetaS = thetaR + thetaSR;
+  thetaW = m / rhom;
+  if (thetaW > thetaR+ 1e-7) {
+    const double sBar = (m/rhom - thetaR)/thetaSR ;
+    u = (1.0/alpha) * std::log(sBar);
+  }
 }
 
 
