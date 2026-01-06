@@ -29,7 +29,6 @@ class RKEV(TimeIntegration.SSP):
 
     ... more to come ...
     """
-
     def __init__(self, transport, timeOrder=1, runCFL=0.1, integrateInterpolationPoints=False):
         TimeIntegration.SSP.__init__(self, transport, integrateInterpolationPoints=integrateInterpolationPoints)
         self.runCFL = runCFL
@@ -223,6 +222,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  gravity,
                  density,
                  beta,
+                 Storavity,
                  diagonal_conductivity=True,
                  getSeepageFace=None,
                  DENSITY_MODEL= None,
@@ -262,6 +262,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.gravity=gravity
         self.rho = density
         self.beta=beta
+        self.Storavity=Storavity
         self.vgm_n_types = vgm_n_types
         self.vgm_alpha_types = vgm_alpha_types
         self.thetaR_types    = thetaR_types
@@ -984,38 +985,53 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.elementQuadratureDictionaryWriter.writeVectorFunctionXdmf_MonomialDGPK(
             ar, qv, name, tCount=tCount, init=init
         )
+    
 
-    def FCTStep(self):
-        rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
-        limited_solution = np.zeros((len(rowptr) - 1),'d')
-        argsDict = cArgumentsDict.ArgumentsDict()
-        argsDict["bc_mask"] = self.bc_mask
-        argsDict["NNZ"] = self.nnz 
-        argsDict["numDOFs"] = len(rowptr) - 1  # num of DOFs
-        argsDict["dt"] = self.timeIntegration.dt
-        argsDict["ML"] = self.ML
-        argsDict["mn"] = self.mn
-        argsDict["mHigh"] = self.mHigh
-        argsDict["mLow"] = self.mLow
-        argsDict["mDotHigh"] = self.mDotHigh
-        argsDict["fluxCorrection"] = self.fluxCorrection
-        argsDict["mDotLow"] = self.mDotLow
-        argsDict["limited_solution"] = limited_solution
-        argsDict["csrRowIndeces_DofLoops"] = rowptr
-        argsDict["csrColumnOffsets_DofLoops"] = colind
-        argsDict["MC"] = MassMatrix
-        argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL
-        argsDict["min_m_bc"] = self.min_m_bc
-        argsDict["max_m_bc"] = self.max_m_bc
-        argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
-        argsDict["MONOLITHIC"] =0#cek hack self.coefficients.MONOLITHIC
-        argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
-        argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes,
-        self.richards.FCTStep(argsDict)
-        old_dof = self.u[0].dof.copy()
-        self.invert(u=limited_solution, ulow=self.u[0].dof)
-        #print("FCT - low",np.linalg.norm(self.u[0].dof- old_dof))
-        self.timeIntegration.u[:] = self.u[0].dof
+    # def FCTStep(self):
+    #     rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
+    #     limited_solution = np.zeros((len(rowptr) - 1),'d')
+    #     self.numericalFlux.setDirichletValues(self.ebqe) 
+    #     self.bc_mask = np.ones_like(self.u[0].dof)
+    #     # if hasattr(self.numericalFlux, "isDOFBoundary") and 0 in self.numericalFlux.isDOFBoundary:
+    #     #     self.bc_mask[:] = 1.0 - self.numericalFlux.isDOFBoundary[0].astype('d')
+    #     # else:
+    #     #     print("[FCTStep] WARNING: numericalFlux.isDOFBoundary not available; bc_mask will be all ones!")
+
+
+    #     argsDict = cArgumentsDict.ArgumentsDict()
+    #     argsDict["bc_mask"] = self.bc_mask
+    #     argsDict["NNZ"] = self.nnz 
+    #     argsDict["numDOFs"] = len(rowptr) - 1  # num of DOFs
+    #     argsDict["dt"] = self.timeIntegration.dt
+    #     argsDict["ML"] = self.ML
+    #     argsDict["mn"] = self.mn
+    #     argsDict["mHigh"] = self.mHigh
+    #     argsDict["mLow"] = self.mLow
+    #     argsDict["mDotHigh"] = self.mDotHigh
+    #     argsDict["fluxCorrection"] = self.fluxCorrection
+    #     argsDict["mDotLow"] = self.mDotLow
+    #     argsDict["limited_solution"] = limited_solution
+    #     argsDict["csrRowIndeces_DofLoops"] = rowptr
+    #     argsDict["csrColumnOffsets_DofLoops"] = colind
+    #     argsDict["MC"] = MassMatrix
+    #     argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL
+    #     argsDict["min_m_bc"] = self.min_m_bc
+    #     argsDict["max_m_bc"] = self.max_m_bc
+    #     argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
+    #     argsDict["MONOLITHIC"] =0#cek hack self.coefficients.MONOLITHIC
+    #     argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
+    #     argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes,
+    #     self.richards.FCTStep(argsDict)
+    #     # print("mLow   min/max", self.mLow.min(), self.mLow.max())
+    #     # print("mHigh  min/max", self.mHigh.min(), self.mHigh.max())
+    #     # print("mLim   min/max", limited_solution.min(), limited_solution.max())
+    #     # print("bc m   min/max", self.min_m_bc.min(), self.max_m_bc.max())
+    #     # print("S", self.coefficients.Storavity)
+    #     old_dof = self.u[0].dof.copy()
+    #     #self.u[0].dof[:] = (limited_solution[:] - 1.0) / self.coefficients.Storavity
+    #     self.invert(u=limited_solution, ulow=self.u[0].dof)
+    #     #print("FCT - low",np.linalg.norm(self.u[0].dof- old_dof))
+    #     self.timeIntegration.u[:] = self.u[0].dof
     def kth_FCT_step(self):
         #import pdb
         #pdb.set_trace()
@@ -1282,7 +1298,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.setUnknowns(self.timeIntegration.u)
         #cek can put in logic to skip of BC's don't depend on t or u
         #Dirichlet boundary conditions
-        self.numericalFlux.setDirichletValues(self.ebqe)
+        self.numericalFlux.setDirichletValues(self.ebqe)       
         #flux boundary conditions
         #cek hack, just using advective flux for flux BC for now
         for t,g in list(self.fluxBoundaryConditionsObjectsDict[0].advectiveFluxBoundaryConditionsDict.items()):
@@ -1292,8 +1308,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #     self.ebqe[('diffusiveFlux_bc',0)][t[0],t[1]] = g(self.ebqe[('x')][t[0],t[1]],self.timeIntegration.t)
         #     self.ebqe[('diffusiveFlux_bc_flag',0)][t[0],t[1]] = 1
         #self.shockCapturing.lag=True
-        self.bc_mask = np.ones_like(self.u[0].dof)
-            
+        self.bc_mask = np.ones_like(self.u[0].dof)       
+
+           
         if self.coefficients.forceStrongConditions:
             self.bc_mask = np.ones_like(self.u[0].dof)
             for cj in range(len(self.dirichletConditionsForceDOF)):
@@ -1338,6 +1355,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
         argsDict["rho"] = self.coefficients.rho
         argsDict["beta"] = self.coefficients.beta
+        argsDict["Storavity"] = self.coefficients.Storavity
 
         argsDict["q_rho"]= self.q['rho']
         argsDict["ebqe_rho"]= self.ebqe['rho']
@@ -1557,6 +1575,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             self.delta_x_ij = -np.ones((self.nNonzerosInJacobian * 3,), 'd')
     
         argsDict = cArgumentsDict.ArgumentsDict()
+        argsDict["bc_mask"] = self.bc_mask
         argsDict["dt"] = self.timeIntegration.dt
         argsDict["mesh_trial_ref"] = self.u[0].femSpace.elementMaps.psi
         argsDict["mesh_grad_trial_ref"] = self.u[0].femSpace.elementMaps.grad_psi
@@ -1586,6 +1605,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
         argsDict["rho"] = self.coefficients.rho
         argsDict["beta"] = self.coefficients.beta
+        argsDict["Storavity"] = self.coefficients.Storavity
+        
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
         argsDict["n"] = self.coefficients.vgm_n_types
@@ -1705,6 +1726,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["rho"] = self.coefficients.rho
         argsDict["beta"] = self.coefficients.beta
 
+        argsDict["Storavity"] = self.coefficients.Storavity
+
         argsDict["q_rho"]= self.q['rho']
         argsDict["ebqe_rho"]= self.ebqe['rho']
         
@@ -1772,6 +1795,257 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #mwf decide if this is reasonable for solver statistics
         self.nonlinear_function_jacobian_evaluations += 1
         return jacobian
+    
+    # def FCTStep(self):
+    #     rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
+    #     nDOF = len(rowptr) - 1
+    #     limited_solution = np.zeros((nDOF,), 'd')
+
+    #     # ------------------------------------------------------------
+    #     # MOD: match residual/Jacobian BC preparation: fill numericalFlux.ebqe and isDOFBoundary at EBQPs
+    #     #      residual passes:
+    #     #      argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
+    #     #      argsDict["ebqe_bc_u_ext"]   = self.numericalFlux.ebqe[('u',0)]
+    #     #      and uses isDOFBoundary_u[ebNE_kb] at boundary quad points :contentReference[oaicite:2]{index=2}
+    #     # ------------------------------------------------------------
+    #     if hasattr(self, "numericalFlux") and hasattr(self.numericalFlux, "setDirichletValues"):
+    #         self.numericalFlux.setDirichletValues(self.ebqe)  # like getResidual setup :contentReference[oaicite:3]{index=3}
+    #     else:
+    #         print("[FCTStep] WARNING: numericalFlux.setDirichletValues not available")
+
+    #     # ------------------------------------------------------------
+    #     # MOD: Build DOF-sized bc_mask from EBQP isDOFBoundary (shape ~ (nExteriorEB, nQpb))
+    #     #      Your error came from trying to broadcast (nExteriorEB,nQpb) into (nDOF,)
+    #     # ------------------------------------------------------------
+    #     self.bc_mask = np.ones((nDOF,), 'd')  # 1 => allow FCT update, 0 => freeze DOF
+
+    #     nDBC_dof = 0
+    #     if hasattr(self.numericalFlux, "isDOFBoundary") and (0 in self.numericalFlux.isDOFBoundary):
+    #         isDOFBoundary_ebqe = self.numericalFlux.isDOFBoundary[0]  # EBQP flags (NOT DOF flags) :contentReference[oaicite:4]{index=4}
+    #         # Expect 2D: (nExteriorEB, nQpb). Make robust if it is flattened.
+    #         if isDOFBoundary_ebqe.ndim == 1:
+    #             nExteriorEB = self.mesh.nExteriorElementBoundaries_global
+    #             nQpb = self.nElementBoundaryQuadraturePoints_elementBoundary
+    #             isDOFBoundary_ebqe = isDOFBoundary_ebqe.reshape((nExteriorEB, nQpb))
+    #         elif isDOFBoundary_ebqe.ndim != 2:
+    #             print(f"[FCTStep] WARNING: unexpected isDOFBoundary shape {isDOFBoundary_ebqe.shape}")
+
+    #         # Mark an exterior element boundary as Dirichlet if ANY boundary qp has Dirichlet flag
+    #         dirichletEB = np.any(isDOFBoundary_ebqe.astype(bool), axis=1)
+
+    #         # Convert exterior boundary index (ebNE) -> global element boundary index (ebN)
+    #         # and then ebN -> boundary nodes -> mark those node DOFs as Dirichlet.
+    #         #
+    #         # NOTE: For C0 P1 (your Richards), DOF index == node index.
+    #         # If you switch basis later, you’ll need a dofMap-based mapping.
+    #         dof_is_dirichlet = np.zeros((nDOF,), dtype=bool)
+
+    #         # elementBoundaryNodesArray: (nElementBoundaries_global, nNodes_elementBoundary)
+    #         # exteriorElementBoundariesArray: (nExteriorElementBoundaries_global,)
+    #         ebN_of_ebNE = self.mesh.exteriorElementBoundariesArray
+    #         ebNodes = self.mesh.elementBoundaryNodesArray
+
+    #         # loop only over EB with any Dirichlet qp
+    #         for ebNE in np.where(dirichletEB)[0]:
+    #             ebN = ebN_of_ebNE[ebNE]
+    #             nodes_on_eb = ebNodes[ebN]
+    #             dof_is_dirichlet[nodes_on_eb] = True
+
+    #         nDBC_dof = int(dof_is_dirichlet.sum())
+    #         self.bc_mask[dof_is_dirichlet] = 0.0  # freeze these DOFs during limiting
+    #     else:
+    #         print("[FCTStep] WARNING: numericalFlux.isDOFBoundary[0] not available; bc_mask stays all ones")
+
+    #     # -------------------- DEBUG PRINTS (requested) --------------------
+    #     print(f"[Python FCTStep] nDOF={nDOF} bc_mask shape={self.bc_mask.shape} nDBC_dof={nDBC_dof}")
+    #     if hasattr(self.numericalFlux, "isDOFBoundary") and (0 in self.numericalFlux.isDOFBoundary):
+    #         a = self.numericalFlux.isDOFBoundary[0]
+    #         print(f"[Python FCTStep] isDOFBoundary[0] shape={a.shape} dtype={a.dtype} min/max={a.min()}/{a.max()}")
+    #     # ----------------------------------------------------------------
+
+    #     argsDict = cArgumentsDict.ArgumentsDict()
+    #     argsDict["bc_mask"] = self.bc_mask
+    #     argsDict["NNZ"] = self.nnz
+    #     argsDict["numDOFs"] = nDOF
+    #     argsDict["dt"] = self.timeIntegration.dt
+    #     argsDict["ML"] = self.ML
+    #     argsDict["mn"] = self.mn
+    #     argsDict["mHigh"] = self.mHigh
+    #     argsDict["mLow"] = self.mLow
+    #     argsDict["mDotHigh"] = self.mDotHigh
+    #     argsDict["fluxCorrection"] = self.fluxCorrection
+    #     argsDict["mDotLow"] = self.mDotLow
+    #     argsDict["limited_solution"] = limited_solution
+    #     argsDict["csrRowIndeces_DofLoops"] = rowptr
+    #     argsDict["csrColumnOffsets_DofLoops"] = colind
+    #     argsDict["MC"] = MassMatrix
+    #     argsDict["dt_times_fH_minus_fL"] = self.dt_times_dC_minus_dL
+    #     argsDict["min_m_bc"] = self.min_m_bc
+    #     argsDict["max_m_bc"] = self.max_m_bc
+    #     argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
+    #     argsDict["MONOLITHIC"] = 0
+    #     argsDict["anb_seepage_flux_n"] = self.anb_seepage_flux_n
+
+    #     # MOD: remove trailing comma (tuple bug)
+    #     argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes
+
+    #     print(f"[FCTStep] call numDOFs={nDOF} NNZ={self.nnz} nDBC_dof={nDBC_dof} dt={self.timeIntegration.dt}")
+
+    #     self.richards.FCTStep(argsDict)
+    #     dm = limited_solution - self.mLow
+        
+    #     S= self.coefficients.Storavity
+    #     print("[DBG] Storavity S =", self.coefficients.Storavity)
+    #     print("[DBG] dm min/max =", dm.min(), dm.max(), "||dm||", np.linalg.norm(dm))
+    #     print("[DBG] implied du min/max =", (dm/S).min(), (dm/S).max(), "||du||", np.linalg.norm(dm/S))
+
+    #     # (optional debug)
+    #     # print("mLow   min/max", self.mLow.min(), self.mLow.max())
+    #     # print("mHigh  min/max", self.mHigh.min(), self.mHigh.max())
+    #     # print("mLim   min/max", limited_solution.min(), limited_solution.max())
+
+    #     old_dof = self.u[0].dof.copy()
+
+    #     # Your workflow: limit m, then invert m->u
+    #     self.invert(u=limited_solution, ulow=self.u[0].dof)
+
+    #     # Keep timeIntegration consistent
+    #     self.timeIntegration.u[:] = self.u[0].dof
+
+    #     # extra debug: how much FCT moved solution
+    #     print("[Python FCTStep] ||u_new-u_old|| =", np.linalg.norm(self.u[0].dof - old_dof))
+    
+    def FCTStep(self):
+        rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
+        nDOF = len(rowptr) - 1
+
+        # -----------------------------
+        # Keep your BC preparation (same as your current version)
+        # -----------------------------
+        limited_solution = np.zeros((nDOF,), 'd')
+
+        if hasattr(self, "numericalFlux") and hasattr(self.numericalFlux, "setDirichletValues"):
+            self.numericalFlux.setDirichletValues(self.ebqe)
+        else:
+            print("[FCTStep] WARNING: numericalFlux.setDirichletValues not available")
+
+        self.bc_mask = np.ones((nDOF,), 'd')  # 1 => update, 0 => freeze
+        nDBC_dof = 0
+        if hasattr(self.numericalFlux, "isDOFBoundary") and (0 in self.numericalFlux.isDOFBoundary):
+            isDOFBoundary_ebqe = self.numericalFlux.isDOFBoundary[0]
+            if isDOFBoundary_ebqe.ndim == 1:
+                nExteriorEB = self.mesh.nExteriorElementBoundaries_global
+                nQpb = self.nElementBoundaryQuadraturePoints_elementBoundary
+                isDOFBoundary_ebqe = isDOFBoundary_ebqe.reshape((nExteriorEB, nQpb))
+            dirichletEB = np.any(isDOFBoundary_ebqe.astype(bool), axis=1)
+
+            dof_is_dirichlet = np.zeros((nDOF,), dtype=bool)
+            ebN_of_ebNE = self.mesh.exteriorElementBoundariesArray
+            ebNodes = self.mesh.elementBoundaryNodesArray
+
+            for ebNE in np.where(dirichletEB)[0]:
+                ebN = ebN_of_ebNE[ebNE]
+                nodes_on_eb = ebNodes[ebN]
+                dof_is_dirichlet[nodes_on_eb] = True
+
+            nDBC_dof = int(dof_is_dirichlet.sum())
+            self.bc_mask[dof_is_dirichlet] = 0.0
+        else:
+            print("[FCTStep] WARNING: numericalFlux.isDOFBoundary[0] not available; bc_mask stays all ones")
+
+        print(f"[Python FCTStep] nDOF={nDOF} nDBC_dof={nDBC_dof} bc_mask shape={self.bc_mask.shape}")
+
+        # ============================================================
+        # MOD: LIMIT BY u INSTEAD OF m
+        # ============================================================
+        S = float(self.coefficients.Storavity)
+        if S == 0.0:
+            raise RuntimeError("Storavity (S) is zero. Cannot form u=(m-1)/S.")
+
+        # --- Convert states/bounds to u: u = (m - 1)/S
+        mn_u    = (self.mn    - 1.0) / S
+        mLow_u  = (self.mLow  - 1.0) / S
+        mHigh_u = (self.mHigh - 1.0) / S
+
+        # --- Convert time-derivative-like terms to u-units
+        # mDot = (m^{n+1}-m^n)/dt = S * uDot  => uDot = mDot / S
+        mDotLow_u  = self.mDotLow  / S
+        mDotHigh_u = self.mDotHigh / S
+
+        # dt_times_fH_minus_fL is in m-equation units.
+        # Divide by S to represent (fH-fL) in the u-equation:  (1/S)*(...)
+        dt_times_fH_minus_fL_u = self.dt_times_dC_minus_dL / S
+
+        # --- Scale mass matrices for u-equation: MC_u = S*MC, ML_u = S*ML
+        MC_u = MassMatrix #* S
+        ML_u = self.ML #* S
+
+        # --- Convert m-bounds to u-bounds (same mapping)
+        min_u_bc = (self.min_m_bc - 1.0) / S
+        max_u_bc = (self.max_m_bc - 1.0) / S
+
+        # ============================================================
+        # Build args and call C++ FCTStep on u-problem
+        # ============================================================
+        argsDict = cArgumentsDict.ArgumentsDict()
+        argsDict["bc_mask"] = self.bc_mask
+        argsDict["NNZ"] = self.nnz
+        argsDict["numDOFs"] = nDOF
+        argsDict["dt"] = self.timeIntegration.dt
+
+        # MOD: pass scaled lumped mass for u
+        argsDict["ML"] = ML_u
+
+        # MOD: pass u-states in slots named mn/mLow/mHigh (C++ doesn’t care about name)
+        argsDict["mn"] = mn_u
+        argsDict["mHigh"] = mHigh_u
+        argsDict["mLow"] = mLow_u
+
+        # MOD: pass uDot terms
+        argsDict["mDotHigh"] = mDotHigh_u
+        argsDict["mDotLow"]  = mDotLow_u
+
+        argsDict["fluxCorrection"] = self.fluxCorrection
+        argsDict["limited_solution"] = limited_solution
+
+        argsDict["csrRowIndeces_DofLoops"] = rowptr
+        argsDict["csrColumnOffsets_DofLoops"] = colind
+        
+
+        # MOD: pass scaled consistent mass
+        argsDict["MC"] = MC_u
+
+        # MOD: pass scaled forcing difference
+        argsDict["dt_times_fH_minus_fL"] = dt_times_fH_minus_fL_u
+
+        # MOD: pass u-bounds (still named min_m_bc/max_m_bc)
+        argsDict["min_m_bc"] = min_u_bc
+        argsDict["max_m_bc"] = max_u_bc
+
+        argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
+        argsDict["MONOLITHIC"] = 0
+        argsDict["anb_seepage_flux_n"] = self.anb_seepage_flux_n
+        argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes  # (no trailing comma)
+
+        argsDict["Storavity"] = self.coefficients.Storavity
+
+        print(f"[FCTStep-u] dt={self.timeIntegration.dt} S={S} nDBC_dof={nDBC_dof}")
+
+        self.richards.FCTStep(argsDict)
+
+        # ============================================================
+        # MOD: limited_solution is NOW u_lim (do NOT invert)
+        # ============================================================
+        old_u = self.u[0].dof.copy()
+        self.u[0].dof[:] = limited_solution
+        self.timeIntegration.u[:] = self.u[0].dof
+
+        # Debug: how much FCT moved u
+        du = self.u[0].dof - old_u
+        print("[DBG-u] du min/max =", du.min(), du.max(), "||du||", np.linalg.norm(du))
+
+
+
     def calculateElementQuadrature(self):
         """
         Calculate the physical location and weights of the quadrature rules
