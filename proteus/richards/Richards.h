@@ -211,6 +211,35 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
 
 
 
+// inline void evaluateInverseCoefficients(const int rowptr[nSpace],
+//                                         const int colind[nnz],
+//                                         const double rho,
+//                                         const double beta,
+//                                         const double gravity[nSpace],
+//                                         const double alpha,
+//                                         const double n_vg,
+//                                         const double thetaR,
+//                                         const double thetaSR,
+//                                         const double KWs[nnz],
+//                                         double &u,              // OUTPUT: u = \bar{h}
+//                                         const double &m,        // INPUT: mass m = c*u
+//                                         const double &dm,
+//                                         const double f[nSpace],
+//                                         const double df[nSpace],
+//                                         const double a[nnz],
+//                                         const double da[nnz])
+// {
+//   // All of these are unused for this simple linear inverse
+//   double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
+//   const double rhom = rho * std::exp(beta * u);
+//   thetaS = thetaR + thetaSR;
+//   thetaW = m / rhom;
+//   if (thetaW > thetaR+ 1e-7) {
+//     const double sBar = (m/rhom - thetaR)/thetaSR ;
+//     u = (1.0/alpha) * std::log(sBar);
+//   }
+// }
+
 inline void evaluateInverseCoefficients(const int rowptr[nSpace],
                                         const int colind[nnz],
                                         const double rho,
@@ -221,22 +250,40 @@ inline void evaluateInverseCoefficients(const int rowptr[nSpace],
                                         const double thetaR,
                                         const double thetaSR,
                                         const double KWs[nnz],
-                                        double &u,              // OUTPUT: u = \bar{h}
-                                        const double &m,        // INPUT: mass m = c*u
+                                        double &u,              // in/out: initial guess -> solution
+                                        const double &m,        // target mass
                                         const double &dm,
                                         const double f[nSpace],
                                         const double df[nSpace],
                                         const double a[nnz],
                                         const double da[nnz])
 {
-  // All of these are unused for this simple linear inverse
-  double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
-  const double rhom = rho * std::exp(beta * u);
-  thetaS = thetaR + thetaSR;
-  thetaW = m / rhom;
-  if (thetaW > thetaR+ 1e-7) {
-    const double sBar = (m/rhom - thetaR)/thetaSR ;
-    u = (1.0/alpha) * std::log(sBar);
+  (void)rowptr; (void)colind; (void)gravity; (void)n_vg; (void)KWs;
+  (void)dm; (void)f; (void)df; (void)a; (void)da;
+
+  const int    maxIts = 25;
+  const double tol    = 1e-12;
+
+  // Solve g(u)=0 where:
+  // g(u)  = rho*exp(beta*u)*(thetaR + thetaSR*exp(alpha*u)) - m
+  // g'(u) = rho*exp(beta*u)*[ beta*(thetaR + thetaSR*exp(alpha*u)) + thetaSR*alpha*exp(alpha*u) ]
+  for (int it = 0; it < maxIts; ++it)
+  {
+    const double exp_beta_u  = std::exp(beta  * u);
+    const double exp_alpha_u = std::exp(alpha * u);
+
+    const double rhom   = rho * exp_beta_u;
+    const double thetaW = thetaR + thetaSR * exp_alpha_u;
+
+    const double g  = rhom * thetaW - m;
+
+    if (std::fabs(g) < tol * std::max(1.0, std::fabs(m)))
+      return;
+
+    const double dtheta_du = thetaSR * alpha * exp_alpha_u;
+    const double gp = rhom * (beta * thetaW + dtheta_du);
+
+    u -= g / gp;
   }
 }
 
