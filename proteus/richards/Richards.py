@@ -1010,12 +1010,20 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["MONOLITHIC"] =0#cek hack self.coefficients.MONOLITHIC
         argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
-        argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes,
+        argsDict["elementMaterialTypes"] = self.mesh.elementMaterialTypes
         self.richards.FCTStep(argsDict)
         old_dof = self.u[0].dof.copy()
-        self.invert(u=limited_solution, ulow=self.u[0].dof)
+        self.invert(u=limited_solution, ulow=old_dof)
+        #self.invert(u=limited_solution, ulow=self.u[0].dof) ##Original::
         #print("FCT - low",np.linalg.norm(self.u[0].dof- old_dof))
-        self.timeIntegration.u[:] = self.u[0].dof
+        uHigh = old_dof.copy()
+        mLim  = limited_solution.copy()
+        uLim  = self.u[0].dof.copy()
+        self.timeIntegration.u[:] = self.u[0].dof        
+        print("dt =", self.timeIntegration.dt)
+        print("||mLim - mLow||inf =", np.linalg.norm(mLim - self.mLow, np.inf))
+        print("||uLim - uHigh||inf =", np.linalg.norm(uLim - uHigh, np.inf))
+    
     def kth_FCT_step(self):
         #import pdb
         #pdb.set_trace()
