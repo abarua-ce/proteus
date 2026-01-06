@@ -163,91 +163,7 @@ public:
   //     u       = -psiC;
   //   }
   // }
-//   inline void evaluateInverseCoefficients(const int rowptr[nSpace],
-//                                         const int colind[nnz],
-//                                         const double rho,
-//                                         const double beta,
-//                                         const double gravity[nSpace],
-//                                         const double alpha,
-//                                         const double n_vg,
-//                                         const double thetaR,
-//                                         const double thetaSR,
-//                                         const double KWs[nnz],
-//                                         double &u,              
-//                                         const double &m,
-//                                         const double &dm,
-//                                         const double f[nSpace],
-//                                         const double df[nSpace],
-//                                         const double a[nnz],
-//                                         const double da[nnz])
-// {
-//   (void)rowptr; (void)colind; (void)gravity; (void)KWs;
-//   (void)dm; (void)f; (void)df; (void)a; (void)da;
 
-//   const double thetaS = thetaR + thetaSR;
-//   const double m_vg   = 1.0 - 1.0 / n_vg;
-
-//   const int    maxIts = 25;
-//   const double tol    = 1e-12 * std::max(1.0, std::fabs(m));
-
-//   double g = 0.0;  
-
-//   for (int it = 0; it < maxIts; ++it)
-//   {
-//     const double exp_beta_u = std::exp(beta * u);
-//     const double rhom       = rho * exp_beta_u;
-
-//     const double thetaW_n = m / rhom;
-//     // if (!(thetaW_n > thetaR+1.0e-7 && thetaW_n < thetaS))
-//     //   std::cerr << "[invert] theta out of range: theta=" << thetaW_n
-//     //           << " thetaR=" << thetaR << " thetaS=" << thetaS
-//     //           << " u=" << u << " m=" << m << std::endl;  
-      
-//     //   return ;
-
-//     const double psiC = -u;
-
-//     double thetaW, dtheta_du;
-
-//     if (psiC > 0.0) {
-//       const double pcBar     = alpha * psiC;
-//       const double pcBarStar = (pcBar < 1.0e-8) ? 1.0e-8 : pcBar;
-
-//       const double pcBar_nM2       = std::pow(pcBarStar, n_vg - 2.0);
-//       const double pcBar_nM1       = pcBar_nM2 * pcBar;
-//       const double pcBar_n         = pcBar_nM1 * pcBar;
-//       const double onePlus_pcBar_n = 1.0 + pcBar_n;
-
-//       const double sBar = std::pow(onePlus_pcBar_n, -m_vg);
-//       const double DsBar_DpsiC =
-//         alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
-
-//       thetaW     = thetaR + thetaSR * sBar;
-//       dtheta_du  = -thetaSR * DsBar_DpsiC;
-//     }
-//     else {
-//       thetaW    = thetaS;
-//       dtheta_du = 0.0;
-//     }
-
-//     g = rhom * thetaW - m;
-//     if (std::fabs(g) < tol)
-//       return;
-
-//     const double gp = rhom * (beta * thetaW + dtheta_du);
-//     u -= g / gp;
-//   }
-
-//   if (std::fabs(g) > tol)
-//   {
-//     std::cerr << "[evaluateInverseCoefficients] Newton did not converge: "
-//               << "residual = " << g
-//               << ", tol = " << tol
-//               << ", u = " << u
-//               << ", m = " << m
-//               << std::endl;
-//   }
-// }
 
 inline void evaluateInverseCoefficients(const int rowptr[nSpace],
                                         const int colind[nnz],
@@ -273,39 +189,19 @@ inline void evaluateInverseCoefficients(const int rowptr[nSpace],
   const double thetaS = thetaR + thetaSR;
   const double m_vg   = 1.0 - 1.0 / n_vg;
 
-  /*----------------------------------------------------
-    0) NEVER invert in saturation
-  ----------------------------------------------------*/
   const double psiC0 = -u;
-  if (psiC0 <= 0.0) {
-    return;
-  }
-
-  /*----------------------------------------------------
-    1) Implied theta from current guess
-  ----------------------------------------------------*/
-  const double rhom0 = rho * std::exp(beta * u);
+  if (psiC0 <= 0.0) {return;} //no inversion in saturation
+  const double rhom0 = rho * std::exp(beta * u);//first guess
   const double thetaW_imp = m / rhom0;
+  if (thetaW_imp < 1.01 * thetaR) {return;} //no inversion below residual saturation
 
-  /*----------------------------------------------------
-    2) NEVER invert if too dry
-  ----------------------------------------------------*/
-  if (thetaW_imp < 1.01 * thetaR) {
-    return;
-  }
-
-  /*----------------------------------------------------
-    3) Decide target mass
-  ----------------------------------------------------*/
   const double thetaEps = 1e-12;
   double m_target = m;
 
   if (thetaW_imp > 0.99 * thetaS) {
     // clamp away from saturation plateau
-    const double thetaWc =
-      std::min(thetaW_imp, thetaS - thetaEps);
-    m_target = rhom0 * thetaWc;
-  }
+    const double thetaWc = std::min(thetaW_imp, thetaS - thetaEps);
+    m_target = rhom0 * thetaWc;}
 
   /*----------------------------------------------------
     4) Newton solve (UNSATURATED ONLY)
@@ -320,63 +216,55 @@ inline void evaluateInverseCoefficients(const int rowptr[nSpace],
 {
   const double psiC = -u;
 
-  // safety: this helper is only meant for unsaturated (psiC>0)
-  if (psiC <= 0.0) {
-    return false;
-  }
-
+  if (psiC <= 0.0) {return false;} //no inversion in saturation
+  //van Genuchten relations
   const double pcBar     = alpha * psiC;
   const double pcBarStar = (pcBar < 1e-12) ? 1e-12 : pcBar;
-
   const double pcBar_nM2       = std::pow(pcBarStar, n_vg - 2.0);
   const double pcBar_nM1       = pcBar_nM2 * pcBar;
   const double pcBar_n         = pcBar_nM1 * pcBar;
   const double onePlus_pcBar_n = 1.0 + pcBar_n;
-
   const double sBar = std::pow(onePlus_pcBar_n, -m_vg);
 
-  const double DsBar_DpsiC =
-    alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
+  const double DsBar_DpsiC = alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
 
   thetaW    = thetaR + thetaSR * sBar;
   dtheta_du = -thetaSR * DsBar_DpsiC;
-
-
   if (thetaW <= thetaR + thetaEps) return false;
   if (thetaW >= thetaS - thetaEps) return false;
-
   return true;
 };
 
 
   for (int it = 0; it < maxIts; ++it)
 {
-  // UNSATURATED ONLY guard (never invert in saturation)
   if (-u <= 0.0) return;
-
   double thetaW, dtheta_du;
   if (!theta_and_dtheta_du(u, thetaW, dtheta_du)) {
-    // theta too close to endpoints (or saturation) => do nothing
     return;
-  }
+  }  //making sure we stay in the unsaturated zone
 
   const double rhom = rho * std::exp(beta * u);
-
   const double g  = rhom * thetaW - m_target;
   if (std::fabs(g) < tol) return;
-
   const double gp = rhom * (beta * thetaW + dtheta_du);
-
   // guard against near-zero derivative
   const double gpTol = 1e-14 * std::max(1.0, std::fabs(rhom * thetaW));
   if (std::fabs(gp) < gpTol) return;
-
   double du = -g / gp;
   if (du >  duMax) du =  duMax;
   if (du < -duMax) du = -duMax;
-
   u += du;
 }
+if (std::fabs(g) > tol)
+  {
+    std::cerr << "[evaluateInverseCoefficients] Newton did not converge: "
+              << "residual = " << g
+              << ", tol = " << tol
+              << ", u = " << u
+              << ", m = " << m
+              << std::endl;
+  }
 }
 
 
