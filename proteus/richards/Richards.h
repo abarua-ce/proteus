@@ -117,8 +117,8 @@ public:
       f[I]  = 0.0;
       df[I] = 0.0;
       for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
-        f[I] += rho2 * KWr * KWs[ii] * gravity[colind[ii]];
-        df[I] += -rho2 * DKWr_DpsiC * KWs[ii] * gravity[colind[ii]]; 
+        //f[I] += 0.0; //rho2 * KWr * KWs[ii] * gravity[colind[ii]];
+        //df[I] += -rho2 * DKWr_DpsiC * KWs[ii] * gravity[colind[ii]]; 
         a[ii]  = rho * KWr * KWs[ii];
         da[ii] = -rho * DKWr_DpsiC * KWs[ii];
         as[ii] = rho * KWs[ii];
