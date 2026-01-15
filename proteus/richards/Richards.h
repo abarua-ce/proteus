@@ -149,59 +149,58 @@ public:
     }
   }
 
-  // inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
-  // {
-  //   double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
-  //   m_vg   = 1.0 - 1.0 / n_vg;
-  //   thetaS = thetaR + thetaSR;
-  //   thetaW = m / rho;
-  //   if (thetaW > 1.01*thetaR && thetaW < thetaS) {
-  //     sBar    = (thetaW - thetaR) / thetaSR;
-  //     pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
-  //     pcBar   = pow(pcBar_n, 1.0 / n_vg);
-  //     psiC    = pcBar / alpha;
-  //     u       = -psiC;
-  //   }
-  // }
+  inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
+  {
+    double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
+    m_vg   = 1.0 - 1.0 / n_vg;
+    thetaS = thetaR + thetaSR;
+    thetaW = m / rho;
+    if (thetaW > 1.01*thetaR && thetaW < thetaS) {
+      sBar    = (thetaW - thetaR) / thetaSR;
+      pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
+      pcBar   = pow(pcBar_n, 1.0 / n_vg);
+      psiC    = pcBar / alpha;
+      u       = -psiC;
+    }
+  }
 
-
-inline void evaluateInverseCoefficients(const int rowptr[nSpace],
-                                        const int colind[nnz],
-                                        const double rho,
-                                        const double beta,
-                                        const double gravity[nSpace],
-                                        const double alpha,
-                                        const double n_vg,
-                                        const double thetaR,
-                                        const double thetaSR,
-                                        const double KWs[nnz],
-                                        double &u,               // in/out
-                                        const double &m,
-                                        const double &dm,
-                                        const double f[nSpace],
-                                        const double df[nSpace],
-                                        const double a[nnz],
-                                        const double da[nnz])
+inline void evaluateInverseCoefficients_Newton(const int rowptr[nSpace],
+                                               const int colind[nnz],
+                                               const double rho,
+                                               const double beta,
+                                               const double gravity[nSpace],
+                                               const double alpha,
+                                               const double n_vg,
+                                               const double thetaR,
+                                               const double thetaSR,
+                                               const double KWs[nnz],
+                                               double &u,               // in/out
+                                               const double &m,
+                                               const double &dm,
+                                               const double f[nSpace],
+                                               const double df[nSpace],
+                                               const double a[nnz],
+                                               const double da[nnz])
 {
   (void)rowptr; (void)colind; (void)gravity; (void)KWs;
   (void)dm; (void)f; (void)df; (void)a; (void)da;
+
+  const double u_prev = u;
 
   const double thetaS = thetaR + thetaSR;
   const double m_vg   = 1.0 - 1.0 / n_vg;
 
   const double psiC0 = -u;
-  if (psiC0 <= 0.0) {return;} //no inversion in saturation
+  if (psiC0 <= 0.0) { return; } //saturated, no inversion
   const double rhom0 = rho * std::exp(beta * u);//first guess
   const double thetaW_imp = m / rhom0;
-  if (thetaW_imp < 1.01 * thetaR) {return;} //no inversion below residual saturation
-
+  if (thetaW_imp < 1.01 * thetaR) { return; } //no inversion below residual saturation
   const double thetaEps = 1e-12;
   double m_target = m;
-
   if (thetaW_imp > 0.99 * thetaS) {
-    // clamp away from saturation plateau
     const double thetaWc = std::min(thetaW_imp, thetaS - thetaEps);
-    m_target = rhom0 * thetaWc;}
+    m_target = rhom0 * thetaWc;
+  }
 
   /*----------------------------------------------------
     4) Newton solve (UNSATURATED ONLY)
@@ -211,62 +210,58 @@ inline void evaluateInverseCoefficients(const int rowptr[nSpace],
   const double duMax  = 5e-2;
 
   auto theta_and_dtheta_du = [&](double u,
-                               double &thetaW,
-                               double &dtheta_du) -> bool
-{
-  const double psiC = -u;
-
-  if (psiC <= 0.0) {return false;} //no inversion in saturation
-  //van Genuchten relations
-  const double pcBar     = alpha * psiC;
-  const double pcBarStar = (pcBar < 1e-12) ? 1e-12 : pcBar;
-  const double pcBar_nM2       = std::pow(pcBarStar, n_vg - 2.0);
-  const double pcBar_nM1       = pcBar_nM2 * pcBar;
-  const double pcBar_n         = pcBar_nM1 * pcBar;
-  const double onePlus_pcBar_n = 1.0 + pcBar_n;
-  const double sBar = std::pow(onePlus_pcBar_n, -m_vg);
-
-  const double DsBar_DpsiC = alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
-
-  thetaW    = thetaR + thetaSR * sBar;
-  dtheta_du = -thetaSR * DsBar_DpsiC;
-  if (thetaW <= thetaR + thetaEps) return false;
-  if (thetaW >= thetaS - thetaEps) return false;
-  return true;
-};
-
-
-  for (int it = 0; it < maxIts; ++it)
-{
-  if (-u <= 0.0) return;
-  double thetaW, dtheta_du;
-  if (!theta_and_dtheta_du(u, thetaW, dtheta_du)) {
-    return;
-  }  //making sure we stay in the unsaturated zone
-
-  const double rhom = rho * std::exp(beta * u);
-  const double g  = rhom * thetaW - m_target;
-  if (std::fabs(g) < tol) return;
-  const double gp = rhom * (beta * thetaW + dtheta_du);
-  // guard against near-zero derivative
-  const double gpTol = 1e-14 * std::max(1.0, std::fabs(rhom * thetaW));
-  if (std::fabs(gp) < gpTol) return;
-  double du = -g / gp;
-  if (du >  duMax) du =  duMax;
-  if (du < -duMax) du = -duMax;
-  u += du;
-}
-if (std::fabs(g) > tol)
+                                 double &thetaW,
+                                 double &dtheta_du) -> bool
   {
-    std::cerr << "[evaluateInverseCoefficients] Newton did not converge: "
-              << "residual = " << g
-              << ", tol = " << tol
-              << ", u = " << u
-              << ", m = " << m
-              << std::endl;
-  }
-}
+    const double psiC = -u;
 
+    if (psiC <= 0.0) { return false; } //no inversion in saturation
+    //van Genuchten relations
+    const double pcBar     = alpha * psiC;
+    const double pcBarStar = (pcBar < 1e-12) ? 1e-12 : pcBar;
+    const double pcBar_nM2       = std::pow(pcBarStar, n_vg - 2.0);
+    const double pcBar_nM1       = pcBar_nM2 * pcBar;
+    const double pcBar_n         = pcBar_nM1 * pcBar;
+    const double onePlus_pcBar_n = 1.0 + pcBar_n;
+    const double sBar = std::pow(onePlus_pcBar_n, -m_vg);
+
+    const double DsBar_DpsiC =
+      alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
+
+    thetaW    = thetaR + thetaSR * sBar;
+    dtheta_du = -thetaSR * DsBar_DpsiC;
+    if (thetaW <= thetaR + thetaEps) return false;
+    if (thetaW >= thetaS - thetaEps) return false;
+    return true;
+  };
+  for (int it = 0; it < maxIts; ++it)
+  {
+    if (-u <= 0.0) { u = u_prev; return; }            
+
+    double thetaW, dtheta_du;
+    if (!theta_and_dtheta_du(u, thetaW, dtheta_du)) {
+      u = u_prev; return;                             
+    }  
+
+    const double rhom = rho * std::exp(beta * u);
+    const double g  = rhom * thetaW - m_target;
+    if (std::fabs(g) < tol) return;
+
+    const double gp = rhom * (beta * thetaW + dtheta_du);
+    // guard against near-zero derivative
+    const double gpTol = 1e-14 * std::max(1.0, std::fabs(rhom * thetaW));
+    if (std::fabs(gp) < gpTol) { u = u_prev; return; } // CHANGE: revert if g' bad
+
+    double du = -g / gp;
+    if (du >  duMax) du =  duMax;
+    if (du < -duMax) du = -duMax;
+
+    u += du;
+    // CHANGE: after update, if we stepped into saturation, revert
+    if (-u <= 0.0) { u = u_prev; return; }
+  }
+  u = u_prev;
+}
 
   inline void calculateCFL(const double &elementDiameter, const double df[nSpace], double &cfl)
   {
@@ -1099,7 +1094,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
   //   }
   // }
 
-
   void FCTStep(arguments_dict &args)
 {
   xt::pyarray<double> &bc_mask                   = args.array<double>("bc_mask");
@@ -1172,10 +1166,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       mDot.at(j) = (mLow.at(j) - mn.at(j)) / dt;
 
       if (MONOLITHIC == 0) {
-        FluxCorrectionMatrix.at(ij) =
-          (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * MC.at(ij) *
-          (mDotLow.at(i) - mDotLow.at(j)) +
-          dt_times_fH_minus_fL.at(ij);
+        FluxCorrectionMatrix.at(ij) = (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * MC.at(ij) * (mDotLow.at(i) - mDotLow.at(j)) + dt_times_fH_minus_fL.at(ij);
       } else {
         FluxCorrectionMatrix.at(ij) = dt_times_fH_minus_fL.at(ij);
       }
@@ -1183,10 +1174,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       ///////////////////////
       // COMPUTE P VECTORS //
       ///////////////////////
-      Pposi += FluxCorrectionMatrix.at(ij) *
-               ((FluxCorrectionMatrix.at(ij) > 0) ? 1. : 0.);
-      Pnegi += FluxCorrectionMatrix.at(ij) *
-               ((FluxCorrectionMatrix.at(ij) < 0) ? 1. : 0.);
+      Pposi += FluxCorrectionMatrix.at(ij) * ((FluxCorrectionMatrix.at(ij) > 0) ? 1. : 0.);
+      Pnegi += FluxCorrectionMatrix.at(ij) * ((FluxCorrectionMatrix.at(ij) < 0) ? 1. : 0.);
 
       // update ij
       ij += 1;
@@ -1229,60 +1218,23 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
   for (int i = 0; i < numDOFs; i++) {
     double ith_Limiter_times_FluxCorrectionMatrix = 0.0;
     double alpha_fA, alpha_dot, beta_ij = 1.0;
-
-    // if (i < 3) {
-    //   std::cout << "FCT: [2nd loop] i = " << i
-    //             << ", row range = [" << csrRowIndeces_DofLoops.at(i)
-    //             << "," << csrRowIndeces_DofLoops.at(i+1) << ")\n";
-    // }
-
     // LOOP OVER THE SPARSITY PATTERN (j-LOOP)
     for (int offset = csrRowIndeces_DofLoops.at(i);  offset < csrRowIndeces_DofLoops.at(i + 1); offset++)
     {
-      // if (offset < 0 || offset >= static_cast<int>(csrColumnOffsets_DofLoops.size())) {
-      //   std::cerr << "FCT FATAL (2nd loop): offset=" << offset
-      //             << " out of [0," << csrColumnOffsets_DofLoops.size()-1
-      //             << "] at i=" << i << std::endl;
-      //   abort();
-      // }
-
       int j = csrColumnOffsets_DofLoops.at(offset);
       alpha_fA = ((FluxCorrectionMatrix.at(ij) > 0.0) ? fmin(Rpos.at(i), Rneg.at(j)) : fmin(Rneg.at(i), Rpos.at(j))) * FluxCorrectionMatrix.at(ij);
-
       alpha_dot = fmin(1.0, beta_ij * fabs(alpha_fA) / MC.at(ij) / fmax(1.0e-8, fabs(mDot.at(i) - mDot.at(j))));
 
       if (MONOLITHIC == 0) {
         ith_Limiter_times_FluxCorrectionMatrix += alpha_fA;
       } else {
-        ith_Limiter_times_FluxCorrectionMatrix +=
-          alpha_fA +
-          (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt *
-          alpha_dot * MC.at(ij) * (mDot.at(i) - mDot.at(j));
+        ith_Limiter_times_FluxCorrectionMatrix += alpha_fA + (LUMPED_MASS_MATRIX == 1 ? 0. : 1.) * dt * alpha_dot * MC.at(ij) * (mDot.at(i) - mDot.at(j));
       }
-
       ij += 1;
     } // j-loop
-
     fluxCorrection.at(i) = -ith_Limiter_times_FluxCorrectionMatrix * bc_mask.at(i) / dt;
-
     limited_solution.at(i) = mLow.at(i) + 1.0 / ML.at(i) * ith_Limiter_times_FluxCorrectionMatrix * bc_mask.at(i);
-
-    // bound check: is limited_solution inside [localMin, localMax]?
-    {
-      double u    = limited_solution.at(i);
-      double umin = localMin.at(i);
-      double umax = localMax.at(i);
-      double tol  = 1e-10; // small tolerance
-
-      if (u < umin - tol || u > umax + tol) {
-        std::cerr << "FCT BOUND VIOLATION at i=" << i
-                  << " u=" << u
-                  << " localMin=" << umin
-                  << " localMax=" << umax
-                  << " (bc_mask=" << bc_mask.at(i) << ")\n";
-      }
-    }
-  }
+}
 }
 
 
@@ -2166,18 +2118,24 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     int                  numDOFs              = args.scalar<int>("numDOFs");
     xt::pyarray<double> &mIn = args.array<double>("limited_solution");
     xt::pyarray<double> &pOut = args.array<double>("u_dof");
+    int USE_NEWTON_INVERT = args.scalar<int>("USE_NEWTON_INVERT");
+
     for (int i = 0; i < numDOFs; i++) {
       double dm, f[nSpace], df[nSpace], a[nnz], da[nnz];
       double mMin = rho * thetaR.data()[elementMaterialTypes.data()[0]];
       double mMax = rho * (thetaR.data()[elementMaterialTypes.data()[0]] + thetaSR.data()[elementMaterialTypes.data()[0]]);
 
       // if (mIn.data()[i] < mMin - 0.001 || mIn.data()[i] > mMax + 0.001) { std::cout << "mass out of bounds " << mMin << '\t' << mIn.data()[i] << '\t' << mMax << std::endl; }
-
-      evaluateInverseCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[0]], n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]],
+      if (USE_NEWTON_INVERT)
+        evaluateInverseCoefficients_Newton(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[0]], n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]],
+                                          thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz],
+                                          pOut.data()[i], mIn.data()[i],
+                                          dm, f, df, a, da);
+      else
+         evaluateInverseCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(), alpha.data()[elementMaterialTypes.data()[0]], n.data()[elementMaterialTypes.data()[0]], thetaR.data()[elementMaterialTypes.data()[0]],
                                   thetaSR.data()[elementMaterialTypes.data()[0]], &KWs.data()[elementMaterialTypes.data()[0] * nnz],
                                   pOut.data()[i], mIn.data()[i],
                                   dm, f, df, a, da);
-
     }
   }
 

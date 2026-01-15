@@ -1669,6 +1669,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
         argsDict["limited_solution"] = u
         argsDict["mLow"] = self.u[0].dof
+        argsDict["USE_NEWTON_INVERT"] = 1 if self.coefficients.FCT==1 else 0
         self.richards.invert(argsDict)
      
     def getJacobian(self,jacobian):
