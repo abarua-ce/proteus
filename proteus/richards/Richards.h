@@ -209,7 +209,34 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
   }
 }
 
-
+inline void evaluateInverseCoefficients(const int rowptr[nSpace],
+                                        const int colind[nnz],
+                                        const double rho,
+                                        const double beta,
+                                        const double gravity[nSpace],
+                                        const double alpha,
+                                        const double n_vg,
+                                        const double thetaR,
+                                        const double thetaSR,
+                                        const double KWs[nnz],
+                                        double &u,              // OUTPUT: u = \bar{h}
+                                        const double &m,        // INPUT: mass m = c*u
+                                        const double &dm,
+                                        const double f[nSpace],
+                                        const double df[nSpace],
+                                        const double a[nnz],
+                                        const double da[nnz])
+{
+  
+  double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
+  const double rhom = rho * std::exp(beta * u);
+  thetaS = thetaR + thetaSR;
+  thetaW = m / rhom;
+  if (thetaW > thetaR+ 1e-7) {
+    const double sBar = (m/rhom - thetaR)/thetaSR ;
+    u = (1.0/alpha) * std::log(sBar);
+  }
+}
 
 // inline void evaluateInverseCoefficients(const int rowptr[nSpace],
 //                                         const int colind[nnz],
@@ -221,71 +248,42 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
 //                                         const double thetaR,
 //                                         const double thetaSR,
 //                                         const double KWs[nnz],
-//                                         double &u,              // OUTPUT: u = \bar{h}
-//                                         const double &m,        // INPUT: mass m = c*u
+//                                         double &u,              // in/out: initial guess -> solution
+//                                         const double &m,        // target mass
 //                                         const double &dm,
 //                                         const double f[nSpace],
 //                                         const double df[nSpace],
 //                                         const double a[nnz],
 //                                         const double da[nnz])
 // {
-//   // All of these are unused for this simple linear inverse
-//   double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
-//   const double rhom = rho * std::exp(beta * u);
-//   thetaS = thetaR + thetaSR;
-//   thetaW = m / rhom;
-//   if (thetaW > thetaR+ 1e-7) {
-//     const double sBar = (m/rhom - thetaR)/thetaSR ;
-//     u = (1.0/alpha) * std::log(sBar);
+//   (void)rowptr; (void)colind; (void)gravity; (void)n_vg; (void)KWs;
+//   (void)dm; (void)f; (void)df; (void)a; (void)da;
+
+//   const int    maxIts = 25;
+//   const double tol    = 1e-12;
+
+//   // Solve g(u)=0 where:
+//   // g(u)  = rho*exp(beta*u)*(thetaR + thetaSR*exp(alpha*u)) - m
+//   // g'(u) = rho*exp(beta*u)*[ beta*(thetaR + thetaSR*exp(alpha*u)) + thetaSR*alpha*exp(alpha*u) ]
+//   for (int it = 0; it < maxIts; ++it)
+//   {
+//     const double exp_beta_u  = std::exp(beta  * u);
+//     const double exp_alpha_u = std::exp(alpha * u);
+
+//     const double rhom   = rho * exp_beta_u;
+//     const double thetaW = thetaR + thetaSR * exp_alpha_u;
+
+//     const double g  = rhom * thetaW - m;
+
+//     if (std::fabs(g) < tol * std::max(1.0, std::fabs(m)))
+//       return;
+
+//     const double dtheta_du = thetaSR * alpha * exp_alpha_u;
+//     const double gp = rhom * (beta * thetaW + dtheta_du);
+
+//     u -= g / gp;
 //   }
 // }
-
-inline void evaluateInverseCoefficients(const int rowptr[nSpace],
-                                        const int colind[nnz],
-                                        const double rho,
-                                        const double beta,
-                                        const double gravity[nSpace],
-                                        const double alpha,
-                                        const double n_vg,
-                                        const double thetaR,
-                                        const double thetaSR,
-                                        const double KWs[nnz],
-                                        double &u,              // in/out: initial guess -> solution
-                                        const double &m,        // target mass
-                                        const double &dm,
-                                        const double f[nSpace],
-                                        const double df[nSpace],
-                                        const double a[nnz],
-                                        const double da[nnz])
-{
-  (void)rowptr; (void)colind; (void)gravity; (void)n_vg; (void)KWs;
-  (void)dm; (void)f; (void)df; (void)a; (void)da;
-
-  const int    maxIts = 25;
-  const double tol    = 1e-12;
-
-  // Solve g(u)=0 where:
-  // g(u)  = rho*exp(beta*u)*(thetaR + thetaSR*exp(alpha*u)) - m
-  // g'(u) = rho*exp(beta*u)*[ beta*(thetaR + thetaSR*exp(alpha*u)) + thetaSR*alpha*exp(alpha*u) ]
-  for (int it = 0; it < maxIts; ++it)
-  {
-    const double exp_beta_u  = std::exp(beta  * u);
-    const double exp_alpha_u = std::exp(alpha * u);
-
-    const double rhom   = rho * exp_beta_u;
-    const double thetaW = thetaR + thetaSR * exp_alpha_u;
-
-    const double g  = rhom * thetaW - m;
-
-    if (std::fabs(g) < tol * std::max(1.0, std::fabs(m)))
-      return;
-
-    const double dtheta_du = thetaSR * alpha * exp_alpha_u;
-    const double gp = rhom * (beta * thetaW + dtheta_du);
-
-    u -= g / gp;
-  }
-}
 
 
 
@@ -1169,80 +1167,15 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
   std::vector<double> localMin(numDOFs, 0.0);
   std::vector<double> localMax(numDOFs, 0.0);
 
-  // //
-  // // Global debug header
-  // //
-  // std::cout << "\n=== FCT DEBUG CHECK ===\n";
-  // std::cout << "numDOFs = " << numDOFs
-  //           << ", NNZ = " << NNZ << std::endl;
-
-  // std::cout << "csrRowIndeces_DofLoops.size = "
-  //           << csrRowIndeces_DofLoops.size() << std::endl;
-
-  // std::cout << "csrColumnOffsets_DofLoops.size = "
-  //           << csrColumnOffsets_DofLoops.size() << std::endl;
-
-  // std::cout << "ML.size = " << ML.size()
-  //           << ", mn.size = " << mn.size()
-  //           << ", mLow.size = " << mLow.size()
-  //           << ", mHigh.size = " << mHigh.size()
-  //           << ", mDotLow.size = " << mDotLow.size()
-  //           << ", dt_times_fH_minus_fL.size = " << dt_times_fH_minus_fL.size()
-  //           << ", MC.size = " << MC.size()
-  //           << ", fluxCorrection.size = " << fluxCorrection.size()
-  //           << ", limited_solution.size = " << limited_solution.size()
-  //           << std::endl;
-
-  // // 1) Row pointer length
-  // if (csrRowIndeces_DofLoops.size() != static_cast<std::size_t>(numDOFs + 1)) {
-  //   std::cerr << "FCT WARNING: csrRowIndeces_DofLoops.size() = "
-  //             << csrRowIndeces_DofLoops.size()
-  //             << " but expected numDOFs+1 = " << (numDOFs+1) << std::endl;
-  // }
-
-  // // 2) Last row pointer equals NNZ
-  // int lastRow = csrRowIndeces_DofLoops.at(numDOFs);
-  // std::cout << "csrRowIndeces_DofLoops[numDOFs] = " << lastRow << std::endl;
-  // if (lastRow != NNZ) {
-  //   std::cerr << "FCT WARNING: csrRowIndeces_DofLoops[numDOFs] = "
-  //             << lastRow << " but NNZ = " << NNZ << std::endl;
-  // }
-
-  // // 3) Column offsets length
-  // if (csrColumnOffsets_DofLoops.size() != static_cast<std::size_t>(NNZ)) {
-  //   std::cerr << "FCT WARNING: csrColumnOffsets_DofLoops.size() = "
-  //             << csrColumnOffsets_DofLoops.size()
-  //             << " but expected NNZ = " << NNZ << std::endl;
-  // }
-
-  // // 4) MC / dt_times_fH_minus_fL lengths
-  // if (MC.size() != static_cast<std::size_t>(NNZ)) {
-  //   std::cerr << "FCT WARNING: MC.size() = " << MC.size()
-  //             << " but expected NNZ = " << NNZ << std::endl;
-  // }
-  // if (dt_times_fH_minus_fL.size() != static_cast<std::size_t>(NNZ)) {
-  //   std::cerr << "FCT WARNING: dt_times_fH_minus_fL.size() = "
-  //             << dt_times_fH_minus_fL.size()
-  //             << " but expected NNZ = " << NNZ << std::endl;
-  // }
-
-  // std::cout << "=== END FCT DEBUG CHECK HEADER ===\n";
 
   //////////////////
   // LOOP in DOFs //
   //////////////////
   int ij = 0;
 
-  //std::cout << "FCT: entering first DOF loop (building mDot, FluxCorrectionMatrix, Rpos/Rneg bounds)...\n";
-
+  
   for (int i = 0; i < numDOFs; i++) {
-    // Debug: print info for the first few DOFs
-    // if (i < 3) {
-    //   std::cout << "FCT: [1st loop] i = " << i
-    //             << ", row range = [" << csrRowIndeces_DofLoops.at(i)
-    //             << "," << csrRowIndeces_DofLoops.at(i+1) << ")\n";
-    // }
-
+  
     // local time derivative from low-order mass
     mDot.at(i) = (mLow.at(i) - mn.at(i)) / dt;
 
@@ -1257,44 +1190,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
          offset < csrRowIndeces_DofLoops.at(i + 1);
          offset++)
     {
-      // // bounds check on offset
-      // if (offset < 0 || offset >= static_cast<int>(csrColumnOffsets_DofLoops.size())) {
-      //   std::cerr << "FCT FATAL (1st loop): offset=" << offset
-      //             << " out of [0," << csrColumnOffsets_DofLoops.size()-1
-      //             << "] at i=" << i << std::endl;
-      //   abort();
-      // }
-
       int j = csrColumnOffsets_DofLoops.at(offset);
-
-      // // bounds check on j
-      // if (j < 0 || j >= numDOFs) {
-      //   std::cerr << "FCT FATAL (1st loop): j=" << j
-      //             << " out of [0," << numDOFs-1
-      //             << "] at i=" << i
-      //             << ", offset=" << offset << std::endl;
-      //   abort();
-      // }
-
-      // // bounds check on ij
-      // if (ij < 0 || ij >= NNZ) {
-      //   std::cerr << "FCT FATAL (1st loop): ij=" << ij
-      //             << " out of [0," << NNZ-1
-      //             << "] at i=" << i
-      //             << ", offset=" << offset
-      //             << " (csrRowIndeces_DofLoops[i]="
-      //             << csrRowIndeces_DofLoops.at(i) << ")" << std::endl;
-      //   abort();
-      // }
-
-      // // small debug for first couple of rows
-      // if (i < 2 && (offset - csrRowIndeces_DofLoops.at(i)) < 5) {
-      //   std::cout << "  FCT: [1st loop] i=" << i
-      //             << " local j=" << j
-      //             << " offset=" << offset
-      //             << " ij=" << ij << std::endl;
-      // }
-
       ////////////////////////
       // COMPUTE THE BOUNDS //
       ////////////////////////
@@ -1307,7 +1203,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           maxi = fmax(maxi, mn.at(j));
         }
       }
-
       // original logic: update mDot[j] (this only matters for MONOLITHIC != 0)
       mDot.at(j) = (mLow.at(j) - mn.at(j)) / dt;
 
@@ -1319,7 +1214,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       } else {
         FluxCorrectionMatrix.at(ij) = dt_times_fH_minus_fL.at(ij);
       }
-
       ///////////////////////
       // COMPUTE P VECTORS //
       ///////////////////////
@@ -1358,83 +1252,22 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     // store local bounds for later bound check
     localMin.at(i) = mini;
     localMax.at(i) = maxi;
-
-    // if (i < 3) {
-    //   std::cout << "FCT: [1st loop] i=" << i
-    //             << " Pposi=" << Pposi
-    //             << " Pnegi=" << Pnegi
-    //             << " Qposi=" << Qposi
-    //             << " Qnegi=" << Qnegi
-    //             << " Rpos[i]=" << Rpos.at(i)
-    //             << " Rneg[i]=" << Rneg.at(i) << std::endl;
-    // }
   } // i DOFs
-
-  // std::cout << "FCT: after first ij loop: ij = " << ij
-  //           << " (NNZ = " << NNZ << ")\n";
-  // if (ij != NNZ) {
-  //   std::cerr << "FCT WARNING: after first loop ij = " << ij
-  //             << " but NNZ = " << NNZ << std::endl;
-  // }
 
   //////////////////////
   // COMPUTE LIMITERS //
   //////////////////////
   ij = 0;
- // std::cout << "FCT: entering second DOF loop (applying limiters)...\n";
 
   for (int i = 0; i < numDOFs; i++) {
     double ith_Limiter_times_FluxCorrectionMatrix = 0.0;
     double alpha_fA, alpha_dot, beta_ij = 1.0;
 
-    // if (i < 3) {
-    //   std::cout << "FCT: [2nd loop] i = " << i
-    //             << ", row range = [" << csrRowIndeces_DofLoops.at(i)
-    //             << "," << csrRowIndeces_DofLoops.at(i+1) << ")\n";
-    // }
-
     // LOOP OVER THE SPARSITY PATTERN (j-LOOP)
     for (int offset = csrRowIndeces_DofLoops.at(i);  offset < csrRowIndeces_DofLoops.at(i + 1); offset++)
     {
-      // if (offset < 0 || offset >= static_cast<int>(csrColumnOffsets_DofLoops.size())) {
-      //   std::cerr << "FCT FATAL (2nd loop): offset=" << offset
-      //             << " out of [0," << csrColumnOffsets_DofLoops.size()-1
-      //             << "] at i=" << i << std::endl;
-      //   abort();
-      // }
 
       int j = csrColumnOffsets_DofLoops.at(offset);
-
-      // if (j < 0 || j >= numDOFs) {
-      //   std::cerr << "FCT FATAL (2nd loop): j=" << j
-      //             << " out of [0," << numDOFs-1
-      //             << "] at i=" << i
-      //             << ", offset=" << offset << std::endl;
-      //   abort();
-      // }
-
-      // if (ij < 0 || ij >= NNZ) {
-      //   std::cerr << "FCT FATAL (2nd loop): ij=" << ij
-      //             << " out of [0," << NNZ-1
-      //             << "] at i=" << i
-      //             << ", offset=" << offset
-      //             << " (csrRowIndeces_DofLoops[i]="
-      //             << csrRowIndeces_DofLoops.at(i) << ")" << std::endl;
-      //   abort();
-      // }
-
-      // if (i < 2 && (offset - csrRowIndeces_DofLoops.at(i)) < 5) {
-      //   std::cout << "  FCT: [2nd loop] i=" << i
-      //             << " j=" << j
-      //             << " offset=" << offset
-      //             << " ij=" << ij
-      //             << " FluxCorrectionMatrix[ij]=" << FluxCorrectionMatrix.at(ij)
-      //             << " Rpos[i]=" << Rpos.at(i)
-      //             << " Rneg[i]=" << Rneg.at(i)
-      //             << " Rpos[j]=" << Rpos.at(j)
-      //             << " Rneg[j]=" << Rneg.at(j)
-      //             << std::endl;
-      // }
 
       alpha_fA = ((FluxCorrectionMatrix.at(ij) > 0.0) ? fmin(Rpos.at(i), Rneg.at(j)) : fmin(Rneg.at(i), Rpos.at(j))) * FluxCorrectionMatrix.at(ij);
 
@@ -1471,25 +1304,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                   << " (bc_mask=" << bc_mask.at(i) << ")\n";
       }
     }
-
-    // if (i < 3) {
-    //   std::cout << "FCT: [2nd loop] i=" << i
-    //             << " ith_Limiter_times_FluxCorrectionMatrix="
-    //             << ith_Limiter_times_FluxCorrectionMatrix
-    //             << " fluxCorrection[i]=" << fluxCorrection.at(i)
-    //             << " limited_solution[i]=" << limited_solution.at(i)
-    //             << std::endl;
-    // }
   } // i DOFs
-
-  // std::cout << "FCT: after second ij loop: ij = " << ij
-  //           << " (NNZ = " << NNZ << ")\n";
-  // if (ij != NNZ) {
-  //   std::cerr << "FCT WARNING: after second loop ij = " << ij
-  //             << " but NNZ = " << NNZ << std::endl;
-  // }
-
-  // std::cout << "FCT: finished FCTStep\n";
 }
 
 

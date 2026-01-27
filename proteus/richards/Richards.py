@@ -463,10 +463,10 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         if dm is None:
             return {}
 
-        self.model.q['rho'] = dm.q['rho']
-        self.model.ebqe['rho'] = dm.ebqe['rho']
+        # self.model.q['rho'] = dm.q['rho']
+        # self.model.ebqe['rho'] = dm.ebqe['rho']
 
-        return {}
+        # return {}
 
   
     # def postStep(self, t, firstStep=False):
@@ -511,27 +511,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
     #                        f.write(f"{t:.6f},{s_now:.6f}\n")
     #       except Exception as e:
     #            logEvent(f"[postStep] Skipped logging seepage: {e}")
-        
-   
-    # def postStep(self, t, firstStep=False):
-    #     import os
-    #     try:
-    #     # Attempt to access and sum the seepage flux
-    #         s_now = float(np.sum(self.model.anb_seepage_flux_n))
-    #         with open("seepage_flux.txt", "a") as f:
-    #             if os.stat("seepage_flux.txt").st_size == 0:
-    #                 f.write("time, seepage_flux\n")
-    #             # Write the time and seepage flux to the file
-                
-    #             f.write(f"{t:.6f}, {s_now:.6f}\n")
-    #     except Exception as e:
-    #         logEvent(f"[postStep] Skipped logging seepage: {e}")
-        
-    # #    #anb_seepage_flux_n[:]= self.anb_seepage_flux
-    # #    #anb_seepage_flux_n[:]= self.anb_seepage_flux
-    #     with open('seepage_stab_0.txt', "a") as f:
-    #        # f.write("\n Time"+ ",\t" +"Seepage\n")
-    #         f.write(repr(t)+ ",\t") # +repr(np.sum(self.LevelModel.anb_seepage_flux_n)))
+
         
 class LevelModel(proteus.Transport.OneLevelTransport):
     nCalls=0
@@ -977,14 +957,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.coefficients.forceStrongConditions:
             for cj in range(self.nc):
                 self.dirichletConditionsForceDOF[cj] = DOFBoundaryConditions(self.u[cj].femSpace,dofBoundaryConditionsSetterDict[cj],weakDirichletConditions=False)
-    def export_q_velocity_xdmf(self, tCount=None, init=False, name="velocity"):
-        qv = self.q['velocity']
-        #assert qv.ndim == 3, "q['velocity'] must be (nElements, nQuad, nComp)"
-
-        self.elementQuadratureDictionaryWriter.writeVectorFunctionXdmf_MonomialDGPK(
-            ar, qv, name, tCount=tCount, init=init
-        )
-
+ 
     def FCTStep(self):
         rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         limited_solution = np.zeros((len(rowptr) - 1),'d')
@@ -1661,7 +1634,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
         argsDict["limited_solution"] = u
         argsDict["mLow"] = self.u[0].dof
-        self.richards.invert(argsDict)
+        self.richards.invert(argsDict)       
+        for cj in range(self.nc):
+            dbc = self.dirichletConditions[cj]  
+            for dofN, g in dbc.DOFBoundaryConditionsDict.items():
+                val = g(dbc.DOFBoundaryPointDict[dofN], self.timeIntegration.t)
+                self.u[cj].dof[dofN] = val
+                if self.u_dof_old is not None:
+                    self.u_dof_old[dofN] = val
      
     def getJacobian(self,jacobian):
         if (self.coefficients.STABILIZATION_TYPE == 0):  # SUPG
