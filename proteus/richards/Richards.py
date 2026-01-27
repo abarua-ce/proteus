@@ -1019,10 +1019,19 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         uHigh = old_dof.copy()
         mLim  = limited_solution.copy()
         uLim  = self.u[0].dof.copy()
-        self.timeIntegration.u[:] = self.u[0].dof        
+        du_inf = np.linalg.norm(uLim - uHigh, np.inf)
+        DU_INF_MAX = 0.5  # Conservative value to avoid instability due to large corrections
+        if (not np.isfinite(du_inf)) or (du_inf > DU_INF_MAX):
+            self.u[0].dof[:] = uHigh
+            self.timeIntegration.u[:] = self.u[0].dof
+            print("[FCT] SKIPPED: du_inf =", du_inf, "dt =", self.timeIntegration.dt)
+        else:
+            self.timeIntegration.u[:] = self.u[0].dof
+            print("[FCT] ACCEPTED: du_inf =", du_inf, "dt =", self.timeIntegration.dt)
         print("dt =", self.timeIntegration.dt)
         print("||mLim - mLow||inf =", np.linalg.norm(mLim - self.mLow, np.inf))
         print("||uLim - uHigh||inf =", np.linalg.norm(uLim - uHigh, np.inf))
+
     
     def kth_FCT_step(self):
         #import pdb
