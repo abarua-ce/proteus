@@ -68,98 +68,17 @@ public:
   const int      nDOF_test_X_trial_element;
   CompKernelType ck;
   Richards() : nDOF_test_X_trial_element(nDOF_test_element * nDOF_trial_element), ck() { }
-  // inline void evaluateCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], const double &u, double &m, double &dm, double f[nSpace], double df[nSpace], double a[nnz], double da[nnz], double as[nnz], double &kr, double &dkr)
-  // {
-  //   const int nSpace2 = nSpace * nSpace;
-  //   double    psiC;
-  //   double    pcBar;
-  //   double    pcBar_n;
-  //   double    pcBar_nM1;
-  //   double    pcBar_nM2;
-  //   double    onePlus_pcBar_n;
-  //   double    sBar;
-  //   double    sqrt_sBar;
-  //   double    DsBar_DpsiC;
-  //   double    thetaW;
-  //   double    DthetaW_DpsiC;
-  //   double    vBar;
-  //   double    vBar2;
-  //   double    DvBar_DpsiC;
-  //   double    KWr;
-  //   double    DKWr_DpsiC;
-  //   double    rho2 = rho * rho;
-  //   double    thetaS;
-  //   double    rhom;
-  //   double    drhom;
-  //   double    m_vg;
-  //   double    pcBarStar;
-  //   double    sqrt_sBarStar;
-
-  //   psiC   = -u;
-  //   m_vg   = 1.0 - 1.0 / n_vg;
-  //   thetaS = thetaR + thetaSR;
-  //   if (psiC > 0.0) {
-  //     pcBar     = alpha * psiC;
-  //     pcBarStar = pcBar;
-  //     if (pcBar < 1.0e-8) pcBarStar = 1.0e-8;
-  //     pcBar_nM2       = pow(pcBarStar, n_vg - 2);
-  //     pcBar_nM1       = pcBar_nM2 * pcBar;
-  //     pcBar_n         = pcBar_nM1 * pcBar;
-  //     onePlus_pcBar_n = 1.0 + pcBar_n;
-
-  //     sBar = pow(onePlus_pcBar_n, -m_vg);
-  //     /* using -mn = 1-n */
-  //     DsBar_DpsiC = alpha * (1.0 - n_vg) * (sBar / onePlus_pcBar_n) * pcBar_nM1;
-
-  //     vBar        = 1.0 - pcBar_nM1 * sBar;
-  //     vBar2       = vBar * vBar;
-  //     DvBar_DpsiC = -alpha * (n_vg - 1.0) * pcBar_nM2 * sBar - pcBar_nM1 * DsBar_DpsiC;
-
-  //     thetaW        = thetaSR * sBar + thetaR; //thetaS;//
-  //     DthetaW_DpsiC = thetaSR * DsBar_DpsiC;   //0.0;//
-
-  //     sqrt_sBar     = sqrt(sBar);
-  //     sqrt_sBarStar = sqrt_sBar;
-  //     if (sqrt_sBar < 1.0e-8) sqrt_sBarStar = 1.0e-8;
-  //     KWr        = sqrt_sBar * vBar2;                                                                    
-  //     DKWr_DpsiC = ((0.5 / sqrt_sBarStar) * DsBar_DpsiC * vBar2 + 2.0 * sqrt_sBar * vBar * DvBar_DpsiC); 
-  //   } else {
-  //     thetaW        = thetaS;
-  //     DthetaW_DpsiC = 0.0;
-  //     KWr           = 1.0;
-  //     DKWr_DpsiC    = 0.0;
-  //   }
-  //   //slight compressibility
-  //   rhom  = rho * exp(beta * u);
-  //   drhom = beta * rhom;
-  //   m     = rhom * thetaW;
-  //   dm    = -rhom * DthetaW_DpsiC + drhom * thetaW;
-  //   for (int I = 0; I < nSpace; I++) {
-  //     f[I]  = 0.0;
-  //     df[I] = 0.0;
-  //     for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
-  //       f[I] += rho2 * KWr * KWs[ii] * gravity[colind[ii]];
-  //       df[I] += -rho2 * DKWr_DpsiC * KWs[ii] * gravity[colind[ii]]; 
-  //       a[ii]  = rho * KWr * KWs[ii];
-  //       da[ii] = -rho * DKWr_DpsiC * KWs[ii];
-  //       as[ii] = rho * KWs[ii];
-  //       kr     = KWr;
-  //       dkr    = -DKWr_DpsiC;
-  //     }
-  //   }
-  // }
-
 inline void evaluateCoefficients(const int rowptr[nSpace],
                                  const int colind[nnz],
                                  const double rho,
                                  const double beta,
                                  const double gravity[nSpace],
                                  const double alpha,
-                                 const double n_vg,          // unused
-                                 const double thetaR,        // unused
+                                 const double n_vg,          
+                                 const double thetaR,        
                                  const double thetaSR,       // = theta_s - theta_r
                                  const double KWs[nnz],
-                                 const double &u,            // HERE: u = \bar{h}
+                                 const double &u,            
                                  double &m,
                                  double &dm,
                                  double f[nSpace],
@@ -201,7 +120,6 @@ inline void evaluateCoefficients(const int rowptr[nSpace],
     // diffusion like tensor and its derivative
     a[ii]  = rhom * KWr * KWs[ii];
     da[ii] = rhom * DKWr_Du * KWs[ii];
-
     as[ii] = rhom * KWs[ii];
     kr     = KWr;
     dkr    = DKWr_Du;  
@@ -285,22 +203,6 @@ inline void evaluateInverseCoefficients(const int rowptr[nSpace],
 //   }
 // }
 
-
-
-  // inline void evaluateInverseCoefficients(const int rowptr[nSpace], const int colind[nnz], const double rho, const double beta, const double gravity[nSpace], const double alpha, const double n_vg, const double thetaR, const double thetaSR, const double KWs[nnz], double &u, const double &m, const double &dm, const double f[nSpace], const double df[nSpace], const double a[nnz], const double da[nnz])
-  // {
-  //   double psiC, pcBar, pcBar_n, sBar, thetaW, thetaS, m_vg;
-  //   m_vg   = 1.0 - 1.0 / n_vg;
-  //   thetaS = thetaR + thetaSR;
-  //   thetaW = m / rho;
-  //   if (thetaW > 1.01*thetaR && thetaW < thetaS) {
-  //     sBar    = (thetaW - thetaR) / thetaSR;
-  //     pcBar_n = pow(sBar, -1.0 / m_vg) - 1.0;
-  //     pcBar   = pow(pcBar_n, 1.0 / n_vg);
-  //     psiC    = pcBar / alpha;
-  //     u       = -psiC;
-  //   }
-  // }
   inline void calculateCFL(const double &elementDiameter, const double df[nSpace], double &cfl)
   {
     double h, nrm_v;
@@ -1723,23 +1625,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
            for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u[J]+ (rho_local/rho) * gravity.data()[J]); }
          }
          for (int I = 0; I < nSpace; I++) { velocity.data()[eN_k_nSpace + I] = velocity_loc[I]; }
-
-
-
-                // v = - (a / rho) * (grad_u + g)
-        //double pressure_gradient[nSpace];
-        //for (int J = 0; J < nSpace; ++J)
-        //  pressure_gradient[J] = grad_u[J] + gravity.data()[J];
-
-//        for (int I = 0; I < nSpace; ++I) {
-//          double acc = 0.0;
-//          for (int ii = a_rowptr.data()[I]; ii < a_rowptr.data()[I+1]; ++ii) {
-//            const int J = a_colind.data()[ii];
-//            acc += (a[ii] / rho) * pressure_gradient[J];
-//          }
-//          velocity.data()[eN_k_nSpace + I] = -acc;
-//        }
-
         //
         //moving mesh
         //
