@@ -53,7 +53,7 @@ elementBoundaryQuadrature = SimplexGaussQuadrature(nd-1,4)
 #
 #elementBoundaryQuadrature = SimplexLobattoQuadrature(nd-1,1)
 
-nnx=21
+nnx=11
 #nny=161
 nLevels = 1
 triangleFlag = 0
@@ -100,13 +100,13 @@ maxLineSearches =0
 
 matrix = SparseMatrix
 
-multilevelLinearSolver = LU
+#multilevelLinearSolver = LU
 #multilevelLinearSolver = PETSc
 #multilevelLinearSolver = NI
-#multilevelLinearSolver =  KSP_petsc4py
+multilevelLinearSolver =  KSP_petsc4py
 
-#levelLinearSolver = KSP_petsc4py
-levelLinearSolver = LU
+levelLinearSolver = KSP_petsc4py
+#levelLinearSolver = LU
 #levelLinearSolver = PETSc
 #levelLinearSolver = MGM
 
