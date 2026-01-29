@@ -989,6 +989,15 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.invert(u=limited_solution, ulow=self.u[0].dof)
         #print("FCT - low",np.linalg.norm(self.u[0].dof- old_dof))
         self.timeIntegration.u[:] = self.u[0].dof
+        if self.coefficients.FCT:
+            for cj in range(self.nc):
+                dbc = self.dirichletConditions[cj]  
+                for dofN, g in dbc.DOFBoundaryConditionsDict.items():
+                    val = g(dbc.DOFBoundaryPointDict[dofN], self.timeIntegration.t)
+                    self.u[cj].dof[dofN] = val
+                    if self.u_dof_old is not None:
+                        self.u_dof_old[dofN] = val
+
     def kth_FCT_step(self):
         #import pdb
         #pdb.set_trace()
