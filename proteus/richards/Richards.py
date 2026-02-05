@@ -1292,6 +1292,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["bc_mask"] = self.bc_mask
         argsDict["dt"] = self.timeIntegration.dt
         argsDict["Theta"] = 1.0
+        argsDict["Theta_h"] = 0.5
         argsDict["mesh_trial_ref"] = self.u[0].femSpace.elementMaps.psi
         argsDict["mesh_grad_trial_ref"] = self.u[0].femSpace.elementMaps.grad_psi
         argsDict["mesh_dof"] = self.mesh.nodeArray
