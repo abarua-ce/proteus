@@ -250,7 +250,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.SC=SC
         self.anb_seepage_flux= 0.00
         #self.anb_seepage_flux_n =0.0
-        variableNames=['pressure_head', 'velocity']
+        variableNames=['pressure_head']
         nc=1
         mass={0:{0:'nonlinear'}}
         advection={0:{0:'nonlinear'}}
@@ -458,43 +458,16 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
     #     self.model.ebqe['rho'] = densityModel.ebqe['rho']
 
 
-    def preStep(self, t, firstStep=False):
-        dm = getattr(self, 'densityModel', None)
-        if dm is None:
-            return {}
+    # def preStep(self, t, firstStep=False):
+    #     dm = getattr(self, 'densityModel', None)
+    #     if dm is None:
+    #         return {}
 
-        self.model.q['rho'] = dm.q['rho']
-        self.model.ebqe['rho'] = dm.ebqe['rho']
+    #     self.model.q['rho'] = dm.q['rho']
+    #     self.model.ebqe['rho'] = dm.ebqe['rho']
 
-        return {}
-
-  
-    # def postStep(self, t, firstStep=False):
-    #     comm = Comm.get()
-    #     if comm.isMaster():
-    #         with open("seepage_flux_try.txt", "a") as f:
-    #             f.write(f"{t:.6f}"+ ",\t ")
-    
-    #    #anb_seepage_flux_n[:]= self.anb_seepage_flux
-    #    with open("seepage_flux_try.txt", "a") as f:
-    #        f.write("\n Time"+ ",\t" +"Seepage\n")
-    #        f.write(f"{t:.6f}"+ ",\t ")
-    
-#    def postStep(self, t, firstStep=False):
-#        import os
-#        #from proteus import Comm
-#        comm = Comm.get()
-#        if comm.isMaster():
-#            try:
-#                # Attempt to access and sum the seepage flux
-#                s_now = float(np.sum(self.model.anb_seepage_flux_n))
-#                with open("seepage_flux.txt", "a") as f:
-#                    if os.stat("seepage_flux.txt").st_size == 0:
-#                        f.write("time,seepage_flux\n")
-#                    f.write(f"{t:.6f},{s_now:.6f}\n")
-#            except Exception as e:
-#                logEvent(f"[postStep] Skipped logging seepage: {e}")
-   
+    #     return {}
+       
     #def postStep(self, t, firstStep=False):
     #    import os
     #    #from proteus import Comm
@@ -513,25 +486,6 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
     #            logEvent(f"[postStep] Skipped logging seepage: {e}")
         
    
-    # def postStep(self, t, firstStep=False):
-    #     import os
-    #     try:
-    #     # Attempt to access and sum the seepage flux
-    #         s_now = float(np.sum(self.model.anb_seepage_flux_n))
-    #         with open("seepage_flux.txt", "a") as f:
-    #             if os.stat("seepage_flux.txt").st_size == 0:
-    #                 f.write("time, seepage_flux\n")
-    #             # Write the time and seepage flux to the file
-                
-    #             f.write(f"{t:.6f}, {s_now:.6f}\n")
-    #     except Exception as e:
-    #         logEvent(f"[postStep] Skipped logging seepage: {e}")
-        
-    # #    #anb_seepage_flux_n[:]= self.anb_seepage_flux
-    # #    #anb_seepage_flux_n[:]= self.anb_seepage_flux
-    #     with open('seepage_stab_0.txt', "a") as f:
-    #        # f.write("\n Time"+ ",\t" +"Seepage\n")
-    #         f.write(repr(t)+ ",\t") # +repr(np.sum(self.LevelModel.anb_seepage_flux_n)))
         
 class LevelModel(proteus.Transport.OneLevelTransport):
     nCalls=0
@@ -846,9 +800,6 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             cond = 'levelNonlinearSolver' in dir(options) and options.levelNonlinearSolver == ExplicitLumpedMassMatrixForRichards
             assert cond, "Use levelNonlinearSolver=ExplicitLumpedMassMatrixForRichards when the mass matrix is lumped"
         
-        #################################################################
-        ####################ARNOB_FCT_EDIT###############################
-        #################################################################
         #if not self.coefficients.LUMPED_MASS_MATRIX and self.coefficients.STABILIZATION_TYPE == 2:
         #    cond = 'levelNonlinearSolver' in dir(options) and options.levelNonlinearSolver == Newton
         
@@ -858,11 +809,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.coefficients.FCT:
             valid_stabilization_types = {1, 2}  # Only allow FCT for STABILIZATION_TYPE 1 (EV_Stab) and 2 (EntropyViscosity)
             if self.coefficients.STABILIZATION_TYPE not in valid_stabilization_types:
-                raise ValueError("Use FCT only with STABILIZATION_TYPE 1 (EV_Stab) or 2 (EntropyViscosity).")
-
-
-
-        
+                raise ValueError("Use FCT only with STABILIZATION_TYPE 1 (EV_Stab) or 2 (EntropyViscosity).")        
         if self.coefficients.FCT == True:
             cond = self.coefficients.STABILIZATION_TYPE > 0, "Use FCT just with STABILIZATION_TYPE>0; i.e., edge based stabilization"
         # # END OF ASSERTS
@@ -977,14 +924,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if self.coefficients.forceStrongConditions:
             for cj in range(self.nc):
                 self.dirichletConditionsForceDOF[cj] = DOFBoundaryConditions(self.u[cj].femSpace,dofBoundaryConditionsSetterDict[cj],weakDirichletConditions=False)
-    def export_q_velocity_xdmf(self, tCount=None, init=False, name="velocity"):
-        qv = self.q['velocity']
-        #assert qv.ndim == 3, "q['velocity'] must be (nElements, nQuad, nComp)"
-
-        self.elementQuadratureDictionaryWriter.writeVectorFunctionXdmf_MonomialDGPK(
-            ar, qv, name, tCount=tCount, init=init
-        )
-
+   
     def FCTStep(self):
         rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         limited_solution = np.zeros((len(rowptr) - 1),'d')
@@ -1327,6 +1267,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["bc_mask"] = self.bc_mask
         argsDict["dt"] = self.timeIntegration.dt
         argsDict["Theta"] = 1.0
+        argsDict["Theta_h"] = 0.5
         argsDict["mesh_trial_ref"] = self.u[0].femSpace.elementMaps.psi
         argsDict["mesh_grad_trial_ref"] = self.u[0].femSpace.elementMaps.grad_psi
         argsDict["mesh_dof"] = self.mesh.nodeArray

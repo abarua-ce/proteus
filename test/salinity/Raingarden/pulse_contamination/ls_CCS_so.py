@@ -23,7 +23,7 @@ name="ls_CCS_so"
 needEBQ_GLOBAL  = False
 needEBQ = False
 
-T=  1.0 #0003
+T=  100.0 #0003
 nDTout = 201
 DT = T/nDTout 
 tnList = [0.0,1.0e-8, 2.0e-8]+[i*DT for i  in range(1,nDTout+2)]

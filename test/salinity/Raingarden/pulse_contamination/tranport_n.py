@@ -6,7 +6,7 @@ from proteus.default_n import *
 from domain_rg import *
 from tranport_p import *
 #from thelper_tadr import *
-parallel= False
+parallel= True
 
 # try:
 #     from .thelper_tadr_p import *

@@ -81,9 +81,9 @@ a0= 18.8571e-6 #e-6
 def a(x):
     return np.array([[a0,0.0],[0.0,a0]])
 aOfX = {0:a}
-alpha_L= 0.3
+alpha_L= 0.7
 alpha_T= 0.1*alpha_L
-Dm= 0.01 #18.86e-6
+Dm= 18.86e-6 #18.86e-6
 coefficients = MyCoefficients(
     alpha_L=alpha_L,
     alpha_T=alpha_T,
@@ -118,7 +118,7 @@ cin = 3.0  # inlet concentration during pulses
 # 30 minutes = 0.5/24 days
 pulse_len = 2.0/24.0
 # three pulses starting at day 0, day 1, day 2 (adjust as you like)
-pulse_starts = [0.0, 10.0, 40.0]
+pulse_starts = [0.0, 0.5, 20.0, 80.0]
 
 def in_pulse(t):
     """Return True if time t (in days) is inside any pulse window."""
