@@ -1321,6 +1321,9 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["u_dof_old"] = self.u_dof_old
         argsDict["velocity"] = self.q['velocity']
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
+        ############################################
+        self.q[('m',0)][:] = self.timeIntegration.m_tmp[0]
+        #############################################
         argsDict["q_u"] = self.q[('u',0)]
         argsDict["q_dV"] = self.q[('dV_u',0)]
         argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
@@ -1440,8 +1443,6 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         # Each processor writes its own flux with its rank
             with open("seepage_flux_try.txt", "a") as f:
                 f.write(f"Rank {rank}:, {self.timeIntegration.t:.6f}, {seepage_flux_value:.8f}\n")
-
-
        
         # seepage_flux_value = np.sum(self.anb_seepage_flux_n) #self.anb_seepage_flux_n[0]
         
@@ -1473,7 +1474,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         
 
 
-        #self.q[('mt',0)][:] =self.timeIntegration.m_tmp[0]
+        self.q[('mt',0)][:] =self.timeIntegration.m_tmp[0]
         #self.q[('mt',0)] *= self.timeIntegration.alpha_bdf
         #self.q[('mt',0)] += self.timeIntegration.beta_bdf[0]
         #self.timeIntegration.calculateElementCoefficients(self.q)
@@ -1619,7 +1620,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["anb_seepage_flux"] = self.coefficients.anb_seepage_flux
         argsDict["limited_solution"] = u
         argsDict["mLow"] = self.u[0].dof
-        argsDict["USE_NEWTON_INVERT"] = 1 if self.coefficients.FCT==1 else 0
+        argsDict["USE_NEWTON_INVERT"] = 1 if (self.coefficients.FCT==1 and self.coefficients.nd > 1) else 0
         self.richards.invert(argsDict)
      
     def getJacobian(self,jacobian):

@@ -134,6 +134,7 @@ void evaluateCoefficients(const int rowptr[nSpace],
       const double Dm, // Molecular diffusion term
       // const double rho_fw,
       // const double rho_sw,
+      const double theta_W,
       const double& u,
       double& m,
       double& dm,
@@ -144,8 +145,8 @@ void evaluateCoefficients(const int rowptr[nSpace],
       //double rho_out)
 {
    
-    m = u;
-    dm = 1.0;
+    m = theta_W * u;
+    dm = theta_W; //1.0;
     // Compute velocity magnitude
     double v_mag = 0.0;
     for (int I = 0; I < nSpace; I++) {
@@ -163,7 +164,7 @@ void evaluateCoefficients(const int rowptr[nSpace],
     df[I] = v[I];
 
     for (int ii = rowptr[I]; ii < rowptr[I + 1]; ii++) {
-        int J = colind[ii]; // Column index
+        int J = colind[ii]; 
         double deltaIJ = (I == J) ? 1.0 : 0.0;
         // Compute dispersion tensor elements, incorporating molecular diffusion (Dm)
         double dispersion_ij = Dm * deltaIJ +  // Molecular diffusion (isotropic contribution)
@@ -468,6 +469,11 @@ inline
       xt::pyarray<double>& q_m = args.array<double>("q_m");
       xt::pyarray<double>& q_u = args.array<double>("q_u");
 
+      xt::pyarray<double>& q_theta = args.array<double>("q_theta");
+      xt::pyarray<double>& q_psi = args.array<double>("q_psi");
+
+
+
       xt::pyarray<double>& q_rho    = args.array<double>("q_rho");
       xt::pyarray<double>& ebqe_rho = args.array<double>("ebqe_rho");
 
@@ -708,13 +714,14 @@ inline
               //
               //
               //calculate pde coefficients at quadrature points
-
+              const double theta_W = q_theta[eN_k] ; ///rho;
               //const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
                                    alphaL_val, alphaT_val, Dm_val, //rho_fw, rho_sw,
                                    //q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
+                                   theta_W,
                                    u,
                                    m,
                                    dm,
@@ -733,6 +740,7 @@ inline
                                    &velocity.data()[eN_k_nSpace],
                                    alphaL_val, alphaT_val, Dm_val, //rho_fw, rho_sw,
                                    //q_a_ptr, //&q_a.data()[eN_k*a_rowptr.data()[nSpace]],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
+                                   theta_W,
                                    un,
                                    mn,
                                    dmn,
@@ -1154,6 +1162,7 @@ inline
               //
               //calculate the pde coefficients using the solution and the boundary values for the solution
               //
+              const double theta_W = q_theta[ebNE_kb] ; // /rho;
               const double* qb_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
               double rho_u_ext = 0.0, rho_bc_ext = 0.0;
               evaluateCoefficients(a_rowptr.data(),
@@ -1161,6 +1170,7 @@ inline
                                    &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
                                    alphaL_val, alphaT_val, Dm_val, // rho_fw, rho_sw,
                                    //qb_a_ptr, //&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
+                                   theta_W,
                                    u_ext,
                                    m_ext,
                                    dm_ext,
@@ -1175,6 +1185,7 @@ inline
                                    &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
                                    alphaL_val, alphaT_val, Dm_val,// rho_fw, rho_sw,
                                    //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb*nnz],
+                                   theta_W,
                                    bc_u_ext,
                                    bc_m_ext,
                                    bc_dm_ext,
@@ -1222,9 +1233,6 @@ inline
                                              u_ext,
                                              df_ext,
                                              flux_ext);
-            
-                  
-    
               
                //std::cout<<"Advection EXT"<<flux_ext<<std::endl;
                //std::cout<<"Diffusion  Ext"<<flux_diff_ext<<std::endl;
@@ -1562,7 +1570,8 @@ inline
       double physicalDiffusion = args.scalar<double>("physicalDiffusion");
       xt::pyarray<double>& q_a = args.array<double>("q_a");
       xt::pyarray<double>& ebqe_a = args.array<double>("ebq_a");
-      
+      xt::pyarray<double>& q_theta = args.array<double>("q_theta");
+
       // Extract alpha_L, alpha_T, and Dm from args
       const double alphaL_val = args.scalar<double>("alpha_L"); // Longitudinal dispersion coefficient
       const double alphaT_val = args.scalar<double>("alpha_T"); // Transverse dispersion coefficient
@@ -1663,13 +1672,14 @@ inline
               //
               //calculate pde coefficients and derivatives at quadrature points
               //
-              
+              const double theta_W = q_theta[eN_k] ; ///rho;
               //const double* q_a_ptr = &q_a[eN_k * a_rowptr[nSpace]];
               evaluateCoefficients(a_rowptr.data(),
 				                           a_colind.data(),
                                    &velocity.data()[eN_k_nSpace],
                                    alphaL_val, alphaT_val, Dm_val, //rho_fw, rho_sw,
                                    //q_a_ptr, //&q_a.data()[eN * nQuadraturePoints_element * nnz + k * nnz],//[eN_k*a_rowptr.data()[nSpace]],//[eN_k*nnz],
+                                   theta_W,
                                    u,
                                    m,
                                    dm,
@@ -1917,16 +1927,18 @@ inline
                   //
                   bc_u_ext = isDOFBoundary_u.data()[ebNE_kb]*ebqe_bc_u_ext.data()[ebNE_kb]+(1-isDOFBoundary_u.data()[ebNE_kb])*u_ext;
                   //
+
                   //
                   //calculate the internal and external trace of the pde coefficients
                   //
-
+                  const double theta_W = q_theta[ebNE_kb] ; // /rho;
                   const double* qb_a_ptr = &ebqe_a[ebNE_kb * a_rowptr[nSpace]];
                   evaluateCoefficients(a_rowptr.data(),
                                        a_colind.data(),
                                        &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
                                        alphaL_val, alphaT_val, Dm_val,// rho_fw, rho_sw,
                                        //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
+                                       theta_W,
                                        u_ext,
                                        m_ext,
                                        dm_ext,
@@ -1940,6 +1952,7 @@ inline
                                        &ebqe_velocity_ext.data()[ebNE_kb_nSpace],
                                        alphaL_val, alphaT_val, Dm_val, // rho_fw, rho_sw,
                                        //qb_a_ptr,//&q_a.data()[ebNE * nQuadraturePoints_element * nnz + kb * nnz],//[ebNE_kb*a_rowptr.data()[nSpace]],//[ebNE_kb* nnz],
+                                       theta_W,
                                        bc_u_ext,
                                        bc_m_ext,
                                        bc_dm_ext,

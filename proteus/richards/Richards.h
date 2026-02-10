@@ -573,12 +573,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         
 
         // Darcy Velocity
-
-        double rhom = rho * std::exp(beta * u);
-        double theta = m / std::max(rhom, 1e-16);          // thetaW
-        double inv_theta = 1.0 / std::max(theta, 1e-8);
-
-
         double pressure_gradient[nSpace];
         for (int J=0; J<nSpace; ++J)
           // pressure_gradient[J] = grad_u[J] + (rho_local/rho)* gravity.data()[J];
@@ -591,7 +585,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
             acc += (a[ii] / rho) * pressure_gradient[J];
           }
           // store as a vector field at this qp
-          velocity.data()[eN_k_nSpace + I] = -acc *inv_theta;
+          velocity.data()[eN_k_nSpace + I] = -acc ;
           }
         
         //
@@ -693,11 +687,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         //Calculate Darcy velocity on exterior face : v_ext = -(a_ext/rho) * (grad_u_ext + gravity) ---
         //
-        
-        double rhom_ext = rho * std::exp(beta * u_ext);
-        double theta_ext = m_ext / std::max(rhom_ext, 1e-16);          // thetaW
-        double inv_theta_ext = 1.0 / std::max(theta_ext, 1e-8);
-
         double ext_pressure_gradient[nSpace];
         for (int J=0; J<nSpace; ++J)
           ext_pressure_gradient[J] = grad_u_ext[J] + gravity.data()[J];
@@ -708,7 +697,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
             const int J = a_colind.data()[ii];
             acc += (a_ext[ii] / rho) * ext_pressure_gradient[J];
           }
-          ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = -acc * inv_theta_ext;  // store vector at this boundary qp
+          ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = -acc ;  // store vector at this boundary qp
         }
 
 
@@ -1627,16 +1616,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           grad_u[I]  = 0.0;
           grad_un[I] = 0.0;
         }
-
-        // const double rho_q = q_rho.data()[eN_k];
-        //     // accumulate to nodal dofs with shape functions
-        // for (int j = 0; j < nDOF_trial_element; ++j)
-        // {
-        //   const int gi = u_l2g.data()[eN_nDOF_trial_element + j];
-        //   const double Nj = u_trial_ref.data()[k * nDOF_trial_element + j];
-        //   rho_dof[gi] += rho_q * Nj * dV;
-        //   ML_rho[gi]  += Nj * dV;
-        // }
         
         for (int j = 0; j < nDOF_trial_element; j++) {
           u_test_dV[j] = u_test_ref.data()[k * nDOF_trial_element + j] * dV;
@@ -1658,15 +1637,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              &KWs.data()[elementMaterialTypes[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
 
         // Darcy velocity calculation
-        double rhom = rho * std::exp(beta * u);
-        double theta = m / std::max(rhom, 1e-16);          // thetaW
-        double inv_theta = 1.0 / std::max(theta, 1e-8);
         
         for (int I = 0; I < nSpace; I++) { velocity_loc[I] = 0.0; }
          for (int I = 0; I < nSpace; I++) {
            for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u[J]+  gravity.data()[J]); }
          }
-         for (int I = 0; I < nSpace; I++) { velocity.data()[eN_k_nSpace + I] = velocity_loc[I] * inv_theta; }
+         for (int I = 0; I < nSpace; I++) { velocity.data()[eN_k_nSpace + I] = velocity_loc[I] ; }
 
         //
         //moving mesh
@@ -1802,16 +1778,14 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         //Calculate Darcy Velocity at external faces
         //
-        double rhom_ext = rho_ext * std::exp(beta * u_ext);
-        double theta_ext = m_ext / std::max(rhom_ext, 1e-16);          // thetaW
-        double inv_theta_ext = 1.0 / std::max(theta_ext, 1e-8);
+        
         double  velocity_loc_ext[nSpace];
   
         for (int I = 0; I < nSpace; I++) { velocity_loc_ext[I] = 0.0; }
         for (int I = 0; I < nSpace; I++) {
           for (int J = 0; J < nSpace; J++) { velocity_loc_ext[I] -= bc_Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u_ext[J]+  gravity.data()[J]); }
         }
-        for (int I = 0; I < nSpace; I++) { ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = velocity_loc_ext[I] * inv_theta_ext; }
+        for (int I = 0; I < nSpace; I++) { ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = velocity_loc_ext[I] ; }
 
         //
         //calculate the numerical fluxes
@@ -1830,6 +1804,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                               ebqe_penalty_ext.data()[ebNE_kb], // penalty,
                               flux_ext, bflux_ext);
         }
+
         ebqe_flux.data()[ebNE_kb] = flux_ext;
 
         anb_seepage_flux             = seepagefluxcalculator(anb_seepage_flux, isSeepageFace.data()[ebNE], dS, flux_ext);

@@ -414,8 +414,6 @@ class Coefficients(TC_base):
         sparseDiffusionTensors = {(0,0):(np.arange(self.nd+1,dtype='i'),
                                          np.arange(self.nd,dtype='i'))}
 
-        
-
         TC_base.__init__(self,
                          nc,
                          mass,
@@ -433,8 +431,8 @@ class Coefficients(TC_base):
         self.eps = self.epsFact * mesh.h
         
     def attachModels(self, modelList):
-        import pdb
-        pdb.set_trace()
+        #import pdb
+        #pdb.set_trace()
         # self
         self.model = modelList[self.modelIndex]
         # redistanced level set
@@ -454,6 +452,9 @@ class Coefficients(TC_base):
             self.vModel = modelList[self.V_model]
             self.q_v = self.vModel.q['velocity']
             self.ebqe_v = self.vModel.ebqe['velocity']
+            self.q_m_RE = self.vModel.q[('m', 0)]
+            self.q_psi_RE = self.vModel.q[('u', 0)]
+
             if 'x' not in self.vModel.q:
             # re-use TADR's element quad coordinates (shapes already match per your logs)
                 self.vModel.q['x'] = self.model.q['x']
@@ -464,6 +465,9 @@ class Coefficients(TC_base):
             #self.vModel  = None
             self.q_v = np.ones(self.model.q[('u',0)].shape+(self.model.nSpace_global,),'d')
             self.ebqe_v = np.ones(self.model.ebqe[('u',0)].shape+(self.model.nSpace_global,),'d')
+            self.q_m_RE = np.ones(self.model.q[('u',0)].shape,'d')
+            self.q_psi_RE = np.ones(self.model.q[('u',0)].shape,'d')
+        
         # VRANS
         if self.V_model is not None:
             self.flowCoefficients = modelList[self.V_model].coefficients
@@ -473,8 +477,7 @@ class Coefficients(TC_base):
     def preStep(self, t, firstStep=False):
         from mpi4py import MPI
         comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        
+        rank = comm.Get_rank() 
         # SAVE OLD SOLUTION #
         self.model.u_dof_old[:] = self.model.u[0].dof
 
@@ -488,24 +491,16 @@ class Coefficients(TC_base):
         else:
             self.q_v= self.vModel.q['velocity']
             self.ebqe_v = self.vModel.ebqe['velocity']  
-            logEvent("Taking velocity from Flow Model") 
+            logEvent("Taking velocity from Flow Model")
+            self.q_m_RE = self.vModel.q[('m', 0)]
+            self.q_psi_RE = self.vModel.q[('u', 0)]
+            logEvent("Taking theta from Flow Model")
+
         if self.checkMass:
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
                                                     self.model.q[('m', 0)],
                                                     self.model.mesh.nElements_owned)
             logEvent("Phase  0 mass before TADR step = %12.5e" % (self.m_pre,), level=2)
-        ## if RWPT enbled
-        if getattr(self, "RWPT", False):
-            last = getattr(self.model, "_rwpt_done_at_t", None)
-            if last is None or abs(t - last) > 1e-15:
-                # Advance particles & overwrite self.model.u[0].dof
-                self.model.Update_concentration_RWPT()
-                self.model._rwpt_done_at_t = float(t)
-                # # keep time integrator state consistent with updated dofs
-                self.model.timeIntegration.u[:] = self.model.u[0].dof
-                if hasattr(self.model.timeIntegration, "u_dof_old"):
-                    self.model.timeIntegration.u_dof_old[:] = self.model.u[0].dof
-        
         copyInstructions = {}
         return copyInstructions
 
@@ -1044,154 +1039,6 @@ class LevelModel(OneLevelTransport):
     # def calculateQuadrature(self):
     #     self.coefficients.initializeElementQuadrature(self.timeIntegration.t, self.q)
     
-    # def Update_concentration_RWPT(self):
-    #     #import pdb
-    #     #pdb.set_trace()
-    #     # run RWPT at most once for a given model time
-    #     t_now = float(self.timeIntegration.t)
-    #     if not hasattr(self, "_rwpt_last_t"):
-    #         self._rwpt_last_t = None
-    #     if self._rwpt_last_t is not None and abs(t_now - self._rwpt_last_t) < 1e-15:
-    #         return  # already executed at this time
-    #     self._rwpt_last_t = t_now
-    #     u_new = np.zeros_like(self.u[0].dof)
-    #     rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
-    #     if hasattr(self.timeIntegration, "u_dof_old"):
-    #         self.u[0].dof[:] = self.timeIntegration.u_dof_old
-    #     argsDict = cArgumentsDict.ArgumentsDict()
-    #     argsDict["dt"] = self.timeIntegration.dt
-    #     argsDict["NNZ"] = self.nnz
-    #     argsDict["numDOFs"] = len(rowptr) - 1
-    #     argsDict["lumped_mass_matrix"] = self.ML
-    #     argsDict["mesh_trial_ref"] = self.u[0].femSpace.elementMaps.psi
-    #     argsDict["mesh_grad_trial_ref"] = self.u[0].femSpace.elementMaps.grad_psi
-    #     argsDict["mesh_dof"] = self.mesh.nodeArray
-    #     argsDict["mesh_l2g"] = self.mesh.elementNodesArray
-    #     argsDict["nElements_global"] = self.mesh.nElements_global
-    #     argsDict["u_l2g"]            = self.u[0].femSpace.dofMap.l2g
-    #     argsDict["dV_ref"] = self.elementQuadratureWeights[('u', 0)]
-    #     argsDict["u_trial_ref"] = self.u[0].femSpace.psi
-    #     argsDict["u_grad_trial_ref"] = self.u[0].femSpace.grad_psi
-    #     argsDict["q_u"] = self.q[('u', 0)]
-    #     argsDict["u_dof"] = self.u[0].dof
-    #     argsDict["velocity"] = self.coefficients.q_v
-    #     argsDict["q_porosity"] = self.q["porosity"]
-    #     argsDict["phi_l2g"]    = self.u[0].femSpace.dofMap.l2g #unused(dummy)
-
-    #     argsDict["alpha_L"] = self.coefficients.alpha_L  # Longitudinal dispersion coefficient
-    #     argsDict["alpha_T"] = self.coefficients.alpha_T  # Transverse dispersion coefficient
-    #     argsDict["Dm"] = self.coefficients.Dm           # Molecular diffusion coefficient
-    #     argsDict["mass_per_particle"] = self.coefficients.mass_per_particle
-
-    #     argsDict["qp_dV"]   = self.q['dV']          # gets overwritten each call by C++ kernel
-    #     #argsDict["q_porosity"] = self.q.get('porosity', np.ones_like(self.q['dV']))
-    #     argsDict["qp_mass"] = self.q['qp_mass']
-    #     argsDict["qp_spawn"] = self.q['qp_spawn']
-    #     argsDict["q_x"]     = self.q['x']           # QP coordinates buffer
-    #     argsDict["qp_counts"] = self.q['qp_counts']
-
-    #     # projection data (always use lumped mass here)
-    #     argsDict["lumped_mass_matrix"] = self.ML
-    #     argsDict["u_new"]              = u_new
-    #     logEvent(f"[RWPT PY] before: u_dof min={self.u[0].dof.min():.3e} "
-    #     f"max={self.u[0].dof.max():.3e}")
-    #     self.adr.Update_concentration_RWPT(argsDict)
-    #     #self.timeIntegration.u[:] = self.u[0].dof
-        
-    #     #self.u[0].dof[:] = u_new
-    #     # fromFreeToGlobal = 0  # direction copying 
-    #     # cfemIntegrals.copyBetweenFreeUnknownsAndGlobalUnknowns(fromFreeToGlobal,
-    #     #                                                         self.offset[0],
-    #     #                                                         self.stride[0],
-    #     #                                                         self.dirichletConditions[0].global2freeGlobal_global_dofs,
-    #     #                                                         self.dirichletConditions[0].global2freeGlobal_free_dofs,
-    #     #                                                         #self.timeIntegration.u,     # free (destination when fromFreeToGlobal=1)
-    #     #                                                         self.timeIntegration.u,
-    #     #                                                         self.u[0].dof)                     # global (source when fromFreeToGlobal=1)
-    #     print(f"[RWPT PY] after call: u_new min={u_new.min():.3e} max={u_new.max():.3e} "
-    #     f"| u_dof min={self.u[0].dof.min():.3e} max={self.u[0].dof.max():.3e}")
-    #     #self.u[0].dof[:] = u_new
-    #     # also keep the time integrator's internal state consistent
-    #     self.timeIntegration.u[:] = self.u[0].dof
-    #     if hasattr(self.timeIntegration, "u_dof_old"):
-    #         self.timeIntegration.u_dof_old[:] = self.u[0].dof
-    def Update_concentration_RWPT(self):
-    # run RWPT at most once for a given model time
-        t_now = float(self.timeIntegration.t)
-        if not hasattr(self, "_rwpt_last_t"):
-            self._rwpt_last_t = None
-        if self._rwpt_last_t is not None and abs(t_now - self._rwpt_last_t) < 1e-15:
-            return  # already executed at this time
-        self._rwpt_last_t = t_now
-
-        # initialize spawn mask only on the very first RWPT call, then disable
-        if not hasattr(self, "_rwpt_initialized"):
-            self._rwpt_initialized = False
-        if not self._rwpt_initialized:
-            if 'qp_spawn' in self.q:
-                self.q['qp_spawn'].fill(1)   # convert IC to particles (one-time)
-            self._rwpt_initialized = True
-        else:
-            if 'qp_spawn' in self.q:
-                self.q['qp_spawn'].fill(0)   # no new spawns after the first call
-
-        # keep FE dofs in sync with integrator's "old" state
-        if hasattr(self.timeIntegration, "u_dof_old"):
-            self.u[0].dof[:] = self.timeIntegration.u_dof_old
-
-        u_new = np.zeros_like(self.u[0].dof)  # buffer (kernel may or may not use)
-
-        rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
-
-        argsDict = cArgumentsDict.ArgumentsDict()
-        argsDict["dt"]                 = self.timeIntegration.dt
-        argsDict["NNZ"]                = self.nnz
-        argsDict["numDOFs"]            = len(rowptr) - 1
-        argsDict["lumped_mass_matrix"] = self.ML
-        argsDict["mesh_trial_ref"]     = self.u[0].femSpace.elementMaps.psi
-        argsDict["mesh_grad_trial_ref"]= self.u[0].femSpace.elementMaps.grad_psi
-        argsDict["mesh_dof"]           = self.mesh.nodeArray
-        argsDict["mesh_l2g"]           = self.mesh.elementNodesArray
-        argsDict["nElements_global"]   = self.mesh.nElements_global
-        argsDict["u_l2g"]              = self.u[0].femSpace.dofMap.l2g
-        argsDict["dV_ref"]             = self.elementQuadratureWeights[('u', 0)]
-        argsDict["u_trial_ref"]        = self.u[0].femSpace.psi
-        argsDict["u_grad_trial_ref"]   = self.u[0].femSpace.grad_psi
-        argsDict["q_u"]                = self.q[('u', 0)]
-        argsDict["u_dof"]              = self.u[0].dof
-        argsDict["velocity"]           = self.coefficients.q_v
-        argsDict["q_porosity"]         = self.q["porosity"]
-        argsDict["phi_l2g"]            = self.u[0].femSpace.dofMap.l2g  # unused (dummy)
-
-        argsDict["alpha_L"]            = self.coefficients.alpha_L
-        argsDict["alpha_T"]            = self.coefficients.alpha_T
-        argsDict["Dm"]                 = self.coefficients.Dm
-        argsDict["rho_fw"]              = self.coefficients.rho_fw
-        argsDict["rho_sw"]              = self.coefficients.rho_sw
-        argsDict["mass_per_particle"]  = self.coefficients.mass_per_particle
-
-        argsDict["qp_dV"]              = self.q['dV']          # overwritten by kernel each call
-        argsDict["qp_mass"]            = self.q['qp_mass']
-        argsDict["qp_spawn"]           = self.q['qp_spawn']     # 1 on first call, then 0
-        argsDict["q_x"]                = self.q['x']            # QP coordinates buffer
-        argsDict["qp_counts"]          = self.q['qp_counts']
-
-        # projection data (always use lumped mass here)
-        argsDict["lumped_mass_matrix"] = self.ML
-        argsDict["u_new"]              = u_new
-
-        logEvent(f"[RWPT PY] before: u_dof min={self.u[0].dof.min():.3e} "
-                f"max={self.u[0].dof.max():.3e} | first_call={not getattr(self, '_rwpt_initialized', True)}")
-        self.adr.Update_concentration_RWPT(argsDict)
-        logEvent(f"[RWPT PY] after: u_dof min={self.u[0].dof.min():.3e} "
-                f"max={self.u[0].dof.max():.3e}")
-
-        # keep the time integrator's internal state consistent
-        self.timeIntegration.u[:] = self.u[0].dof
-        if hasattr(self.timeIntegration, "u_dof_old"):
-            self.timeIntegration.u_dof_old[:] = self.u[0].dof
-
-
 
     def FCTStep(self):
         #rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
@@ -1445,6 +1292,8 @@ class LevelModel(OneLevelTransport):
         argsDict["u_dof"] = self.u[0].dof
         argsDict["u_dof_old"] = self.u_dof_old
         argsDict["velocity"] = self.coefficients.q_v
+        argsDict["q_theta"] = self.coefficients.q_m_RE
+        argsDict["q_psi"] = self.coefficients.q_psi_RE
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
         argsDict["q_u"] = self.q[('u', 0)]
         ###########################################
@@ -1640,7 +1489,7 @@ class LevelModel(OneLevelTransport):
         argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion   
         argsDict["ebq_a"] = self.ebqe[('a',0,0)]
         #argsDict["D"] = self.coefficients.DTypes
-
+        argsDict["q_theta"] = self.coefficients.q_m_RE
         sdInfo = self.coefficients.sdInfo
     
         argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
