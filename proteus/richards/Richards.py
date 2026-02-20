@@ -225,7 +225,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  beta,
                  diagonal_conductivity=True,
                  getSeepageFace=None,
-                 DENSITY_MODEL= None,
+                 #DENSITY_MODEL= None,
                 # FOR EDGE BASED EV
                  STABILIZATION_TYPE='Implicit_FCT',
                  ENTROPY_TYPE=2,  # logarithmic
@@ -245,7 +245,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  outputQuantDOFs=False,
                   ):
         self.VMS=VMS
-        self.DENSITY_MODEL=DENSITY_MODEL
+        #self.DENSITY_MODEL=DENSITY_MODEL
         self.modelIndex=1
         self.SC=SC
         self.anb_seepage_flux= 0.00
@@ -447,6 +447,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
             np.isnan(c[('dm',0,0)]).any()):
             import pdb
             pdb.set_trace()
+
     
     # def attachModels(self, modelList):
     #     # Keep self.model for symmetry with other coeffs
@@ -466,9 +467,124 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
     #     self.model.q['rho'] = dm.q['rho']
     #     self.model.ebqe['rho'] = dm.ebqe['rho']
 
+    #     return {}ls
+
+    # def postStep(self, t, firstStep=False):
+    #     from proteus import Comm
+    #     import numpy as np
+    #     from proteus.Profiling import logEvent
+    #     comm = Comm.get()
+    #     r = comm.rank()
+
+    #     # ---------- (A) coords ONCE ----------
+    #     if not hasattr(self, "_wrote_coords_once"):
+    #         self._wrote_coords_once = True
+
+    #         # local coords: (nElem_local, nQP, 3) -> (nLocalRows, 3)
+    #         qcoords_local = self.model.q['x'].reshape((-1, self.model.q['x'].shape[-1]))
+
+    #         # gather list of arrays to master
+    #         qcoords_all = comm.comm.gather(qcoords_local, root=0)
+
+    #         if comm.isMaster():
+    #             Q = np.vstack(qcoords_all)  # concatenate in rank order
+    #             np.savetxt(
+    #                 "RE_q_coords_all.txt",
+    #                 Q,
+    #                 fmt="%.16e",
+    #                 header=f"columns: x y z | total_rows={Q.shape[0]}"
+    #             )
+    #             logEvent(f"[postStep] wrote RE_q_coords_all.txt with rows={Q.shape[0]}")
+
+    #     # ---------- (B) velocity EVERY STEP ----------
+    #     qv_local = self.model.q[('velocity_couple', 0)].reshape(
+    #         (-1, self.model.q[('velocity_couple', 0)].shape[-1])
+    #     )
+
+    #     qv_all = comm.comm.gather(qv_local, root=0)
+
+    #     if comm.isMaster():
+    #         V = np.vstack(qv_all)
+    #         np.savetxt(
+    #             f"RE_q_vel_all_t{t:.8e}.txt",
+    #             V,
+    #             fmt="%.16e",
+    #             header=f"columns: vx vy vz | t={t:.16e} | total_rows={V.shape[0]}"
+    #         )
+    #     qmin_local = float(np.min(qv))
+    #     qmax_local = float(np.max(qv))
+
+    #     ebmin_local = float(np.min(ebqv))
+    #     ebmax_local = float(np.max(ebqv))
+
+    #     # global extrema across MPI
+    #     qmin = comm.globalMin(qmin_local)
+    #     qmax = comm.globalMax(qmax_local)
+    #     ebmin = comm.globalMin(ebmin_local)
+    #     ebmax = comm.globalMax(ebmax_local)
+
+    #     if comm.isMaster():
+    #         logEvent(f"[velocity_couple:q ] t={t:.6e} min={qmin:.6e} max={qmax:.6e}")
+    #         logEvent(f"[velocity_couple:eb] t={t:.6e} min={ebmin:.6e} max={ebmax:.6e}")
+        
     #     return {}
-       
-    #def postStep(self, t, firstStep=False):
+    # def postStep(self, t, firstStep=False):
+    #     from proteus import Comm
+    #     from proteus.Profiling import logEvent
+    #     import numpy as np
+
+    #     comm = Comm.get()
+
+    #     # --- get an mpi4py communicator safely ---
+    #     try:
+    #         mpicomm = comm.comm.tompi4py()   # petsc4py -> mpi4py
+    #     except Exception:
+    #         from mpi4py import MPI
+    #         mpicomm = MPI.COMM_WORLD
+
+    #     rank = mpicomm.Get_rank()
+
+    #     # Use the actual spatial dimension (2 for 2D, 3 for 3D)
+    #     nSpace = int(getattr(self.model, "nSpace_global", getattr(self.model, "nSpace", 3)))
+
+    #     # -----------------------------
+    #     # (A) coordinates ONCE
+    #     # -----------------------------
+    #     if not hasattr(self, "_wrote_coords_once"):
+    #         self._wrote_coords_once = True
+
+    #         # q['x'] is (nElem_owned, nQP, 3) in your Python allocation
+    #         qcoords_local = np.asarray(self.model.q['x']).reshape((-1, 3))
+
+    #         qcoords_all = mpicomm.gather(qcoords_local, root=0)
+
+    #         if rank == 0:
+    #             Q = np.vstack(qcoords_all)
+    #             np.savetxt("RE_q_coords_all.txt", Q, fmt="%.16e",
+    #                     header=f"columns: x y z | total_rows={Q.shape[0]}")
+    #             logEvent(f"[postStep] wrote RE_q_coords_all.txt rows={Q.shape[0]}")
+
+    #     # -----------------------------
+    #     # (B) velocity EVERY STEP
+    #     # -----------------------------
+    #     qv = np.asarray(self.model.q[('velocity_couple', 0)])  # (nElem_owned, nQP, nSpace)
+    #     qv_local = qv.reshape((-1, nSpace))
+
+    #     qv_all = mpicomm.gather(qv_local, root=0)
+
+    #     if rank == 0:
+    #         V = np.vstack(qv_all)
+    #         header_cols = "vx vy" if nSpace == 2 else "vx vy vz"
+    #         np.savetxt(f"RE_q_vel_all_t{t:.8e}.txt", V, fmt="%.16e",
+    #                 header=f"columns: {header_cols} | t={t:.16e} | total_rows={V.shape[0]}")
+    #     return {}
+
+
+
+
+
+    
+    # #def postStep(self, t, firstStep=False):
     #    import os
     #    #from proteus import Comm
     #    comm = Comm.get()
@@ -709,7 +825,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.q[('dphi',0,0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,),'d')
         self.q[('da',0,0,0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,),'d')
         self.q[('grad(u_v)',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
-        self.q['velocity'] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
+        self.q[('velocity',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')
+        self.q[('velocity_couple',0)] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element,self.nSpace_global),'d')      
         self.q[('m',0)] = self.q[('u',0)].copy()
         self.q[('mt',0)] = self.q[('u',0)].copy()
         self.q[('m_last',0)] = self.q[('u',0)].copy()
@@ -720,7 +837,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.q[('numDiff_last',0,0)] =  np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element),'d')
         self.ebqe[('u',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
         self.ebqe[('grad(u)',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
-        self.ebqe['velocity'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
+        self.ebqe[('velocity',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')
+        self.ebqe[('velocity_couple',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary,self.nSpace_global),'d')       
         self.ebqe[('advectiveFlux_bc_flag',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'i')
         self.ebqe[('advectiveFlux_bc',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
         self.ebqe[('advectiveFlux',0)] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
@@ -1319,11 +1437,15 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["degree_polynomial"] = degree_polynomial
         argsDict["u_dof"] = self.u[0].dof
         argsDict["u_dof_old"] = self.u_dof_old
-        argsDict["velocity"] = self.q['velocity']
+        argsDict["velocity"] = self.q[('velocity',0)]
+        
+        argsDict["velocity_couple"] = self.q[('velocity_couple',0)]
+
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
         ############################################
         self.q[('m',0)][:] = self.timeIntegration.m_tmp[0]
         #############################################
+        argsDict["q_x"] = self.q['x']    
         argsDict["q_u"] = self.q[('u',0)]
         argsDict["q_dV"] = self.q[('dV_u',0)]
         argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
@@ -1338,13 +1460,15 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
         argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
-        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity']
+        argsDict["ebqe_velocity_ext"] = self.ebqe[('velocity',0)]
+        argsDict["ebqe_velocity_ext_couple"] = self.ebqe[('velocity_couple',0)]      
         argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
         argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',0)]
         argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]
         argsDict["ebqe_bc_flux_ext"] = self.ebqe[('advectiveFlux_bc',0)]
         argsDict["ebqe_phi"] = self.ebqe[('u',0)]
         argsDict["epsFact"] = 0.0
+        argsDict["ebqe_x"] = self.ebqe['x']
         argsDict["ebqe_u"] = self.ebqe[('u',0)]
         argsDict["ebqe_flux"] = self.ebqe[('advectiveFlux',0)]
         argsDict['STABILIZATION_TYPE'] = self.coefficients.STABILIZATION_TYPE
@@ -1374,8 +1498,6 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["ML"] = self.ML
         argsDict["delta_x_ij"] = self.delta_x_ij
         argsDict["MC"] = self.MC_a
-        
-
         # PARAMETERS FOR 1st or 2nd ORDER MPP METHOD
         argsDict["LUMPED_MASS_MATRIX"] = self.coefficients.LUMPED_MASS_MATRIX
         argsDict["STABILIZATTION_TYPE"] = self.coefficients.STABILIZATION_TYPE
@@ -1396,7 +1518,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["quantDOFs"] = self.quantDOFs
         argsDict["mn"] = self.mn
         argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
-######################################################################################
+        ######################################################################################
         argsDict["pn"] = self.u[0].dof
         argsDict["mHigh"] = self.mHigh
 
@@ -1410,10 +1532,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["csrRowIndeces_u_u"] = self.csrRowIndeces[(0,0)]
         argsDict["csrColumnOffsets_u_u"] = self.csrColumnOffsets[(0,0)]
         argsDict["csrColumnOffsets_eb_u_u"] = self.csrColumnOffsets_eb[(0,0)]
-        #argsDict["q_grad_psi"] = self.q[('velocity', 0)]
-        
-        
-
+        #argsDict["q_grad_psi"] = self.q[('velocity', 0)] 
         #print(anb_seepage_flux)
         #argsDict["anb_seepage_flux_n"] = self.coefficients.anb_seepage_flux_n
         #if np.sum(anb_seepage_flux_n)>0:
@@ -1426,8 +1545,6 @@ class LevelModel(proteus.Transport.OneLevelTransport):
 
         #with open("seepage_stab_0.txt", "a") as f:
         #    f.write(f"t={t_now:.6f}, s={s_now:.6e}\n")
-
-        
         #with open('seepage_stab_0.txt',"a" ) as f:
             #f.write("\n Time"+ ",\t" +"Seepage\n")
         #    f.write(f"{self.timeIntegration.t:.6f},\t{float(seepage_text_variable):.6e}\n")
@@ -1563,7 +1680,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["degree_polynomial"] = degree_polynomial
         argsDict["u_dof"] = self.u[0].dof
         argsDict["u_dof_old"] = self.u[0].dof
-        argsDict["velocity"] = self.q['velocity']
+        argsDict["velocity"] = self.q['velocity',0]
         argsDict["q_m"] = self.timeIntegration.m_tmp[0]
         argsDict["q_u"] = self.q[('u',0)]
         argsDict["q_dV"] = self.q[('dV_u',0)]
@@ -1578,7 +1695,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
         argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
-        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity']
+        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity',0]
         argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
         argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',0)]
         argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]
@@ -1683,7 +1800,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["elementDiameter"] = self.mesh.elementDiametersArray
         argsDict["degree_polynomial"] = degree_polynomial
         argsDict["u_dof"] = self.u[0].dof
-        argsDict["velocity"] = self.q['velocity']
+        argsDict["velocity"] = self.q['velocity',0]
         argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
         argsDict["cfl"] = self.q[('cfl',0)]
         argsDict["q_numDiff_u"] = self.q[('numDiff',0,0)]
@@ -1696,7 +1813,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["exteriorElementBoundariesArray"] = self.mesh.exteriorElementBoundariesArray
         argsDict["elementBoundaryElementsArray"] = self.mesh.elementBoundaryElementsArray
         argsDict["elementBoundaryLocalElementBoundariesArray"] = self.mesh.elementBoundaryLocalElementBoundariesArray
-        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity']
+        argsDict["ebqe_velocity_ext"] = self.ebqe['velocity',0 ]
         argsDict["isDOFBoundary_u"] = self.numericalFlux.isDOFBoundary[0]
         argsDict["ebqe_bc_u_ext"] = self.numericalFlux.ebqe[('u',0)]
         argsDict["isFluxBoundary_u"] = self.ebqe[('advectiveFlux_bc_flag',0)]

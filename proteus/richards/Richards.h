@@ -518,6 +518,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
 
     xt::pyarray<double> &anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
 
+    xt::pyarray<double> &velocity_couple                            = args.array<double>("velocity_couple");
+    xt::pyarray<double> &ebqe_velocity_ext_couple                          = args.array<double>("ebqe_velocity_ext_couple");
+    
+    xt::pyarray<double> &q_x    = args.array<double>("q_x");
+    xt::pyarray<double> &ebqe_x = args.array<double>("ebqe_x");
+
     //double anb_seepage_flux=0.0;
     double &anb_seepage_flux(args.scalar<double>("anb_seepage_flux"));
     xt::pyarray<double> &q_velocity = args.array<double>("q_velocity");
@@ -556,6 +562,13 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         ck.valFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], u);
         //get the solution gradients
         ck.gradFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], u_grad_trial, grad_u);
+
+        //populate q_x
+        const int eN_k_3d = eN_k * 3;
+        q_x.data()[eN_k_3d + 0] = x;
+        q_x.data()[eN_k_3d + 1] = y;
+        q_x.data()[eN_k_3d + 2] = z;      
+        
         //precalculate test function products with integration weights
         for (int j = 0; j < nDOF_trial_element; j++) {
           u_test_dV[j] = u_test_ref.data()[k * nDOF_trial_element + j] * dV;
@@ -576,7 +589,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         double pressure_gradient[nSpace];
         for (int J=0; J<nSpace; ++J)
           // pressure_gradient[J] = grad_u[J] + (rho_local/rho)* gravity.data()[J];
-          pressure_gradient[J] = grad_u[J] +  gravity.data()[J];
+          pressure_gradient[J] = grad_u[J] -  gravity.data()[J];
         // for each row I, acc = sum_j (a_{Ij}/rho) * gp[j]
         for (int I=0; I<nSpace; ++I) {
           double acc = 0.0;
@@ -585,7 +598,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
             acc += (a[ii] / rho) * pressure_gradient[J];
           }
           // store as a vector field at this qp
-          velocity.data()[eN_k_nSpace + I] = -acc ;
+          velocity_couple.data()[eN_k_nSpace + I] = -acc ;
           }
         
         //
@@ -668,6 +681,13 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //solution and gradient
         ck.valFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], u_ext);
         ck.gradFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], u_grad_trial_trace, grad_u_ext);
+        
+        //populate ebqe_x
+        const int ebNE_kb_3d = ebNE_kb * 3;
+        ebqe_x.data()[ebNE_kb_3d + 0] = x_ext;
+        ebqe_x.data()[ebNE_kb_3d + 1] = y_ext;
+        ebqe_x.data()[ebNE_kb_3d + 2] = z_ext;
+        
         //precalculate test function products with integration weights
         for (int j = 0; j < nDOF_trial_element; j++) { u_test_dS[j] = u_test_trace_ref.data()[ebN_local_kb * nDOF_test_element + j] * dS; }
         //
@@ -689,7 +709,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //
         double ext_pressure_gradient[nSpace];
         for (int J=0; J<nSpace; ++J)
-          ext_pressure_gradient[J] = grad_u_ext[J] + gravity.data()[J];
+          ext_pressure_gradient[J] = grad_u_ext[J] - gravity.data()[J];
 
         for (int I=0; I<nSpace; ++I) {
           double acc = 0.0;
@@ -697,7 +717,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
             const int J = a_colind.data()[ii];
             acc += (a_ext[ii] / rho) * ext_pressure_gradient[J];
           }
-          ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = -acc ;  // store vector at this boundary qp
+          ebqe_velocity_ext_couple.data()[ebNE_kb_nSpace + I] = -acc ;  // store vector at this boundary qp
         }
 
 
@@ -1500,6 +1520,11 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<double> &fluxCorrection        = args.array<double>("fluxCorrection");
     xt::pyarray<double> &limited_solution          = args.array<double>("limited_solution");
 
+    xt::pyarray<double> &velocity_couple               = args.array<double>("velocity_couple");
+    xt::pyarray<double> &ebqe_velocity_ext_couple      = args.array<double>("ebqe_velocity_ext_couple");
+    xt::pyarray<double> &q_x    = args.array<double>("q_x");
+    xt::pyarray<double> &ebqe_x = args.array<double>("ebqe_x");
+    
     xt::pyarray<double> &anb_seepage_flux_n = args.array<double>("anb_seepage_flux_n");
     //xt::pyarray<double> &q_velocity = args.array<double>("q_velocity");
     double &anb_seepage_flux(args.scalar<double>("anb_seepage_flux"));
@@ -1507,7 +1532,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     xt::pyarray<int>    &csrRowIndeces_u_u                          = args.array<int>("csrRowIndeces_u_u");
     xt::pyarray<int>    &csrColumnOffsets_u_u                       = args.array<int>("csrColumnOffsets_u_u");
     xt::pyarray<int>    &csrColumnOffsets_eb_u_u                    = args.array<int>("csrColumnOffsets_eb_u_u");
-    
     // double Rpos[numDOFs], Rneg[numDOFs];
      std::vector<double> Rpos(numDOFs, 0.0), Rneg(numDOFs, 0.0);
      std::vector<double> TransportMatrix(NNZ, 0.0),
@@ -1526,10 +1550,10 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     // Lumped L2 projection buffers for density
     std::vector<double> rho_dof(numDOFs, 0.0);
     std::vector<double> ML_rho(numDOFs, 0.0);
-
-
-
-    for (int eN = 0; eN < nElements_global; eN++)
+    std::fill(velocity_couple.data(), velocity_couple.data() + velocity_couple.size(), 0.0);
+    std::fill(ebqe_velocity_ext_couple.data(), ebqe_velocity_ext_couple.data() + ebqe_velocity_ext_couple.size(), 0.0);
+    
+     for (int eN = 0; eN < nElements_global; eN++)
       for (int j = 0; j < nDOF_trial_element; j++) {
         int eN_nDOF_trial_element                               = eN * nDOF_trial_element;
         u_free_dof[r_l2g.data()[eN_nDOF_trial_element + j]]     = u_dof.data()[u_l2g.data()[eN_nDOF_trial_element + j]];
@@ -1556,10 +1580,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       ML2[i]               = 0.0;
     }
 
-
-
-
-
     //////////////////////////////////////////////
     // ** LOOP IN CELLS FOR CELL BASED TERMS ** //
     //////////////////////////////////////////////
@@ -1568,6 +1588,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     //    * cell based CFL (for reference)
     //    * Entropy residual
     //    * Transport matrices
+
     for (int eN = 0; eN < nElements_global; eN++) {
       //declare local storage for local contributions and initialize
       double elementResidual_u[nDOF_test_element], element_entropy_residual[nDOF_test_element], Phi[nDOF_trial_element], Phi_n[nDOF_trial_element];
@@ -1611,12 +1632,17 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         ck.valFromDOF(u_dof_old.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_ref.data()[k * nDOF_trial_element], un);
         //get the solution gradients at tn for entropy viscosity
         ck.gradTrialFromRef(&u_grad_trial_ref.data()[k * nDOF_trial_element * nSpace], jacInv, u_grad_trial);
+
+        //populate q_x 
+        const int eN_k_3d = eN_k * 3;
+        q_x.data()[eN_k_3d + 0] = x;
+        q_x.data()[eN_k_3d + 1] = y;
+        q_x.data()[eN_k_3d + 2] = z;
         //precalculate test function products with integration weights for mass matrix terms
         for (int I = 0; I < nSpace; I++) {
           grad_u[I]  = 0.0;
           grad_un[I] = 0.0;
         }
-        
         for (int j = 0; j < nDOF_trial_element; j++) {
           u_test_dV[j] = u_test_ref.data()[k * nDOF_trial_element + j] * dV;
           for (int I = 0; I < nSpace; I++) {
@@ -1637,13 +1663,20 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
                              &KWs.data()[elementMaterialTypes[eN] * nnz], u, m, dm, f, df, a, da, as, Kr, dKr);
 
         // Darcy velocity calculation
-        
-        for (int I = 0; I < nSpace; I++) { velocity_loc[I] = 0.0; }
-         for (int I = 0; I < nSpace; I++) {
-           for (int J = 0; J < nSpace; J++) { velocity_loc[I] -= Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u[J]+  gravity.data()[J]); }
-         }
-         for (int I = 0; I < nSpace; I++) { velocity.data()[eN_k_nSpace + I] = velocity_loc[I] ; }
 
+        double pressure_gradient[nSpace];
+        for (int J = 0; J < nSpace; ++J)
+          pressure_gradient[J] = grad_u[J] - gravity.data()[J];
+
+        for (int I = 0; I < nSpace; ++I) {
+          double acc = 0.0;
+          for (int ii = a_rowptr.data()[I]; ii < a_rowptr.data()[I+1]; ++ii) {
+            const int J = a_colind.data()[ii];
+            acc += (a[ii] / rho) * pressure_gradient[J];
+          }
+          velocity_couple.data()[eN_k_nSpace + I] = -acc;
+        }
+       // if (nSpace != 2) {std::cout << "WARNING nSpace=" << nSpace << std::endl;}
         //
         //moving mesh
         //
@@ -1660,7 +1693,6 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         // CALCULATE CELL BASED CFL //
         //////////////////////////////
         calculateCFL(elementDiameter.data()[eN] / degree_polynomial, velocity_loc, cfl.data()[eN_k]);
-
         //////////////////////////////////////////////
         // CALCULATE ENTROPY RESIDUAL AT QUAD POINT //
         //////////////////////////////////////////////
@@ -1683,10 +1715,12 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
             DENTROPY_uni              = ENTROPY_TYPE == 1 ? DENTROPY(uni, uL, uR) : DENTROPY_LOG(uni, uL, uR);
             element_entropy_residual[i] += (DENTROPY_un - DENTROPY_uni) * aux_entropy_residual * u_test_dV[i];
           }
+
           elementResidual_u[i] += m * u_test_dV[i];
           ///////////////
           // j-th LOOP // To construct transport matrices
           ///////////////
+          
           for (int j = 0; j < nDOF_trial_element; j++) {
             int j_nSpace = j * nSpace;
             int i_nSpace = i * nSpace;
@@ -1695,7 +1729,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
             elementTransportn[i][j] += ck.SimpleDiffusionJacobian_weak(a_rowptr.data(), a_colind.data(), asn, &u_grad_trial[j_nSpace], &u_grad_test_dV[i_nSpace]);
             elementTransportConsistentn[i][j] += ck.SimpleDiffusionJacobian_weak(a_rowptr.data(), a_colind.data(), an, &u_grad_trial[j_nSpace], &u_grad_test_dV[i_nSpace]);
           }
-        } //i
+        } //i 
         //save solution for other models
         q_u.data()[eN_k] = u;
         q_m.data()[eN_k] = m;
@@ -1718,7 +1752,26 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           TransportMatrixConsistentn[csrRowIndeces_CellLoops.data()[eN_i] + csrColumnOffsets_CellLoops.data()[eN_i_j]] += elementTransportConsistentn[i][j];
         } //j
       } //i
+      
     } //elementsxw
+
+    // double s = 0.0, sabs = 0.0;
+    // double vmin = 1e300, vmax = -1e300;
+    // size_t n_nonzero = 0;
+
+    // for (size_t i = 0; i < velocity.size(); i++) {
+    //   double v = velocity.data()[i];
+    //   s += v;
+    //   sabs += std::abs(v);
+    //   vmin = std::min(vmin, v);
+    //   vmax = std::max(vmax, v);
+    //   if (std::abs(v) > 1e-14) n_nonzero++;
+    // }
+
+    // std::cout << "[after compute] size=" << velocity.size()
+    //           << " nnz=" << n_nonzero
+    //           << " min=" << vmin << " max=" << vmax
+    //           << " sumabs=" << sabs << std::endl;
 
         //loop over exterior element boundaries to calculate surface integrals and load into element and global residuals
     //
@@ -1753,6 +1806,14 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         ck.valFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], u_ext);
         ck.valFromDOF(u_dof_old.data(), &u_l2g.data()[eN_nDOF_trial_element], &u_trial_trace_ref.data()[ebN_local_kb * nDOF_test_element], un_ext);
         ck.gradFromDOF(u_dof.data(), &u_l2g.data()[eN_nDOF_trial_element], u_grad_trial_trace, grad_u_ext);
+        
+        //populate ebqe_x
+        const int ebNE_kb_3d = ebNE_kb * 3;
+        ebqe_x.data()[ebNE_kb_3d + 0] = x_ext;
+        ebqe_x.data()[ebNE_kb_3d + 1] = y_ext;
+        ebqe_x.data()[ebNE_kb_3d + 2] = z_ext;
+
+        
         //precalculate test function products with integration weights
         for (int j = 0; j < nDOF_trial_element; j++) { u_test_dS[j] = u_test_trace_ref.data()[ebN_local_kb * nDOF_test_element + j] * dS; }
         //
@@ -1779,13 +1840,27 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         //Calculate Darcy Velocity at external faces
         //
         
-        double  velocity_loc_ext[nSpace];
-  
-        for (int I = 0; I < nSpace; I++) { velocity_loc_ext[I] = 0.0; }
-        for (int I = 0; I < nSpace; I++) {
-          for (int J = 0; J < nSpace; J++) { velocity_loc_ext[I] -= bc_Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u_ext[J]+  gravity.data()[J]); }
+        // double  darcy_velocity_loc_ext[nSpace];
+        // for (int I = 0; I < nSpace; I++) { darcy_velocity_loc_ext[I] = 0.0; }
+        
+        // for (int I = 0; I < nSpace; I++) {
+        //   for (int J = 0; J < nSpace; J++) { darcy_velocity_loc_ext[I] -= bc_Kr * KWs.data()[elementMaterialTypes[eN] * nSpace * nSpace + I * nSpace + J] * (grad_u_ext[J]+  gravity.data()[J]); }
+        // }
+        // for (int I = 0; I < nSpace; I++) { ebqe_velocity_ext_couple.data()[ebNE_kb_nSpace + I] = darcy_velocity_loc_ext[I] ; }
+        
+        double ext_pressure_gradient[nSpace];
+        for (int J = 0; J < nSpace; ++J)
+          ext_pressure_gradient[J] = grad_u_ext[J] - gravity.data()[J];
+
+        for (int I = 0; I < nSpace; ++I) {
+          double acc = 0.0;
+          for (int ii = a_rowptr.data()[I]; ii < a_rowptr.data()[I+1]; ++ii) {
+            const int J = a_colind.data()[ii];
+            acc += (a_ext[ii] / rho) * ext_pressure_gradient[J];
+          }
+          ebqe_velocity_ext_couple.data()[ebNE_kb_nSpace + I] = -acc;
         }
-        for (int I = 0; I < nSpace; I++) { ebqe_velocity_ext.data()[ebNE_kb_nSpace + I] = velocity_loc_ext[I] ; }
+
 
         //
         //calculate the numerical fluxes

@@ -215,16 +215,7 @@ EXTENSIONS_TO_BUILD = [
         language='c++',
         extra_compile_args=PROTEUS_OPT+['-std=c++20'],
     ),
-
-    Extension(
-        'flow.cflow',
-        sources=['proteus/flow/cFlow.cpp'],
-        depends=['proteus/flow/Flow.h', 'proteus/mprans/ArgumentsDict.h' ,'proteus/ModelFactory.h', 'proteus/CompKernel.h'],
-        include_dirs=get_xtensor_include(),
-        language='c++',
-        extra_compile_args=PROTEUS_OPT+['-std=c++20'],
-    ),
-    
+   
     Extension(
         'mphase_co2.cmphase_co2',
         sources=['proteus/mphase_co2/cmphase_co2.cpp'],
@@ -841,7 +832,7 @@ def setup_given_extensions(extensions):
                       'proteus.fenton',
                       'proteus.mprans',
                       'proteus.richards',
-                      'proteus.flow',
+                    #   'proteus.flow',
                       'proteus.mphase_co2',
                       'proteus.elastoplastic',
                       'proteus.mbd',

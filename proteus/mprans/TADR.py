@@ -273,6 +273,7 @@ class Coefficients(TC_base):
                  Dm,
                  rho_fw,
                  rho_sw,
+                 #beta_RE,
                  LS_model=None,
                  nd=2,
                  V_model=0,
@@ -341,6 +342,7 @@ class Coefficients(TC_base):
         self.Dm= Dm        
         self.rho_fw= rho_fw
         self.rho_sw= rho_sw
+        #self.beta_RE = beta_RE
         self.diagonal_conductivity = diagonal_conductivity
 
         if self.diagonal_conductivity:
@@ -429,7 +431,8 @@ class Coefficients(TC_base):
 
     def initializeMesh(self, mesh):
         self.eps = self.epsFact * mesh.h
-        
+
+      
     def attachModels(self, modelList):
         #import pdb
         #pdb.set_trace()
@@ -450,23 +453,45 @@ class Coefficients(TC_base):
         # flow model(Richards)
         if self.V_model is not None:
             self.vModel = modelList[self.V_model]
-            self.q_v = self.vModel.q['velocity']
-            self.ebqe_v = self.vModel.ebqe['velocity']
-            self.q_m_RE = self.vModel.q[('m', 0)]
-            self.q_psi_RE = self.vModel.q[('u', 0)]
+            # --- allocate OWNED, local arrays (no aliasing) using TADR shapes ---
+            self.q_v      = np.zeros(self.model.q[('u', 0)].shape + (self.model.nSpace_global,), 'd')
+            self.ebqe_v   = np.zeros(self.model.ebqe[('u', 0)].shape + (self.model.nSpace_global,), 'd')
+            self.q_m_RE   = np.zeros(self.model.q[('u', 0)].shape, 'd')
+            self.q_psi_RE = np.zeros(self.model.q[('u', 0)].shape, 'd')
 
-            if 'x' not in self.vModel.q:
-            # re-use TADR's element quad coordinates (shapes already match per your logs)
-                self.vModel.q['x'] = self.model.q['x']
-            if 'x' not in self.vModel.ebqe:
-                self.vModel.ebqe['x'] = self.model.ebqe['x']
+            # --- copy values from Richards model into our owned buffers ---
+            self.q_v[...]      = self.vModel.q[('velocity_couple', 0)]
+            self.ebqe_v[...]   = self.vModel.ebqe[('velocity_couple', 0)]
+            self.q_m_RE[...]   = self.vModel.q[('m', 0)]
+            self.q_psi_RE[...] = self.vModel.q[('u', 0)]
+            # rho0 = 1.0  # if you assume rho0=1
+            # self.q_theta_RE[...] = self.q_m_RE * np.exp(-self.beta_RE * self.q_psi_RE) / rho0
+
+
+        # if 'x' not in self.vModel.q:
+        #     # re-use TADR's element quad coordinates (shapes already match per your logs)
+        #     self.vModel.q['x'] = self.model.q['x']
+        # if 'x' not in self.vModel.ebqe:
+        #     self.vModel.ebqe['x'] = self.model.ebqe['x']
             
         else:
             #self.vModel  = None
-            self.q_v = np.ones(self.model.q[('u',0)].shape+(self.model.nSpace_global,),'d')
-            self.ebqe_v = np.ones(self.model.ebqe[('u',0)].shape+(self.model.nSpace_global,),'d')
-            self.q_m_RE = np.ones(self.model.q[('u',0)].shape,'d')
-            self.q_psi_RE = np.ones(self.model.q[('u',0)].shape,'d')
+            self.q_v = np.empty(self.model.q[('u',0)].shape + (self.model.nSpace_global,), dtype='d', order='C')
+            self.q_v.fill(1.0)
+
+            self.ebqe_v = np.empty(self.model.ebqe[('u',0)].shape + (self.model.nSpace_global,), dtype='d', order='C')
+            self.ebqe_v.fill(1.0)
+
+            self.q_m_RE = np.empty(self.model.q[('u',0)].shape, dtype='d', order='C')
+            self.q_m_RE.fill(1.0)
+
+            self.q_psi_RE = np.empty(self.model.q[('u',0)].shape, dtype='d', order='C')
+            self.q_psi_RE.fill(1.0)
+
+            self.q_theta_RE = np.empty(self.model.q[('u',0)].shape, dtype='d', order='C')
+            self.q_theta_RE.fill(1.0)
+
+
         
         # VRANS
         if self.V_model is not None:
@@ -475,9 +500,16 @@ class Coefficients(TC_base):
             self.flowCoefficients = None
 
     def preStep(self, t, firstStep=False):
-        from mpi4py import MPI
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank() 
+        from proteus import Comm
+        comm = Comm.get()
+        try:
+            rank = comm.rank()
+        except Exception:
+            try:
+                rank = comm.comm.tompi4py().Get_rank()
+            except Exception:
+                rank = -1
+        
         # SAVE OLD SOLUTION #
         self.model.u_dof_old[:] = self.model.u[0].dof
 
@@ -489,13 +521,138 @@ class Coefficients(TC_base):
             if hasattr(self.model, "updateVelocityFieldAsFunction"):
                 self.model.updateVelocityFieldAsFunction() 
         else:
-            self.q_v= self.vModel.q['velocity']
-            self.ebqe_v = self.vModel.ebqe['velocity']  
-            logEvent("Taking velocity from Flow Model")
-            self.q_m_RE = self.vModel.q[('m', 0)]
-            self.q_psi_RE = self.vModel.q[('u', 0)]
-            logEvent("Taking theta from Flow Model")
+            # -----------------------------
+            # (A) Assert q['x'] matches vModel.q['x'] on EACH rank
+            # -----------------------------
+            x_dst = self.model.q['x']          # TADR q coordinates
+            x_src = self.vModel.q['x']   # Richards q coordinates
 
+            if x_dst.shape != x_src.shape:
+                raise RuntimeError(f"[TADR preStep] q['x'] shape mismatch: dst={x_dst.shape}, src={x_src.shape}")
+
+            # local max difference
+            diff_local = float(np.max(np.abs(x_dst - x_src)))
+            diff_global = comm.globalMax(diff_local)
+
+            # optional: also check for NaN in coordinates
+            nanx_local = float(np.isnan(x_src).any() or np.isnan(x_dst).any())
+            nanx_global = comm.globalMax(nanx_local)
+
+            if comm.isMaster():
+                logEvent(f"[TADR preStep] t={t:.6e} max|x_dst-x_src|={diff_global:.3e}  nan_in_x={int(nanx_global)}")
+
+            # Hard assert (tolerance can be tight; these should be identical)
+            if diff_global > 1.0e-14:
+                logEvent(f"[TADR preStep][rank={rank}] q['x'] local max diff={diff_local:.3e}")
+                raise RuntimeError(f"[TADR preStep] q['x'] does not match vModel.q['x'] (global max diff={diff_global:.3e})")
+
+            # One-time permutation check: confirms the two rank-local coordinate sets are identical,
+            # even if ordering would differ.
+            if not hasattr(self, "_checked_qx_permutation"):
+                x_dst_flat = np.ascontiguousarray(x_dst.reshape((-1, x_dst.shape[-1])))
+                x_src_flat = np.ascontiguousarray(x_src.reshape((-1, x_src.shape[-1])))
+
+                order_dst = np.lexsort((x_dst_flat[:, 2], x_dst_flat[:, 1], x_dst_flat[:, 0]))
+                order_src = np.lexsort((x_src_flat[:, 2], x_src_flat[:, 1], x_src_flat[:, 0]))
+
+                x_dst_sorted = x_dst_flat[order_dst]
+                x_src_sorted = x_src_flat[order_src]
+                perm_diff_local = float(np.max(np.abs(x_dst_sorted - x_src_sorted)))
+                perm_diff_global = comm.globalMax(perm_diff_local)
+                if comm.isMaster():
+                    logEvent(f"[TADR preStep] t={t:.6e} permutation-check max|sort(x_dst)-sort(x_src)|={perm_diff_global:.3e}")
+                if perm_diff_global > 1.0e-14:
+                    raise RuntimeError(f"[TADR preStep] coordinate sets differ across models (global sorted diff={perm_diff_global:.3e})")
+                self._checked_qx_permutation = True
+
+            # If you *really* want to keep them identical by assignment anyway:
+            np.copyto(x_dst, x_src)
+
+            # -----------------------------
+            # (B) Copy velocity + fields (local copy on each rank)
+            # -----------------------------
+            qv_src    = self.vModel.q[('velocity_couple', 0)]
+            ebqev_src = self.vModel.ebqe[('velocity_couple', 0)]
+            m_src     = self.vModel.q[('m', 0)]
+            u_src     = self.vModel.q[('u', 0)]
+
+            # destination arrays
+            qv_dst    = self.q_v
+            ebqev_dst = self.ebqe_v
+
+            # shape asserts (these are the #1 parallel failure mode)
+            if qv_dst.shape != qv_src.shape:
+                raise RuntimeError(f"[TADR preStep] q_v shape mismatch: dst={qv_dst.shape}, src={qv_src.shape}")
+            if ebqev_dst.shape != ebqev_src.shape:
+                raise RuntimeError(f"[TADR preStep] ebqe_v shape mismatch: dst={ebqev_dst.shape}, src={ebqev_src.shape}")
+            if self.q_m_RE.shape != m_src.shape:
+                raise RuntimeError(f"[TADR preStep] q_m_RE shape mismatch: dst={self.q_m_RE.shape}, src={m_src.shape}")
+            if self.q_psi_RE.shape != u_src.shape:
+                raise RuntimeError(f"[TADR preStep] q_psi_RE shape mismatch: dst={self.q_psi_RE.shape}, src={u_src.shape}")
+
+            # actual copies
+            np.copyto(qv_dst,    qv_src)
+            np.copyto(ebqev_dst, ebqev_src)
+            np.copyto(self.q_m_RE,   m_src)
+            np.copyto(self.q_psi_RE, u_src)
+
+            # Verify exact copy on every rank (this checks that TADR is using what RE produced)
+            q_copy_err_local = float(np.max(np.abs(qv_dst - qv_src)))
+            ebqe_copy_err_local = float(np.max(np.abs(ebqev_dst - ebqev_src)))
+            q_copy_err_global = comm.globalMax(q_copy_err_local)
+            ebqe_copy_err_global = comm.globalMax(ebqe_copy_err_local)
+            if comm.isMaster():
+                logEvent(f"[TADR preStep] t={t:.6e} copy-check q_v max|dst-src|={q_copy_err_global:.3e}")
+                logEvent(f"[TADR preStep] t={t:.6e} copy-check ebqe_v max|dst-src|={ebqe_copy_err_global:.3e}")
+            if q_copy_err_global > 1.0e-14 or ebqe_copy_err_global > 1.0e-14:
+                raise RuntimeError(
+                    "[TADR preStep] RE->TADR velocity copy mismatch "
+                    f"(q_v={q_copy_err_global:.3e}, ebqe_v={ebqe_copy_err_global:.3e})"
+                )
+
+            # -----------------------------
+            # (C) Global checks (NaN/Inf + min/max)
+            # -----------------------------
+            nan_local  = float(np.isnan(qv_dst).any()  or np.isnan(ebqev_dst).any())
+            inf_local  = float(np.isinf(qv_dst).any()  or np.isinf(ebqev_dst).any())
+            nan_any = comm.globalMax(nan_local)
+            inf_any = comm.globalMax(inf_local)
+
+            qmin_local  = float(np.min(qv_dst))
+            qmax_local  = float(np.max(qv_dst))
+            ebmin_local = float(np.min(ebqev_dst))
+            ebmax_local = float(np.max(ebqev_dst))
+
+            qmin  = comm.globalMin(qmin_local)
+            qmax  = comm.globalMax(qmax_local)
+            ebmin = comm.globalMin(ebmin_local)
+            ebmax = comm.globalMax(ebmax_local)
+
+            if comm.isMaster():
+                logEvent(f"[TADR READ q_v ] t={t:.6e} min={qmin:.6e} max={qmax:.6e} nan_any={int(nan_any)} inf_any={int(inf_any)}")
+                logEvent(f"[TADR READ ebqe] t={t:.6e} min={ebmin:.6e} max={ebmax:.6e} nan_any={int(nan_any)} inf_any={int(inf_any)}")
+
+            # self.q['x'][...]   = self.vModel.q['x']
+            # self.q_v[...]      = self.vModel.q[('velocity_couple', 0)]
+            # self.ebqe_v[...]   = self.vModel.ebqe[('velocity_couple', 0)]
+            # self.q_m_RE[...]   = self.vModel.q[('m', 0)]
+            # self.q_psi_RE[...] = self.vModel.q[('u', 0)]
+            # #self.q_theta_RE[...] = self.q_m_RE * np.exp(-self.beta_RE * self.q_psi_RE)
+
+            # # ---------- GLOBAL VELOCITY CHECK (same as RE style) ----------
+            # qmin_local  = float(np.min(self.q_v))
+            # qmax_local  = float(np.max(self.q_v))
+            # ebmin_local = float(np.min(self.ebqe_v))
+            # ebmax_local = float(np.max(self.ebqe_v))
+
+            # qmin  = comm.globalMin(qmin_local)
+            # qmax  = comm.globalMax(qmax_local)
+            # ebmin = comm.globalMin(ebmin_local)
+            # ebmax = comm.globalMax(ebmax_local)
+
+            # if comm.isMaster():
+            #     logEvent(f"[TADR READ q_v ] t={t:.6e} min={qmin:.6e} max={qmax:.6e}")
+            #     logEvent(f"[TADR READ ebqe] t={t:.6e} min={ebmin:.6e} max={ebmax:.6e}")
         if self.checkMass:
             self.m_pre = Norms.scalarDomainIntegral(self.model.q['dV_last'],
                                                     self.model.q[('m', 0)],
@@ -503,6 +660,103 @@ class Coefficients(TC_base):
             logEvent("Phase  0 mass before TADR step = %12.5e" % (self.m_pre,), level=2)
         copyInstructions = {}
         return copyInstructions
+    # def postStep(self, t, firstStep=False):
+    #     from proteus import Comm
+    #     from proteus.Profiling import logEvent
+    #     import numpy as np
+
+    #     comm = Comm.get()
+
+    #     # --- get an mpi4py communicator safely ---
+    #     try:
+    #         mpicomm = comm.comm.tompi4py()   # petsc4py -> mpi4py
+    #     except Exception:
+    #         from mpi4py import MPI
+    #         mpicomm = MPI.COMM_WORLD
+
+    #     rank = mpicomm.Get_rank()
+
+    #     # Use the actual spatial dimension (2 for 2D, 3 for 3D)
+    #     nSpace = int(getattr(self.model, "nSpace_global", getattr(self.model, "nSpace", 3)))
+
+    #     # ==========================================================
+    #     # (A) coordinates ONCE (TADR q['x'])
+    #     # ==========================================================
+    #     if not hasattr(self, "_wrote_tadr_coords_once"):
+    #         self._wrote_tadr_coords_once = True
+
+    #         # TADR q['x'] is typically (nElem_owned, nQP, 3)
+    #         qcoords_local = np.asarray(self.model.q['x']).reshape((-1, 3))
+
+    #         qcoords_all = mpicomm.gather(qcoords_local, root=0)
+
+    #         if rank == 0:
+    #             Q = np.vstack(qcoords_all)
+    #             np.savetxt(
+    #                 "TADR_q_coords_all.txt",
+    #                 Q,
+    #                 fmt="%.16e",
+    #                 header=f"columns: x y z | total_rows={Q.shape[0]}"
+    #             )
+    #             logEvent(f"[TADR postStep] wrote TADR_q_coords_all.txt rows={Q.shape[0]}")
+
+    #     # # Optional boundary coordinates ONCE (for ebqe velocity post-processing)
+    #     # if not hasattr(self, "_wrote_tadr_ebqe_coords_once") and ('x' in self.model.ebqe):
+    #     #     self._wrote_tadr_ebqe_coords_once = True
+    #     #     ebqe_coords_local = np.asarray(self.model.ebqe['x']).reshape((-1, 3))
+    #     #     ebqe_coords_all = mpicomm.gather(ebqe_coords_local, root=0)
+    #     #     if rank == 0:
+    #     #         EQ = np.vstack(ebqe_coords_all)
+    #     #         np.savetxt(
+    #     #             "TADR_ebqe_coords_all.txt",
+    #     #             EQ,
+    #     #             fmt="%.16e",
+    #     #             header=f"columns: x y z | total_rows={EQ.shape[0]}"
+    #     #         )
+    #     #         logEvent(f"[TADR postStep] wrote TADR_ebqe_coords_all.txt rows={EQ.shape[0]}")
+
+    #     # ==========================================================
+    #     # (B) transported scalar at element quadrature points
+    #     # ==========================================================
+    #     qu_src = np.asarray(self.model.q[('u', 0)])
+    #     qu_local = qu_src.reshape((-1, 1))
+    #     qu_all = mpicomm.gather(qu_local, root=0)
+
+    #     if rank == 0:
+    #         U = np.vstack(qu_all)
+    #         np.savetxt(
+    #             f"TADR_q_u_all_t{t:.8e}.txt",
+    #             U,
+    #             fmt="%.16e",
+    #             header=f"columns: u | t={t:.16e} | total_rows={U.shape[0]}"
+    #         )
+    #         logEvent(f"[TADR postStep] wrote TADR_q_u_all_t{t:.8e}.txt rows={U.shape[0]}")
+
+    #     # # ==========================================================
+    #     # # (C) optional boundary scalar output
+    #     # # ==========================================================
+    #     # if ('u', 0) in self.model.ebqe:
+    #     #     ebqe_u_src = np.asarray(self.model.ebqe[('u', 0)])
+    #     #     ebqe_u_local = ebqe_u_src.reshape((-1, 1))
+    #     #     ebqe_u_all = mpicomm.gather(ebqe_u_local, root=0)
+
+    #     #     if rank == 0:
+    #     #         EU = np.vstack(ebqe_u_all)
+    #     #         np.savetxt(
+    #     #             f"TADR_ebqe_u_all_t{t:.8e}.txt",
+    #     #             EU,
+    #     #             fmt="%.16e",
+    #     #             header=f"columns: u | t={t:.16e} | total_rows={EU.shape[0]}"
+    #     #         )
+    #     #         logEvent(f"[TADR postStep] wrote TADR_ebqe_u_all_t{t:.8e}.txt rows={EU.shape[0]}")
+    #     self.model.q['dV_last'][:] = self.model.q['dV']
+    #     if self.checkMass:
+    #         self.m_post = Norms.scalarDomainIntegral(self.model.q['dV'],
+    #                                                  self.model.q[('m', 0)],
+    #                                                  self.model.mesh.nElements_owned)
+    #         logEvent("Phase  0 mass after TADR step = %12.5e" % (self.m_post,), level=2)
+    #     copyInstructions = {}
+    #     return copyInstructions
 
     def postStep(self, t, firstStep=False):
         self.model.q['dV_last'][:] = self.model.q['dV']
@@ -1300,6 +1554,10 @@ class LevelModel(OneLevelTransport):
         #argsDict["q_a"] = self.q[('a',0,0)]
         argsDict["q_a"] = self.coefficients.q_a_mod #q[('a',0,0)]
         argsDict["q_r"] = self.q[('r',0)]
+           
+        argsDict["q_x"] = self.q['x']
+        argsDict["ebqe_x"] = self.ebqe['x']
+
 
         argsDict["ebq_a"] = self.ebqe[('a',0,0)]
         argsDict["ebq_r"] = self.ebqe[('r',0)]     
@@ -1375,6 +1633,8 @@ class LevelModel(OneLevelTransport):
 
         argsDict["q_rho"] = self.q['rho']
         argsDict["ebqe_rho"] = self.ebqe['rho']
+
+        #argsDict["beta_RE"] = self.coefficients.beta_RE
         
         
         argsDict["alpha_L"] = self.coefficients.alpha_L  # Longitudinal dispersion coefficient
@@ -1489,7 +1749,9 @@ class LevelModel(OneLevelTransport):
         argsDict["physicalDiffusion"] = self.coefficients.physicalDiffusion   
         argsDict["ebq_a"] = self.ebqe[('a',0,0)]
         #argsDict["D"] = self.coefficients.DTypes
+        
         argsDict["q_theta"] = self.coefficients.q_m_RE
+        #argsDict["beta_RE"] = self.coefficients.beta_RE
         sdInfo = self.coefficients.sdInfo
     
         argsDict["a_rowptr"] = sdInfo[(0, 0)][0]
