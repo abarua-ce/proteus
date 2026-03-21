@@ -1984,7 +1984,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         }
         double dLowij, dLij, dEVij, dHij, fH, fL, fA=0.0;
         double fL_CN =0.0;
-        fH = -Theta_h * TransportMatrixConsistent[ij] * (phi_j - phi_i) - (1 - Theta_h) * TransportMatrixConsistentn[ij] * (phin_j - phin_i); //previous: Theta
+        //fH = -Theta_h * TransportMatrixConsistent[ij] * (phi_j - phi_i) - (1 - Theta_h) * TransportMatrixConsistentn[ij] * (phin_j - phin_i); //previous: Theta
+        fH = -Theta * TransportMatrixConsistent[ij] * (phi_j - phi_i) - (1 - Theta) * TransportMatrixConsistentn[ij] * (phin_j - phin_i);
         ith_consistent_flux_term += fH;
         fA = fH;
         if (-TransportMatrix[ij] * (phi_j - phi_i) <= 0.0) {
@@ -1998,6 +1999,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
             J_ii -= -Theta * Kr * fmax(0.0, -TransportMatrix[ij]) + Theta * dKr * fmax(0.0, -TransportMatrix[ij]) * (phi_j - phi_i);
           }
           ith_flux_term += fL;
+          fA -= fL;
           //fA -= fL_CN;
         } else {
           evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
@@ -2011,6 +2013,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           }
           ith_flux_term += fL;
           //fA -= fL_CN;
+          fA -= fL;
         }
         if (-TransportMatrixn[ij] * (phin_j - phin_i) <= 0.0) {
           evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
@@ -2019,7 +2022,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           fL = (1 - Theta) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);
           fL_CN += (1 - Theta_h) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);
           ith_flux_term += fL;
-          fA -= fL_CN;
+          //fA -= fL_CN;
+          fA -= fL;
         } else {
           evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, beta, gravity.data(),
                                alpha.data()[elementMaterialTypes.data()[0]], //cek hack, only for 1 material
@@ -2027,7 +2031,8 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           fL = (1 - Theta) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);
           fL_CN += (1 - Theta_h) * Kr * fmax(0.0, -TransportMatrixn[ij]) * (phin_j - phin_i);  
           ith_flux_term += fL;
-          fA -= fL_CN;
+          fA -= fL;
+          //fA -= fL_CN;
         }
         dt_times_fH_minus_fL.data()[ij] = dt * fA;
         ij += 1;
