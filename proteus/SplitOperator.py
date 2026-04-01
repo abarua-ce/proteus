@@ -342,6 +342,115 @@ class Sequential_MinModelStep(SO_base):
             (self.system.name,
              self.stepSequence),
             level=1)
+
+class StrangSplit_time_step(SO_base):
+    """
+    Generic Strang splitting for a sequence like [0,1,0].
+
+    The first and last models take half-steps, the middle models take
+    full system steps.
+
+    For the usual two-model case:
+      modelSequenceList = [0,1,0]
+    gives
+      model 0 : dt/2
+      model 1 : dt
+      model 0 : dt/2
+    """
+    def __init__(self,modelList,modelSequenceList=[0,1,0],system=defaultSystem,stepExact=True):
+        SO_base.__init__(self,modelList,system,stepExact)
+        self.modelSequenceList = modelSequenceList
+        for model in self.modelList:
+            model.stepController.stepExact = True
+
+    def converged(self):
+        # no iteration
+        if self.its > 0:
+            self.its=0
+            return True
+        else:
+            return False
+
+    def _setStrangStepSequence(self):
+        t_half = self.t_system_last + 0.5*self.dt_system
+        self.t_system = self.t_system_last + self.dt_system
+
+        self.stepSequence = []
+        nSequence = len(self.modelSequenceList)
+
+        for i,modelIndex in enumerate(self.modelSequenceList):
+            model = self.modelList[modelIndex]
+
+            if i == 0:
+                t_target = t_half
+                dt_model = 0.5*self.dt_system
+            elif i == nSequence-1:
+                t_target = self.t_system
+                dt_model = 0.5*self.dt_system
+            else:
+                t_target = self.t_system
+                dt_model = self.dt_system
+
+            self.stepSequence.append((t_target,model))
+            model.stepController.dt_model = dt_model
+            model.stepController.set_dt_allLevels()
+            model.stepController.t_model = t_target
+            model.stepController.setSubsteps([t_target])
+
+    def stepExact_system(self,tExact):
+        old = False
+        if old:
+            if (self.dt_system > 0.0 and
+                self.t_system_last + self.dt_system >=  tExact*(1.0-self.stepExactEps)):
+                self.dt_system = tExact - self.t_system_last
+            elif (self.dt_system < 0.0 and
+                self.t_system_last + self.dt_system <=  tExact*(1.0 + self.stepExactEps)):
+                self.dt_system = tExact - self.t_system_last
+        else:
+            if (self.dt_system > 0.0):
+                if(self.t_system_last + self.dt_system >= tExact*(1.0-self.stepExactEps)):
+                    logEvent("===========================================================dt system orig" + str(self.dt_system),level=5)
+                    self.dt_system = tExact - self.t_system_last
+                    logEvent("=========================================================dt system final" + str(self.dt_system),level=5)
+                elif( tExact - (self.t_system_last + self.dt_system) < self.dt_system/2.0 ):
+                    logEvent("===========================================================dt system orig" + str(self.dt_system),level=5)
+                    self.dt_system = (tExact - self.t_system_last)/2.0
+                    logEvent("=========================================================dt system final" + str(self.dt_system),level=5)
+            if (self.dt_system < 0.0):
+                if(self.t_system_last + self.dt_system <= tExact*(1.0 + self.stepExactEps)):
+                    self.dt_system = tExact - self.t_system_last
+                elif( tExact - (self.t_system_last + self.dt_system) > self.dt_system/2.0 ):
+                    self.dt_system = (tExact - self.t_system_last)/2.0
+
+        self._setStrangStepSequence()
+
+    def choose_dt_system(self):
+        self.dt_system = min([model.stepController.dt_model for model in self.modelList])
+        self._setStrangStepSequence()
+        logEvent("StrangSplit_time_step choose_dt_system t_system_last= %s dt_system= %s t_system= %s " % (self.t_system_last,
+                                                                                                             self.dt_system,
+                                                                                                             self.t_system),3)
+
+    def initialize_dt_system(self,t0,tOut):
+        self.its=0
+        self.t_system_last = t0
+        self.dt_system = min(min([model.stepController.dt_model for model in self.modelList]),tOut-t0)
+
+        for model in self.modelList:
+            model.stepController.initializeTimeHistory()
+
+        self._setStrangStepSequence()
+
+        logEvent("Initializing time step on system %s to dt = %12.5e" %
+                 (self.system.name,
+                  self.dt_system),
+                 level=1)
+        logEvent("Initializing step sequence for system %s to %s" %
+                 (self.system.name,
+                  self.stepSequence),
+                 level=1)
+
+            
 class Sequential_MinFLCBDFModelStep(SO_base):
     """
     Look at the minimum model step and make that the system step as

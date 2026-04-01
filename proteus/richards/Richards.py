@@ -223,9 +223,12 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  gravity,
                  density,
                  beta,
+                 beta_c=0.0,
                  diagonal_conductivity=True,
                  getSeepageFace=None,
-                 #DENSITY_MODEL= None,
+                 DENSITY_MODEL=None,
+                 density_coupling=0,
+                 density_contrast=0.0,
                 # FOR EDGE BASED EV
                  STABILIZATION_TYPE='Implicit_FCT',
                  ENTROPY_TYPE=2,  # logarithmic
@@ -243,9 +246,13 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                  cK=1.0,
                  # OUTPUT quantDOFs
                  outputQuantDOFs=False,
+                 rho_0=None,
+                 storativity=0.0,
                   ):
         self.VMS=VMS
-        #self.DENSITY_MODEL=DENSITY_MODEL
+        self.DENSITY_MODEL=DENSITY_MODEL
+        self.density_coupling = density_coupling
+        self.density_contrast = density_contrast
         self.modelIndex=1
         self.SC=SC
         self.anb_seepage_flux= 0.00
@@ -260,8 +267,13 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         hamiltonian={}
         self.getSeepageFace=getSeepageFace
         self.gravity=gravity
-        self.rho = density
+        if rho_0 is None:
+            rho_0 = density
+        self.rho_0 = rho_0
+        self.rho = self.rho_0
         self.beta=beta
+        self.beta_c = beta_c
+        self.storativity = storativity
         self.vgm_n_types = vgm_n_types
         self.vgm_alpha_types = vgm_alpha_types
         self.thetaR_types    = thetaR_types
@@ -327,7 +339,14 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.cE = cE
         self.outputQuantDOFs = outputQuantDOFs
         #For seepage anb
-        self.model = None 
+        self.model = None
+        self.densityModel = None
+        self.q_c = None
+        self.ebqe_c = None
+        self.q_c_default = None
+        self.ebqe_c_default = None
+        self.q_shape = None
+        self.ebqe_shape = None
 
         TC_base.__init__(self,
                          nc,
@@ -340,7 +359,29 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
                          variableNames,
                          sparseDiffusionTensors = sparseDiffusionTensors,
                          useSparseDiffusion = True)
-        
+
+    def attachModels(self, modelList):
+        self.model = None
+        for model in modelList:
+            if getattr(model, 'coefficients', None) is self:
+                self.model = model
+                break
+        if self.model is None and 0 <= self.modelIndex < len(modelList):
+            self.model = modelList[self.modelIndex]
+
+        self.densityModel = None
+        self.q_c = None
+        self.ebqe_c = None
+        if self.DENSITY_MODEL is not None and 0 <= self.DENSITY_MODEL < len(modelList):
+            self.densityModel = modelList[self.DENSITY_MODEL]
+            self.q_c = self.densityModel.q.get(('u',0), None)
+            self.ebqe_c = self.densityModel.ebqe.get(('u',0), None)  
+
+    def preStep(self,t,firstStep=False):
+        if self.DENSITY_MODEL is not None and self.densityModel is not None:
+            self.q_c = self.densityModel.q.get(('u',0), None)
+            self.ebqe_c = self.densityModel.ebqe.get(('u',0), None)
+        return {}
 
     def initializeMesh(self,mesh):
         from proteus.SubsurfaceTransportCoefficients import BlockHeterogeneousCoefficients
@@ -366,6 +407,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
 #        for k in range(self.q_shape[1]):
 #            cq['Ks'][:,k] = self.Ksw_types[self.elementMaterialTypes,0]
         self.q[('vol_frac',0)] = np.zeros(self.q_shape,'d')
+        self.q_c_default = np.zeros(self.q_shape,'d')
     def initializeElementBoundaryQuadrature(self,t,cebq,cebq_global):
         self.materialTypes_ebq = np.zeros(cebq[('u',0)].shape[0:2],'i')
         self.ebq_shape = cebq[('u',0)].shape
@@ -377,6 +419,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.materialTypes_ebqe = self.exteriorElementBoundaryTypes
         self.ebqe_shape = cebqe[('u',0)].shape
         self.ebqe[('vol_frac',0)] = np.zeros(self.ebqe_shape,'d')
+        self.ebqe_c_default = np.zeros(self.ebqe_shape,'d')
         #
     
 
@@ -395,7 +438,7 @@ class Coefficients(proteus.TransportCoefficients.TC_base):
         self.conservativeHeadRichardsMualemVanGenuchten_sd_het(self.sdInfo[(0,0)][0],
                                                                self.sdInfo[(0,0)][1],
                                                                materialTypes,
-                                                               self.rho,
+                                                               self.rho_0,
                                                                self.beta,
                                                                self.gravity,
                                                                self.vgm_alpha_types,
@@ -775,8 +818,8 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         
         self.q['rho'] = np.zeros((self.mesh.nElements_global,self.nQuadraturePoints_element),'d')
         self.ebqe['rho'] = np.zeros((self.mesh.nExteriorElementBoundaries_global,self.nElementBoundaryQuadraturePoints_elementBoundary),'d')
-        self.q['rho'][:] = self.coefficients.rho
-        self.ebqe['rho'][:] = self.coefficients.rho
+        self.q['rho'][:] = self.coefficients.rho_0
+        self.ebqe['rho'][:] = self.coefficients.rho_0
         
         
         self.points_elementBoundaryQuadrature= set()
@@ -1349,11 +1392,16 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
         argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-        argsDict["rho"] = self.coefficients.rho
+        argsDict["rho_0"] = self.coefficients.rho_0
         argsDict["beta"] = self.coefficients.beta
+        argsDict["beta_c"] = self.coefficients.beta_c
+        argsDict["storativity"] = self.coefficients.storativity
 
         argsDict["q_rho"]= self.q['rho']
         argsDict["ebqe_rho"]= self.ebqe['rho']
+        argsDict["q_c"] = self.coefficients.q_c
+        argsDict["ebqe_c"] = self.coefficients.ebqe_c
+        argsDict["density_coupling"] = self.coefficients.density_coupling
         
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
@@ -1557,7 +1605,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         self.mHigh[:] = u
         if ulow is not None:
             self.u[0].dof[:] = ulow
-    
+
         rowptr, colind, nzval = self.jacobian.getCSRrepresentation()
         nnz = nzval.shape[-1]
     
@@ -1602,8 +1650,13 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
         argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-        argsDict["rho"] = self.coefficients.rho
+        argsDict["rho_0"] = self.coefficients.rho_0
         argsDict["beta"] = self.coefficients.beta
+        argsDict["beta_c"] = self.coefficients.beta_c
+        argsDict["storativity"] = self.coefficients.storativity
+        argsDict["q_rho"] = self.q['rho']
+        argsDict["q_c"] = self.coefficients.q_c
+        argsDict["density_coupling"] = self.coefficients.density_coupling
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
         argsDict["n"] = self.coefficients.vgm_n_types
@@ -1724,11 +1777,16 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["isSeepageFace"] = self.coefficients.isSeepageFace
         argsDict["a_rowptr"] = self.coefficients.sdInfo[(0,0)][0]
         argsDict["a_colind"] = self.coefficients.sdInfo[(0,0)][1]
-        argsDict["rho"] = self.coefficients.rho
+        argsDict["rho_0"] = self.coefficients.rho_0
         argsDict["beta"] = self.coefficients.beta
+        argsDict["beta_c"] = self.coefficients.beta_c
+        argsDict["storativity"] = self.coefficients.storativity
 
         argsDict["q_rho"]= self.q['rho']
         argsDict["ebqe_rho"]= self.ebqe['rho']
+        argsDict["q_c"] = self.coefficients.q_c
+        argsDict["ebqe_c"] = self.coefficients.ebqe_c
+        argsDict["density_coupling"] = self.coefficients.density_coupling
         
         argsDict["gravity"] = self.coefficients.gravity
         argsDict["alpha"] = self.coefficients.vgm_alpha_types
@@ -1745,6 +1803,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["elementDiameter"] = self.mesh.elementDiametersArray
         argsDict["degree_polynomial"] = degree_polynomial
         argsDict["u_dof"] = self.u[0].dof
+        argsDict["u_dof_old"] = self.u_dof_old
         argsDict["velocity"] = self.q['velocity',0]
         argsDict["q_m_betaBDF"] = self.timeIntegration.beta_bdf[0]
         argsDict["cfl"] = self.q[('cfl',0)]
