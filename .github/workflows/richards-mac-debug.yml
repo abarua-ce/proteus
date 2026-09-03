@@ -1,0 +1,167 @@
+name: richards FCT macOS debug
+
+# Why this exists, separate from sdist.yml:
+#
+# test/richards/test_richards.py's three FCT cases pass on linux-64 AND on
+# linux-aarch64 but fail on macos-15-intel AND on macos-15 (arm64), with the two
+# macOS legs agreeing to ~1e-13 with each other. So the split is macOS-vs-Linux
+# (toolchain: clang + Apple libm vs gcc + glibc), not x86-vs-arm, and it is
+# deterministic rather than uninitialised memory.
+#
+# sdist.yml runs the whole suite and takes ~40 min per leg, which is far too slow
+# to bisect that. This workflow does the same environment/sdist/install dance --
+# so it reproduces CI exactly -- but then runs ONE test, with the
+# RICHARDS_FCT_DUMP hook in proteus/richards/Richards.py switched on, and uploads
+# the per-step .npz dumps. Diffing the linux artifact against either macOS one
+# names the stage where the two builds part:
+#
+#   mn / mLow / mDotLow differ      -> the residual kernel (calculateResidual)
+#   dt_times_fH_minus_fL differ     -> the antidiffusive flux assembly
+#   min_m_bc / max_m_bc differ      -> the weak-Dirichlet bound seeding
+#   only Rpos / Rneg / limited_solution differ -> FCTStep's limiter
+#   only uLim differs               -> the retention-curve invert
+#
+# The linux-64 leg is included on purpose: comparing against a dump produced by
+# THIS workflow removes the local-machine build as a variable.
+#
+# Two ways in. workflow_dispatch is the nice one but GitHub only offers it for
+# workflow files that exist on the DEFAULT branch, and this file deliberately
+# does not go near main, so the push trigger below is what actually starts it:
+# push any branch named mac-debug/** and this runs, and only this runs (sdist.yml
+# is push-filtered to main plus pull_request).
+#
+#   git push origin HEAD:mac-debug/richards-fct
+#   gh run watch -R <fork>
+#
+# To get a shell on the runner instead of a dump, put this file on the fork's
+# default branch once and dispatch it with -f tmate=true.
+
+on:
+  push:
+    branches: ['mac-debug/**']
+  workflow_dispatch:
+    inputs:
+      test_selector:
+        description: 'pytest -k expression (default: the smallest failing case)'
+        required: false
+        default: 'test_1 and FCT'
+      dump_steps:
+        description: 'how many FCT steps to dump per run'
+        required: false
+        default: '3'
+      tmate:
+        description: 'open an interactive SSH session on the runner after the test'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  debug:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Same (os, python, env_file) triples as the corresponding sdist.yml
+          # legs, so a difference here is a difference there.
+          - name: linux-64
+            os: ubuntu-latest
+            python: "3.12.5"
+            env_file: environment-openmpi-dev.yml
+          - name: macos-intel
+            os: macos-15-intel
+            python: "3.12.5"
+            env_file: environment-openmpi-dev.yml
+          - name: macos-arm64
+            os: macos-15
+            python: "3.12.5"
+            env_file: environment-mpich-dev.yml
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Verbatim from sdist.yml's "Build environment file for this leg": the pins
+      # are a lock chosen together with the file's own python, so overriding
+      # python alone is unsatisfiable and every exact pin has to become a floor.
+      # Build-string selectors (=*openmpi*) are preserved or h5py loses MPI.
+      - name: Build environment file for this leg
+        shell: bash
+        run: |
+          cp "${{ matrix.env_file }}" environment-ci.yml
+          sed -i.bak "s/^name: .*/name: proteus-dev/" environment-ci.yml
+          FILE_PY=$(sed -n 's/^  - python =\(.*\)$/\1/p' environment-ci.yml)
+          if [ "${{ matrix.python }}" = "$FILE_PY" ]; then
+            echo "-- python ${{ matrix.python }} matches the file's pin; using the lock as-is"
+          else
+            sed -i.bak -E 's/^(  - [a-z0-9_.-]+) *=([0-9][^ =]*)(=[^ ]*)$/\1 >=\2\3/' environment-ci.yml
+            sed -i.bak -E 's/^(  - [a-z0-9_.-]+) *=([0-9][^ =]*)$/\1 >=\2/' environment-ci.yml
+            sed -i.bak "s/^  - python >=.*/  - python =${{ matrix.python }}/" environment-ci.yml
+          fi
+          rm -f environment-ci.yml.bak
+
+      - name: Set up conda environment with PETSc/MPI/HDF5
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: environment-ci.yml
+          activate-environment: proteus-dev
+
+      - name: Record the toolchain
+        shell: bash -l {0}
+        run: |
+          # The suspect list is compiler and libm, so write both down next to the
+          # dump; an artifact that cannot be attributed to a toolchain is noise.
+          uname -a
+          python -c "import sys, numpy, scipy; print(sys.version); print('numpy', numpy.__version__); print('scipy', scipy.__version__)"
+          python -c "import numpy; numpy.show_config()" || true
+          ${CC:-cc} --version || true
+          ${CXX:-c++} --version || true
+          conda list | grep -E '^(python|numpy|scipy|openblas|libblas|petsc|hdf5|h5py|mpi4py|openmpi|mpich|libgfortran|clang|gcc|compiler-rt|llvm-openmp|libcxx)\b' || true
+
+      - name: Build and install the sdist
+        shell: bash -l {0}
+        run: |
+          pip install build
+          python -m build --sdist
+          pip install dist/proteus-*.tar.gz
+
+      - name: Run the failing case with the FCT dump on
+        shell: bash -l {0}
+        run: |
+          export MPLBACKEND=AGG
+          export OPENBLAS_NUM_THREADS=1
+          export OMP_NUM_THREADS=1
+          # sdist.yml skips FCT on Darwin (test_richards.py: SKIP_FCT_ON_DARWIN);
+          # this workflow exists to run it, so lift the skip.
+          export PROTEUS_RICHARDS_FCT_ON_DARWIN=1
+          export RICHARDS_FCT_DBG=1
+          export RICHARDS_FCT_DUMP="$GITHUB_WORKSPACE/fct_dump"
+          export RICHARDS_FCT_DUMP_N="${{ inputs.dump_steps || '3' }}"
+          mkdir -p test_output && cd test_output
+          # --forked matches sdist.yml and make_ci_env.sh; the dump path is
+          # absolute so the child writes where the artifact step looks. -s keeps
+          # the [FCT] log lines out of pytest's capture.
+          python -m pytest -v -s --forked --import-mode=importlib \
+            -k "${{ inputs.test_selector || 'test_1 and FCT' }}" \
+            "$GITHUB_WORKSPACE/test/richards/test_richards.py" 2>&1 | tee run.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload the dump
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fct-dump-${{ matrix.name }}
+          path: |
+            fct_dump/
+            test_output/run.log
+          if-no-files-found: warn
+
+      # Interactive shell on the runner. This is the cheapest macOS "VM access"
+      # there is: the session prints an ssh command in the log and the job holds
+      # until you `touch /continue` or the 6h job limit. Off by default because a
+      # true input makes every leg sit idle waiting for someone to connect.
+      - name: Interactive SSH session (tmate)
+        if: ${{ always() && inputs.tmate == true }}
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true

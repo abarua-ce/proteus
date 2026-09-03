@@ -1156,6 +1156,41 @@ class LevelModel(proteus.Transport.OneLevelTransport):
             a[:] = self.u[0].dof
         self.u[0].dof[:] = saved
 
+    def _fct_dump(self, rowptr, colind, MassMatrix, mLim, uHigh, uLim):
+        """Write one .npz per FCT step so two platforms' runs can be diffed.
+
+        Enabled with RICHARDS_FCT_DUMP=<dir>; RICHARDS_FCT_DUMP_N caps how many
+        steps are written (default 3 -- the divergence that matters is the FIRST
+        one, everything after it is downstream of that).  Every array the limiter
+        reads and every array it writes goes in, so the diff names the stage the
+        two builds parted: mn/mLow/mDotLow disagreeing means the residual kernel,
+        dt_times_fH_minus_fL or min/max_m_bc means the FCT-only assembly, and
+        only Rpos/Rneg/limited_solution disagreeing means FCTStep itself.
+        """
+        import os
+        directory = os.environ.get("RICHARDS_FCT_DUMP")
+        if not directory:
+            return
+        count = getattr(self, "_fct_dump_count", 0)
+        self._fct_dump_count = count + 1
+        if count >= int(os.environ.get("RICHARDS_FCT_DUMP_N", "3")):
+            return
+        os.makedirs(directory, exist_ok=True)
+        np.savez(
+            os.path.join(directory, "fct_%04d.npz" % count),
+            dt=np.array(self.timeIntegration.dt),
+            t=np.array(getattr(self.timeIntegration, "t", np.nan)),
+            rowptr=rowptr, colind=colind, MC=MassMatrix,
+            ML=self.ML, bc_mask=self.bc_mask,
+            mn=self.mn, mLow=self.mLow, mHigh=self.mHigh, mDotLow=self.mDotLow,
+            dt_times_fH_minus_fL=self.dt_times_dC_minus_dL,
+            min_m_bc=self.min_m_bc, max_m_bc=self.max_m_bc,
+            FluxCorrectionMatrix=self.FluxCorrectionMatrix,
+            Rpos=self.Rpos, Rneg=self.Rneg,
+            fluxCorrection=self.fluxCorrection,
+            limited_solution=mLim, uHigh=uHigh, uLim=uLim,
+        )
+
     def FCTStep(self):
         rowptr, colind, MassMatrix = self.MC_global.getCSRrepresentation()
         limited_solution = np.zeros((len(rowptr) - 1),'d')
@@ -1207,6 +1242,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         uHigh = old_dof.copy()
         mLim  = limited_solution.copy()
         uLim  = self.u[0].dof.copy()
+        self._fct_dump(rowptr, colind, MassMatrix, mLim, uHigh, uLim)
         du_inf = np.linalg.norm(uLim - uHigh, np.inf)
         # Conservative value to avoid instability due to large corrections -- but
         # only on the Newton-invert path (nd > 1), which is what actually goes
