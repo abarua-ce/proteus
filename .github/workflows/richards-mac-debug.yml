@@ -141,10 +141,17 @@ jobs:
           # --forked matches sdist.yml and make_ci_env.sh; the dump path is
           # absolute so the child writes where the artifact step looks. -s keeps
           # the [FCT] log lines out of pytest's capture.
+          # Redirect and cat rather than pipe to tee: `exit ${PIPESTATUS[0]}`
+          # after the pipeline reported exit 1 on a run whose run.log said
+          # "1 passed", which made a green leg look red. rc is unambiguous.
+          set +e
           python -m pytest -v -s --forked --import-mode=importlib \
             -k "${{ inputs.test_selector || 'FCT' }}" \
-            "$GITHUB_WORKSPACE/test/richards/test_richards.py" 2>&1 | tee run.log
-          exit ${PIPESTATUS[0]}
+            "$GITHUB_WORKSPACE/test/richards/test_richards.py" > run.log 2>&1
+          rc=$?
+          cat run.log
+          echo "-- pytest exit code: $rc"
+          exit $rc
 
       - name: Upload the dump
         if: always()
