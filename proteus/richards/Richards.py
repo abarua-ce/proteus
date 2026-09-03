@@ -1176,8 +1176,14 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         if count >= int(os.environ.get("RICHARDS_FCT_DUMP_N", "3")):
             return
         os.makedirs(directory, exist_ok=True)
+        # Several cases run in one pytest session and every one of them starts its
+        # own step counter, so the file name has to carry the case or test_3 lands
+        # on top of test_1.  PYTEST_CURRENT_TEST is "<file>::<class>::<id> (call)";
+        # the id is the only part that varies here.
+        case = os.environ.get("PYTEST_CURRENT_TEST", "").split("::")[-1].split(" ")[0]
+        case = "".join(c if c.isalnum() else "_" for c in case) or "run"
         np.savez(
-            os.path.join(directory, "fct_%04d.npz" % count),
+            os.path.join(directory, "fct_%s_%04d.npz" % (case, count)),
             dt=np.array(self.timeIntegration.dt),
             t=np.array(getattr(self.timeIntegration, "t", np.nan)),
             rowptr=rowptr, colind=colind, MC=MassMatrix,

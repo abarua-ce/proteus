@@ -42,9 +42,9 @@ on:
   workflow_dispatch:
     inputs:
       test_selector:
-        description: 'pytest -k expression (default: the smallest failing case)'
+        description: 'pytest -k expression (default: all three failing FCT cases)'
         required: false
-        default: 'test_1 and FCT'
+        default: 'FCT'
       dump_steps:
         description: 'how many FCT steps to dump per run'
         required: false
@@ -142,7 +142,7 @@ jobs:
           # absolute so the child writes where the artifact step looks. -s keeps
           # the [FCT] log lines out of pytest's capture.
           python -m pytest -v -s --forked --import-mode=importlib \
-            -k "${{ inputs.test_selector || 'test_1 and FCT' }}" \
+            -k "${{ inputs.test_selector || 'FCT' }}" \
             "$GITHUB_WORKSPACE/test/richards/test_richards.py" 2>&1 | tee run.log
           exit ${PIPESTATUS[0]}
 

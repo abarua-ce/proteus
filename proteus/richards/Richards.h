@@ -1607,6 +1607,28 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
         mn_ext = 0.0, dmn_ext = 0.0, fn_ext[nSpace], dfn_ext[nSpace], an_ext[nnz], dan_ext[nnz], asn_ext[nnz], flux_ext = 0.0, bflux_ext = 0.0,
                //anb_seepage_flux=0.0, // for flux calculation
           bc_u_ext = 0.0, bc_grad_u_ext[nSpace], bc_m_ext = 0.0, bc_dm_ext = 0.0, bc_f_ext[nSpace], bc_df_ext[nSpace], bc_a_ext[nnz], bc_da_ext[nnz], bc_as_ext[nnz], jac_ext[nSpace * nSpace], jacDet_ext, jacInv_ext[nSpace * nSpace], boundaryJac[nSpace * (nSpace - 1)], metricTensor[(nSpace - 1) * (nSpace - 1)], metricTensorDetSqrt, dS, u_test_dS[nDOF_test_element], u_grad_trial_trace[nDOF_trial_element * nSpace], normal[3], x_ext, y_ext, z_ext, xt_ext, yt_ext, zt_ext, integralScaling, G[nSpace * nSpace], G_dd_G, tr_G, fluxJacobian_u_u[nDOF_trial_element], bfluxJacobian_u_u[nDOF_trial_element], fluxJacobian_un_un[nDOF_trial_element];
+        //fluxJacobian_un_un has NO writer: the exteriorNumericalFluxJacobian call
+        //for the old time level is commented out below ("probably need
+        //isDOFBoundary_un here"), yet it is read straight after into
+        //TransportMatrixn/TransportMatrixConsistentn. Left as raw stack it is
+        //whatever the previous frame put there, and that is the whole
+        //macOS-vs-Linux split in test_richards.py's FCT cases: on linux-64 and
+        //linux-aarch64 the slot happens to hold zeros, on both macOS legs it holds
+        //a NaN bit pattern. The low-order path hides it -- fmax(0.0, -NaN) is 0.0
+        //by IEEE-754, so stab_0/stab_2 pass everywhere -- but the FCT path
+        //multiplies it in directly (fH below), and 0.0 * NaN is NaN even at
+        //Theta = 1, so the boundary rows of the antidiffusive flux go NaN, the
+        //limited theta goes NaN, and vgm_invert_analytic falls through both of its
+        //comparisons (every comparison against NaN is false) to the dry cap
+        //u = -pcBarMax/alpha = -2985.07 m. That kills K at the two Dirichlet ends
+        //and the wetting front never moves.
+        //Zero, not computed: the term is deliberately absent, and at Theta = 1 it
+        //contributes nothing anyway. If a Theta < 1 scheme is ever wanted here the
+        //commented-out call has to be finished -- zero is the honest value for a
+        //term nobody computes, but it is not the right value for Crank-Nicolson.
+        for (int j = 0; j < nDOF_trial_element; j++) {
+          fluxJacobian_u_u[j] = 0.0; bfluxJacobian_u_u[j] = 0.0; fluxJacobian_un_un[j] = 0.0;
+        }
         //
         //calculate the solution and gradients at quadrature points
         //
