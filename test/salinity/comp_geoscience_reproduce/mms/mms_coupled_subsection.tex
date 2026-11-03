@@ -1,0 +1,397 @@
+% ---------------------------------------------------------------------------
+% Subsection: verification of the coupled flow-transport scheme by MMS.
+% Placeholders to resolve against the main document:
+%   \ref{sec:flow}, \ref{sec:transport}, \ref{sec:coupling},
+%   \ref{eq:cancelled}, \ref{tab:vgm}, \cite{roache2002,salari2000}
+% New references (BibTeX in mms_coupled_refs.bib):
+%   \cite{radu2014,suciu2021,shunn2012}
+% Figures (figures/, made by mms_plot.py): mms_fields.pdf, mms_profiles.pdf,
+%   mms_convergence.pdf
+% ---------------------------------------------------------------------------
+\subsection{Verification of the coupled scheme with manufactured solutions}
+\label{sec:mms}
+
+The coupling of Section~\ref{sec:coupling} is conservative and bounded by
+construction, but neither property says anything about accuracy. We therefore
+measure the convergence of the coupled discretization with the method of
+manufactured solutions (MMS) \cite{roache2002,salari2000}. Because the
+transport model advects with the fluxes produced by the flow model, and the
+flow model in turn uses the density and viscosity of the transported
+concentration, an error seen in the coupled solution can originate in either
+model or in the exchange between them. We separate these contributions with a
+hierarchy of four tests of increasing coupling strength, followed by a sweep
+of the coupling strength itself.
+
+\begin{enumerate}
+  \item[\textbf{T0}] \emph{Flow only.} The flow model of
+    Section~\ref{sec:flow} alone, with $\rho\equiv\rho_0$.
+  \item[\textbf{T1}] \emph{Constant concentration.} The coupled model with
+    $c\equiv c_0$ in the initial and boundary data and $\epsilon\neq0$. The
+    exact concentration is $c=c_0$ and the flow problem reduces to T0 with
+    gravity scaled by $\rho(c_0)/\rho_0$ and $\mathbf{K}_s$ by
+    $\mu_0/\mu(c_0)$. We require (i) $c_h\equiv c_0$ to round-off and (ii)
+    $\psi_h$ equal to the correspondingly scaled T0 solution to within the
+    nonlinear-solver tolerance. The cancelled form \eqref{eq:cancelled}
+    preserves constants for any set of fluxes, so T1 does not test transport
+    accuracy; it tests the exchange of $\rho$, $\mu$ and the carried fluid
+    mass.
+  \item[\textbf{T2}] \emph{One-way coupling.} $\epsilon=0$ and constant
+    viscosity, so the flow is independent of $c$ and the transport model is
+    driven by the discrete fluxes of a flow solution that does not see it.
+    The flow part of T2 is therefore T0.
+  \item[\textbf{T3}] \emph{Two-way coupling.} The full model, with $\rho(c)$
+    and $\mu(c)$ fed back to the flow model.
+\end{enumerate}
+
+T2 and T3 use the same manufactured fields, so comparing them shows how much
+the feedback of $c$ on the flow, which the scheme lags by one time step
+(Section~\ref{sec:coupling}), changes the errors.
+
+\paragraph{Manufactured solution.}
+Let $\Omega=(0,L)^2$ with $z$ pointing upward, $L=1$~m and $t\in(0,T]$. The
+pressure head follows the manufactured solution of Radu and
+Wang~\cite{radu2014}, which Suciu et al.~\cite{suciu2021} also use to verify a
+fully coupled Richards--transport solver,
+\begin{equation}
+  \psi_e(x,z,t) = \psi_0\Big(1 + A_\psi\,\frac{t}{T}\,b(x,z)\Big),
+  \qquad b(x,z) = 16\,\frac{x}{L}\Big(1-\frac{x}{L}\Big)\frac{z}{L}\Big(1-\frac{z}{L}\Big).
+  \label{eq:mms_psi}
+\end{equation}
+With $\psi_0=-1$, $A_\psi=1/16$ and $L=T=1$, \eqref{eq:mms_psi} is the field of
+\cite{radu2014,suciu2021}. We take $\psi_0=-1/\alpha$ and $A_\psi=1$, so that
+$\psi_e\in[-2/\alpha,-1/\alpha]$ and the effective saturation spans a range wide
+enough to exercise the nonlinearity of $k_r$. The concentration is adapted from
+Problem~2 of Shunn et al.~\cite{shunn2012}, a front that advects at a constant
+speed, widens in time and carries a transverse corrugation:
+\begin{equation}
+  c_e(x,z,t) = \bar c + A_c \tanh\!\left(\frac{e^{-\omega t}\,\xi(x,z,t)}{\delta}\right),
+  \qquad
+  \xi = z - z_f(t) + a_f\cos(2\pi x/L),
+  \qquad z_f(t) = z_0 - U t.
+  \label{eq:mms_c}
+\end{equation}
+In \cite{shunn2012} the transported scalar is the rational function of
+$\tanh$ that makes the density a $\tanh$ profile under their mixing law. Our
+density is linear in $c$, so $c_e$ itself is the $\tanh$ profile and $\rho$
+follows it; we also align the front normal with gravity and drop the
+transverse drift. The parameters are $\bar c=0.5$, $A_c=0.3$, $z_0=0.75L$,
+$U=0.5L/T$, $\delta=0.15L$, $a_f=0.05L$ and $\omega=\ln 2/T$, so the front
+width doubles over the run, together with the van Genuchten--Mualem parameters
+of Table~\ref{tab:vgm}. The final time is one transit time,
+$T=\theta_{\min}L/\max|\mathbf{v}|$, evaluated once for T3 with
+$\epsilon=0.235$ ($T=873$~s), so that every test and every point of the
+coupling sweep below shares the same $T$ and the same time steps.
+The fields are chosen so that the test measures the discretization in its
+smooth regime and nothing else:
+\begin{itemize}
+  \item $\psi_e\in[-2/\alpha,-1/\alpha]$, so the domain stays unsaturated
+    ($S_e\in[0.35,0.67]$ for the parameters of Table~\ref{tab:vgm}); no
+    seepage face activates and the retention and conductivity functions are
+    smooth. Since $b=0$ on $\partial\Omega$, the head is the constant
+    $\psi_0$ on the whole boundary and at $t=0$.
+  \item $\partial_z\psi_e\ge-4A_\psi/(\alpha L)$ and $\rho/\rho_0\ge1$, so
+    $v_z=-k_r K_{s,zz}\mu_0/\mu\,(\partial_z\psi_e+\rho/\rho_0)<0$ everywhere
+    whenever $A_\psi<\alpha L/4$. The velocity never vanishes, and the
+    dispersion tensor, which is not differentiable at $\mathbf{v}=0$, is
+    smooth.
+  \item $c_e$ is strictly monotone in $z$ and stays inside $(0.2,0.8)$, so it
+    has no interior extrema and does not approach the bounds $[0,1]$. The FCT
+    limiters then act only through the local bounds of a monotone field, and
+    the observed rates are not reduced by clipping at smooth extrema.
+\end{itemize}
+The coupling differs from that of \cite{suciu2021}, where the concentration
+enters the water content, $\theta(\psi,c)$: here it enters through
+$\rho(c)$ in the storage and the buoyancy term and through $\mu(c)$ in the
+conductivity, which are the coupling paths of Section~\ref{sec:coupling}. As a
+cross-check, T3 is repeated with the concentration of \cite{suciu2021},
+rescaled to $c=0.2+0.6\,(t/T)\,b(x,z)$, whose interior maximum the FCT
+limiters must clip.
+
+\paragraph{Source terms.}
+Substituting $(\psi_e,c_e)$ into the flow equation and the conservative
+transport equation, with $\rho=\rho(c_e,\psi_e)$ and $\mu=\mu(c_e)$, gives
+\begin{align}
+  f_w &= \partial_t(\rho\theta) + \nabla\cdot(\rho\mathbf{v}),
+  \label{eq:mms_fw}\\
+  f_s &= \partial_t(\rho\theta c) + \nabla\cdot(\rho\mathbf{v}c - \rho\theta\mathbf{D}\nabla c),
+  \label{eq:mms_fs}
+\end{align}
+evaluated symbolically. The manufactured solutions of \cite{shunn2012} satisfy
+the continuity equation without a source, because continuity is central to
+their solution algorithm. The same holds for the coupling here, but the Darcy
+velocity is fixed by $\psi$, and no closed-form pair $(\psi_e,c_e)$ with
+$f_w=0$ is available for the van Genuchten--Mualem relations; we therefore
+keep $f_w\neq0$ and test the exchange of the fluid balance separately in T1.
+The transport model solves the cancelled form \eqref{eq:cancelled}, obtained
+by subtracting $c$ times the flow equation from the transport equation. Its
+source is therefore
+\begin{equation}
+  g = f_s - c\,f_w
+    = \rho\theta\,\partial_t c + \rho\mathbf{v}\cdot\nabla c
+      - \nabla\cdot(\rho\theta\mathbf{D}\nabla c).
+  \label{eq:mms_g}
+\end{equation}
+Both sources are added as lumped nodal terms evaluated at $t^{n+1}$:
+$-|\Omega_i|\,f_w(\mathbf{x}_i,t^{n+1})$ in the flow residual and
+$-|\Omega_i|\,g(\mathbf{x}_i,t^{n+1})$ in the transport residual, where
+$|\Omega_i|=\int_\Omega w_i\,d\mathbf{x}$. In the discrete transport equation
+the fluid source reaches node $i$ through the nodal exchange $B_i$, which at
+an interior node carries the local concentration $c_i$ and so drops out of
+\eqref{eq:cancelled}. The solute added at node $i$ is thus
+$|\Omega_i|(g+c_i f_w)$, consistent with \eqref{eq:mms_fs}. Passing $f_s$
+instead of $g$ would leave an $O(1)$ error of size $c f_w$.
+
+Each test is run first with a constant diffusion coefficient,
+$\mathbf{D}=D_m\mathbf{I}$, as in \cite{suciu2021}, and then with mechanical
+dispersion added, $\alpha_L=10^{-3}$~m and $\alpha_T=0.1\,\alpha_L$. We take
+$D_m=10^{-6}$~m$^2$/s, the largest value for which the mesh P\'eclet number
+$|\mathbf{v}|h/(\theta D)$ at the front stays above one on every mesh (from
+23 at $N=10$ to 1.4 at $N=160$), so the transport is advection dominated
+throughout the ladder. Dirichlet data $\psi=\psi_e$ (imposed weakly,
+Section~\ref{sec:flow}) and $c=c_e$ are prescribed on all of $\partial\Omega$,
+and the initial data are the nodal interpolants of $\psi_e(\cdot,0)$ and
+$c_e(\cdot,0)$.
+
+\paragraph{Refinement and error measures.}
+We use structured triangulations with $N=10\cdot2^k$ intervals per side,
+$k=0,\dots,4$, $h=L/N$, and refine space and time together, $\Delta t\propto h$
+at a fixed Courant number
+$\mathrm{Co}=\Delta t\,\max|\mathbf{v}|/(\theta_{\min}h)=0.5$. At $t=T/4$,
+$T/2$ and $T$ we report the lumped-mass weighted discrete $L^2$ error
+\begin{equation}
+  \|e\|_{L^2}(c) = \Big(\sum_i |\Omega_i|\,\big|c_i - c_e(\mathbf{x}_i,t)\big|^2\Big)^{1/2},
+\end{equation}
+the same norm for $\psi$, and the observed order
+$\log_2\big(\|e\|^{(k-1)}_{L^2}/\|e\|^{(k)}_{L^2}\big)$. Every run also reports the fluid continuity
+defect of the transport model, i.e.\ the change in the carried fluid mass minus
+the time-integrated exchange with the flow model, normalized by the initial
+mass. By the construction of Section~\ref{sec:coupling} it should sit at the
+level of the nonlinear-solver tolerance on every mesh, independently of the
+discretization error.
+
+Each test is run with both models in their low-order form (FCT off) and with
+FCT on in both models, the configuration used in the remainder of this paper.
+Both models use backward Euler, and the coupling lags $\rho(c)$ and $\mu(c)$ by
+one step, i.e.\ the coupled equations are solved with a single outer iteration
+per step, which limits the temporal order to one \cite{shunn2012}. Since
+$\Delta t$ is refined with $h$, the observed orders combine the spatial and
+temporal errors and tend to one as the mesh is refined; a rate above one
+means that the spatial error, which converges faster, still dominates
+\cite{shunn2012}.
+
+\paragraph{Results.}
+T1 is reproduced exactly: $c_h\equiv c_0$ at every node and step, and the
+coupled $\psi_h$ differs from the correspondingly scaled flow-only solution by
+at most $3\cdot10^{-16}$~m on $N=10$ and $N=20$. Figure~\ref{fig:mms_fields}
+compares the manufactured and the computed fields of T3 at $t=T$ on $N=80$.
+The concentration error, at most $4\cdot10^{-3}$, sits at the front: negative
+above its centre and positive below it, the signature of numerical diffusion.
+The head error, at most 0.43~cm against an 8.6~cm range of $\psi_e$, is largest
+in the upper half of the domain, above the dry centre.
+Figure~\ref{fig:mms_profiles} shows the same comparison along the vertical
+line $x=L/2$ on $N=20$ and $N=80$.
+
+Tables~\ref{tab:mms_t3_psi} and~\ref{tab:mms_t3_c} give the $L^2$ errors of
+T3 at $t=T/4$, $T/2$ and $T$, and Figure~\ref{fig:mms_convergence} plots them
+at $t=T$. The head is where the high-order flow flux pays off. With FCT, the
+order of $\|e\|_{L^2}(\psi)$ is 1.1 to 1.2 at $t=T/4$, 1.2 to 1.3 at $t=T/2$
+and reaches 1.51 at $t=T$, and the error on $N=160$ is 1.5, 2.5 and 3.3 times
+smaller than with the low-order scheme at the three times. The low-order
+scheme stays at or below first order, with orders of 0.77 to 0.99. An order
+above one means that the spatial error, which converges faster, still dominates the
+combined error, as discussed above.
+
+The concentration converges at first order with FCT at every time, with
+orders of 1.0 to 1.2. FCT reduces the concentration error on the coarse and
+intermediate meshes, by 39 to 58\% at $t=T/4$ on $N\le40$, but the low-order
+error converges faster on the finest meshes, with orders of 1.2 to 1.4, and on
+$N=160$ the two schemes agree to within 6\% at $t=T$. On these meshes the
+backward Euler error, which both schemes share, dominates the concentration
+error.
+
+T2 shows the same behaviour, with orders of $\|e\|_{L^2}(\psi)$ at $t=T$ of
+1.57 (FCT) and 0.94 (low order) on $N=160$; since the flow of T2 does not see
+$c$, these are the rates of T0. Adding mechanical dispersion changes the FCT
+errors by at most 3.5\% and leaves the head unchanged; the low-order
+concentration errors drop by up to 16\%. For the concentration of
+\cite{suciu2021}, whose maximum is clipped by the limiters,
+$\|e\|_{L^2}(c)$ still converges at 1.67 on $N=160$. The fluid continuity
+defect stays below $1.4\cdot10^{-18}$ in every run.
+
+\paragraph{Coupling strength.}
+The only coupling error of the scheme is the one-step lag of $\rho(c)$ and
+$\mu(c)$. We repeat T3 with FCT on $N=40$ for
+$\epsilon\in\{0,0.1,0.235,0.4\}$ with constant viscosity, and for two
+viscosity contrasts at $\epsilon=0.235$, keeping the manufactured fields and
+recomputing the sources for each value (Table~\ref{tab:mms_sweep}). Over this
+range $\|e\|_{L^2}(c)$ at $t=T$ changes by less than 10\%, and halving
+$\Delta t$ reduces it by a factor of 1.70 to 1.96, so on this mesh the
+concentration error is first order in time for every coupling strength. The
+difference of the errors at $\epsilon$ and at $\epsilon=0$ is not a measure of
+the lag error, since the sources, and with them the errors, change with
+$\epsilon$; it is small compared with the errors themselves and changes sign,
+so the feedback adds no error that the norms resolve.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{mms_fields}
+  \caption{Two-way coupling (T3), FCT, $N=80$, $t=T$: manufactured (left)
+    and computed (middle) concentration and pressure head, and their
+    difference (right).}
+  \label{fig:mms_fields}
+\end{figure*}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{mms_profiles}
+  \caption{Profiles of $c$ and $\psi$ along $x=L/2$ at $t=T$ for T3 with FCT:
+    manufactured solution and computed solutions on $N=20$ and $N=80$.}
+  \label{fig:mms_profiles}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{mms_convergence}
+  \caption{Two-way coupling (T3): $\|e\|_{L^2}$ of $c$ and $\psi$ at $t=T$ against
+    the mesh size, with $\Delta t\propto h$ at $\mathrm{Co}=0.5$. Dashed and
+    dotted lines have slopes one and two.}
+  \label{fig:mms_convergence}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\begin{tabular}{c|cc|cc}
+\hline
+\multirow{2}{*}{$h_e$ [m]}
+& \multicolumn{2}{c|}{\textbf{Low Order}}
+& \multicolumn{2}{c}{\textbf{FCT}} \\
+\cline{2-5}
+& $\|e\|_{L^2}$ & Order
+& $\|e\|_{L^2}$ & Order \\
+\hline
+\hline
+
+\multicolumn{5}{c}{\textbf{$t = T/4 = 218.2$ s}} \\
+\hline
+$0.1$        & $1.641\times10^{-3}$ & --
+           & $2.000\times10^{-3}$ & -- \\
+$0.05$       & $8.302\times10^{-4}$ & $0.983$
+           & $8.835\times10^{-4}$ & $1.179$ \\
+$0.025$      & $4.174\times10^{-4}$ & $0.992$
+           & $3.829\times10^{-4}$ & $1.206$ \\
+$0.0125$     & $2.104\times10^{-4}$ & $0.988$
+           & $1.674\times10^{-4}$ & $1.194$ \\
+$0.00625$    & $1.136\times10^{-4}$ & $0.889$
+           & $7.619\times10^{-5}$ & $1.135$ \\
+\hline\hline
+
+\multicolumn{5}{c}{\textbf{$t = T/2 = 436.4$ s}} \\
+\hline
+$0.1$        & $5.077\times10^{-3}$ & --
+           & $4.897\times10^{-3}$ & -- \\
+$0.05$       & $2.687\times10^{-3}$ & $0.918$
+           & $2.181\times10^{-3}$ & $1.167$ \\
+$0.025$      & $1.380\times10^{-3}$ & $0.961$
+           & $9.047\times10^{-4}$ & $1.269$ \\
+$0.0125$     & $6.992\times10^{-4}$ & $0.981$
+           & $3.588\times10^{-4}$ & $1.334$ \\
+$0.00625$    & $3.656\times10^{-4}$ & $0.936$
+           & $1.447\times10^{-4}$ & $1.310$ \\
+\hline\hline
+
+\multicolumn{5}{c}{\textbf{$t = T = 872.8$ s}} \\
+\hline
+$0.1$        & $1.965\times10^{-2}$ & --
+           & $1.750\times10^{-2}$ & -- \\
+$0.05$       & $1.155\times10^{-2}$ & $0.767$
+           & $8.910\times10^{-3}$ & $0.974$ \\
+$0.025$      & $6.314\times10^{-3}$ & $0.871$
+           & $3.859\times10^{-3}$ & $1.207$ \\
+$0.0125$     & $3.315\times10^{-3}$ & $0.930$
+           & $1.468\times10^{-3}$ & $1.395$ \\
+$0.00625$    & $1.725\times10^{-3}$ & $0.942$
+           & $5.157\times10^{-4}$ & $1.509$ \\
+\hline
+\end{tabular}
+\caption{Two-way coupling (T3), $\Delta t\propto h$ at $\mathrm{Co}=0.5$: discrete $L^2$ error of the pressure head $\psi$ against the manufactured solution.}
+\label{tab:mms_t3_psi}
+\end{table}
+
+\begin{table}[t]
+\centering
+\begin{tabular}{c|cc|cc}
+\hline
+\multirow{2}{*}{$h_e$ [m]}
+& \multicolumn{2}{c|}{\textbf{Low Order}}
+& \multicolumn{2}{c}{\textbf{FCT}} \\
+\cline{2-5}
+& $\|e\|_{L^2}$ & Order
+& $\|e\|_{L^2}$ & Order \\
+\hline
+\hline
+
+\multicolumn{5}{c}{\textbf{$t = T/4 = 218.2$ s}} \\
+\hline
+$0.1$        & $1.786\times10^{-2}$ & --
+           & $1.084\times10^{-2}$ & -- \\
+$0.05$       & $9.863\times10^{-3}$ & $0.857$
+           & $4.675\times10^{-3}$ & $1.214$ \\
+$0.025$      & $4.922\times10^{-3}$ & $1.003$
+           & $2.081\times10^{-3}$ & $1.168$ \\
+$0.0125$     & $2.119\times10^{-3}$ & $1.216$
+           & $9.769\times10^{-4}$ & $1.091$ \\
+$0.00625$    & $8.002\times10^{-4}$ & $1.405$
+           & $4.748\times10^{-4}$ & $1.041$ \\
+\hline\hline
+
+\multicolumn{5}{c}{\textbf{$t = T/2 = 436.4$ s}} \\
+\hline
+$0.1$        & $2.342\times10^{-2}$ & --
+           & $1.445\times10^{-2}$ & -- \\
+$0.05$       & $1.296\times10^{-2}$ & $0.853$
+           & $6.656\times10^{-3}$ & $1.119$ \\
+$0.025$      & $6.475\times10^{-3}$ & $1.001$
+           & $3.113\times10^{-3}$ & $1.097$ \\
+$0.0125$     & $2.739\times10^{-3}$ & $1.241$
+           & $1.516\times10^{-3}$ & $1.038$ \\
+$0.00625$    & $1.115\times10^{-3}$ & $1.297$
+           & $7.567\times10^{-4}$ & $1.002$ \\
+\hline\hline
+
+\multicolumn{5}{c}{\textbf{$t = T = 872.8$ s}} \\
+\hline
+$0.1$        & $1.856\times10^{-2}$ & --
+           & $1.658\times10^{-2}$ & -- \\
+$0.05$       & $9.922\times10^{-3}$ & $0.903$
+           & $7.618\times10^{-3}$ & $1.122$ \\
+$0.025$      & $4.951\times10^{-3}$ & $1.003$
+           & $3.615\times10^{-3}$ & $1.075$ \\
+$0.0125$     & $2.090\times10^{-3}$ & $1.244$
+           & $1.804\times10^{-3}$ & $1.003$ \\
+$0.00625$    & $8.741\times10^{-4}$ & $1.258$
+           & $9.253\times10^{-4}$ & $0.963$ \\
+\hline
+\end{tabular}
+\caption{Two-way coupling (T3), $\Delta t\propto h$ at $\mathrm{Co}=0.5$: discrete $L^2$ error of the concentration $c$ against the manufactured solution.}
+\label{tab:mms_t3_c}
+\end{table}
+
+\begin{table}[t]
+  \centering
+  \caption{Coupling strength: $\|e\|_{L^2}(c)$ of T3 with FCT on $N=40$ at $t=T$, for
+    two time steps, and their ratio.}
+  \label{tab:mms_sweep}
+  \small
+  \begin{tabular}{rr ccc}
+    \hline
+    $\epsilon$ & $\omega_{\max}$ & $\Delta t=10.9$~s & $\Delta t/2$ & ratio \\
+    \hline
+    0     & 0    & $3.92\times10^{-3}$ & $2.00\times10^{-3}$ & 1.96 \\
+    0.1   & 0    & $3.76\times10^{-3}$ & $1.96\times10^{-3}$ & 1.92 \\
+    0.235 & 0    & $3.61\times10^{-3}$ & $1.97\times10^{-3}$ & 1.84 \\
+    0.4   & 0    & $3.55\times10^{-3}$ & $2.09\times10^{-3}$ & 1.70 \\
+    0.235 & 0.1  & $3.65\times10^{-3}$ & $1.94\times10^{-3}$ & 1.89 \\
+    0.235 & 0.25 & $3.66\times10^{-3}$ & $1.94\times10^{-3}$ & 1.89 \\
+    \hline
+  \end{tabular}
+\end{table}
