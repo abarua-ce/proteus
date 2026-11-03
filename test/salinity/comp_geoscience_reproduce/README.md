@@ -12,6 +12,8 @@ the deck and redraws the figure.
 | `henry/` | `iso_combined_FCT_ref_1.png`, `low_order/iso_combined_Stab_2_lo.png`, `domain_henry_minimal.png` | `Henry_problem/Henry_corrected/right_dbc/ref_1` | 64 ranks, 2 runs |
 | `elder/` | `elder_u_colour_velocity_20yr.png`, `elder_isochlors_velocity_20yr.png` | `Elder_problem/stab_5/run_uhdcfg_20yr_nocap` | 64 ranks, ~10 min |
 | `simmons_uhd/` | `fig8_uhd_colormap.png` | `benchmark_problem/UMD/run_uhd_l4_ramp` | 90 ranks, ~70 min |
+| `bioswale/` | `u_three_times_bioswale.png`, `bioswale_contamination_domain.png` | `Bioswale_contamination/start_new` (commit `22e2d8fb`) | 2 ranks, ~1 min |
+| `levee_density/` | `u_three_times_overlay_{density,non_density}.png`, `levee_river_side_no_plume.png` | `Levee_contamination_Density/Case_D{,/non_density}` (commit `5066f6b5`) | 2 x 64 ranks, ~20 min |
 
 Every `run.sh` takes an optional run directory (default `./run`, `./run_uhd`
 for Simmons) and copies the deck into it, so the bundle itself stays clean.
@@ -33,6 +35,13 @@ Detach the long ones:
   runs predate the 2026-11-02 source changes (Richards FCT `d^G` term removed;
   TADR FCT bounds on `c^{n+1}`), so today's build will not reproduce them bit
   for bit.  Henry ref_1 ran in May 2026 in the `petsc-dev-again` env.
+- **TADR FCT is not partition-independent under MPI.**  `TADR.FCTStep` does not
+  ghost-exchange its limiter ratios `Rpos`/`Rneg` (Richards' FCT does), so the
+  two ranks sharing a cut edge limit it differently and the limited flux is
+  not conservative along the partition.  Zalesak ref 1, STAB 5: low order
+  serial vs 4 ranks agree to 3e-17; FCT differs by up to 0.077 and in total
+  mass by 3.8%.  The Henry (64 ranks), Elder (64) and UHD (90) FCT figures ran
+  through this path; how much it changes them is unmeasured.
 - Solver settings: each deck's `petsc.options.superlu` (direct SuperLU_dist LU
   for both `richards_` and `tadr_`).  Henry passes the same options
   (`-ksp_type preonly -pc_type lu -pc_factor_mat_solver_type superlu_dist`) on
@@ -43,13 +52,23 @@ Detach the long ones:
 ### Zalesak's disk (`zalesak/`)
 `thelper_tadr.py` with `problem=1`: notched disk, cone and hump on the unit
 square, rigid rotation `v = 2 pi (0.5 - y, x - 0.5)`, so `T = 1` is one
-revolution.  `refinement=4`: 161 x 161 nodes; STABILIZATION_TYPE 2
-(EntropyViscosity), explicit SSP2, `cfl = 0.5`.  Low order is the same scheme
-with `FCT=False` (TADR then advances with `uLow`).  `plot_disc.py` draws exact
-/ low order / FCT and prints `u_min`, `u_max` and the L1 error of each.
-**These settings were chosen on 2026-11-03.  The run that made the manuscript's
-`disc_r.png` was not recorded, and `plot_disc.py` is new.  Rerun and replace
-the figure.**
+revolution; `u = 0` is imposed on the whole boundary.  `run.sh` runs the same
+scheme twice, `FCT=False` (low order, `uLow`) and `FCT=True`, at `cfl = 0.5`:
+
+| knob | default | meaning |
+|---|---|---|
+| `ZALESAK_STAB` | 2 | 2 = EntropyViscosity, explicit SSP2; 5 = ImplicitEV, backward Euler + Newton |
+| `ZALESAK_REF` | 4 | nodes per side `2**ref * 10 + 1` (4: 161, 5: 321) |
+| `ZALESAK_NP` | 1 | MPI ranks; > 1 switches the deck to PETSc SuperLU_dist (`petsc.options.superlu`) |
+
+`plot_disc.py` draws FCT and low order after one revolution as 3D surfaces
+(`disc_r.png`) and prints `u_min`, `u_max` and the L1 error against the exact
+solution (the initial condition).  `compare_np.py <serial dir> <MPI dir>`
+compares a serial and an MPI run: total mass and node-matched max difference.
+Runs so far: `run_stab5` (STAB 5, ref 4, serial), `run_stab5_ref5` (ref 5,
+serial) and `run_stab5_ref5_np64` (ref 5, 64 ranks).
+**The run that made the manuscript's original `disc_r.png` was not recorded;
+these settings were chosen on 2026-11-03.**
 
 ### Manufactured solution (`mms/`)
 Definitions of T1-T3 and the two refinement paths: `MMS_PLAN.md` and
@@ -103,3 +122,32 @@ sigma) and `data/z_lab_UHD.csv` (lab), from `digitize_fig7.py`; lab-photo
 masks at 32 and 40 min from `digitize_uhd_photos.py`.
 **`fig8_uhd_colormap.png` shows t = 32 and 40 min** (`plot_fig8.py`,
 `FIG_TIMES`).  The caption's 12/32/48 min is wrong.
+
+### Bioswale (`bioswale/`)
+3 m x 5 m cross-section with a 0.25 m-radius perforated drain (seepage
+boundary).  Three van Genuchten zones exactly as in the manuscript table (root
+zone, swale channel, base).  Hydrostatic IC; 0.5 m ponding on the top for
+`L/3 <= x <= 2L/3`.  TADR STAB 2 + FCT, `c_in = 1`, `T = 0.5 d`.  The committed
+deck reproduces the figure: a 2026-05-06 rerun redrew it pixel for pixel.
+**Manuscript fixes:** the ponding interval is `1 <= x <= 2 m`, not
+`3.33 <= x <= 6.67` (outside the 3 m domain); the panels are at 0.12, 0.25 and
+0.50 d, not 0.13; and the "Initial and Boundary Conditions" paragraph placed
+after the bioswale figure (river stage 7.25 m, riverside Dirichlet head) is a
+levee setup, not the bioswale's.
+
+### Levee, density vs passive tracer (`levee_density/`)
+160 m x 57 m homogeneous sand (Ks 1.06 m/d, theta_r 0.065, theta_s 0.41,
+n 1.89, alpha 7.5 1/m), water table 45 m, river stage 48 m on the wetted river
+face.  TADR STAB 2 + FCT, `Dm = 1.886e-2 m^2/d`, `alpha_L = 0.1`,
+`alpha_T = 0.01`, `T = 2e4 d`; panels at 2446.9, 9937.6 and 20025.0 d.
+`density/` has `rho_s = 1.025`; `non_density/` has `rho_s = 1` and
+`DENSITY_MODEL=None`, and nothing else differs.
+**Manuscript fix:** the inflow concentration is `c_in = 0.7`, not 1.
+**Not reproducible as it stands.**  The figures came from runs that ended on
+2026-05-04 (64 ranks, petsc-dev-again).  The same decks rerun on 2026-05-05,
+same env and rank count, gave different plumes in both cases, and the rerun
+was unbounded: u max over the non-density run was 3.62 against the 0.7
+inflow, vs 0.713 in the run behind the figure.  The first steps of the two
+runs agree to round-off, so the likely cause is a change in the proteus build
+between the two runs, not the deck.  `run.sh` writes `u_range.txt` for each
+case so a rerun can be checked against the 0.7 bound.

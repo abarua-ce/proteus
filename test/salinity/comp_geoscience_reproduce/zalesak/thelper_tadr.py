@@ -24,7 +24,8 @@ ct=Context.Options([
     ("cE",0.1,"Entropy viscosity constant"),
     ("cK",1.0,"Artificial compression constant"),
     ("cfl",0.5,"Target cfl"),
-    ("SSPOrder",2,"SSP method of order 1, 2 or 3")
+    ("SSPOrder",2,"SSP method of order 1, 2 or 3"),
+    ("parallel",False,"Use PETSc solvers (tadr_ options); required under mpiexec")
 ],mutable=True)
 
 assert ct.problem==0 or ct.problem==1 or ct.problem == 2, "problem must be set to 0 or 1"
@@ -36,7 +37,7 @@ lag_shockCapturing_tadr=True
 nd=ct.nd
 
 # General parameters #
-parallel = False # if True use PETSc solvers
+parallel = ct.parallel # if True use PETSc solvers
 linearSmoother = None
 checkMass = False
 
