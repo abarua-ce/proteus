@@ -77,7 +77,7 @@ coefficients = Richards.Coefficients(nd,
                                      STABILIZATION_TYPE=2,
                                      ENTROPY_TYPE=1,
                                      LUMPED_MASS_MATRIX= False ,
-                                     FCT=True,#True,
+                                     FCT=False,  # low order: FCT off in Richards as well as TADR
                                      num_fct_iter=0,
                                      # FOR ENTROPY VISCOSITY
                                      cE=1.0,
