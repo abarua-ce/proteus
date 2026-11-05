@@ -1154,6 +1154,11 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         #all inside calculateResidual_entropy_viscosity -- see the consBoundaryFlux
         #comment there.  It is kept here for the RICHARDS_BC_DBG probe.
         self.consBoundaryFlux = np.zeros(self.u[0].dof.shape, 'd')
+        #per-DOF row rate that is not an interior edge exchange (positive into the
+        #domain), filled by the entropy-viscosity kernel; boundaryFluxDOF + the row
+        #sums of edgeFluxLow is the row's whole low-order rate.  Diagnostic only
+        #(vdft_metrics.py flow balance); see the boundaryFluxDOF note in Richards.h.
+        self.boundaryFluxDOF = np.zeros(self.u[0].dof.shape, 'd')
         #nodal water source, filled by Coefficients.preStep when the deck sets
         #mms_source; zero otherwise
         self.nodalSource = np.zeros(self.u[0].dof.shape, 'd')
@@ -1977,6 +1982,7 @@ class LevelModel(proteus.Transport.OneLevelTransport):
         argsDict["anb_seepage_flux_n"]= self.anb_seepage_flux_n
         argsDict["consBoundaryFlux"] = self.consBoundaryFlux
         argsDict["edgeFluxLow"] = self.edgeFluxLow
+        argsDict["boundaryFluxDOF"] = self.boundaryFluxDOF
         argsDict["nodalSource"] = self.nodalSource
         argsDict["freeDOFMaterialTypes"] = self.freeDOFMaterialTypes
         ######################################################################################
