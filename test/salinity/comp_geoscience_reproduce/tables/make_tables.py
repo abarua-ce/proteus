@@ -23,6 +23,7 @@ All log quantities above are global MPI reductions.
 """
 import glob
 import re
+import sys
 from pathlib import Path
 
 import h5py
@@ -41,12 +42,13 @@ RUNS = {
     "henry": [("FCT", ROOT / "henry/run_clip/fct", "henry/run_clip/henry_error_fct.txt"),
               ("low order", ROOT / "henry/run_clip/lo", "henry/run_clip/henry_error_lo.txt")],
     "elder": [("FCT", ROOT / "elder/run_dK")],
-    "bioswale": [("FCT", ROOT / "bioswale/run_clip")],
+    "bioswale": [("FCT", ROOT / "bioswale/run_beta0_weak")],
     "levee": [("density", ROOT / "levee_density/run_dK/density"),
               ("non-density", ROOT / "levee_density/run_dK/non_density")],
+    "uhd": [("FCT", ROOT / "simmons_uhd/run_dK")],
 }
 BOUNDS = {"zalesak": (0.0, 1.0), "henry": (0.0, 1.0), "elder": (0.0, 1.0),
-          "bioswale": (0.0, 1.0), "levee": (0.0, 0.7), "mms": (0.2, 0.8)}
+          "bioswale": (0.0, 1.0), "levee": (0.0, 0.7), "mms": (0.2, 0.8), "uhd": (0.0, 1.0)}
 MMS_N = [10, 20, 40, 80, 160, 320]
 
 F = r"([-+]?[\d.]+(?:e[-+]?\d+)?)"
@@ -204,6 +206,33 @@ write("henry", "Henry problem: conservation, bounds and error against the semi-a
       notes_common + ["L2, Linf: nodal error against the semi-analytical solution (Zidane et al. 2012)"])
 for case, title in (("elder", "Elder problem (20 years)"),
                     ("bioswale", "Bioswale, bio2d set-up (T = 0.5 d)"),
-                    ("levee", "Levee, density and non-density")):
+                    ("levee", "Levee, density and non-density"),
+                    ("uhd", "Simmons UHD, level 4 (48 min)")):
     h, rows = coupled(case, title + ": conservation and bounds")
     write(case, title + ": conservation and bounds", h, rows, notes_common)
+
+# 7. UHD penetration depth: depth below the surface (LZ = 1.06 m) of the deepest node
+# with u >= 0.7 (cases.PENETRATION_THRESHOLD), at the times of the lab record
+sys.path.insert(0, str(ROOT / "simmons_uhd"))
+import cases
+import penetration_height
+d = RUNS["uhd"][0][1]
+steps, z = penetration_height.penetration_series(glob.glob(f"{d}/*.h5")[0])
+t_num = penetration_height.load_times(str(d / Path(glob.glob(f"{d}/*.h5")[0]).stem)) / 60.0
+lab = np.loadtxt(ROOT / "simmons_uhd/data/z_lab_UHD.csv", delimiter=",", comments="#")
+hgs = np.loadtxt(ROOT / "simmons_uhd/data/z_hgs_UHD.csv", delimiter=",", comments="#")
+lab = lab[lab[:, 0] > 0]
+# the lab record is read to 0.01 min off the 3-min output grid (digitize_fig7.py)
+k = [int(np.argmin(np.abs(t_num - t))) for t in lab[:, 0]]
+d_num = cases.LZ - z[k]
+d_hgs = np.interp(lab[:, 0], hgs[:, 0], hgs[:, 1])
+rows = [[f"{t:.0f}", f"{a:.3f}", f"{b:.3f}", f"{c:.3f}"] for t, a, b, c in zip(lab[:, 0], lab[:, 1], d_hgs, d_num)]
+r_l, r_h = penetration_height.correlation(lab[:, 1], d_num), penetration_height.correlation(d_hgs, d_num)
+rows.append(["r", "%.4f" % r_l, "%.4f" % r_h, ""])
+rows.append(["eps_z", "%.4f" % penetration_height.eps_z(lab[:, 1], d_num),
+             "%.4f" % penetration_height.eps_z(d_hgs, d_num), ""])
+write("uhd_depth", "Simmons UHD: penetration depth of the u = 0.7 front",
+      ["t (min)", "lab (m)", "HGS (m)", "this work (m)"], rows,
+      ["depth below the surface of the deepest node with u >= 0.7",
+       "lab: Simmons et al. (2002); HGS: 30-realisation mean of Guevara Morel & Graf (2023), Fig. 7",
+       "r, eps_z: Eqs. (19)-(20) of Guevara Morel & Graf (2023), this work against lab / HGS"])

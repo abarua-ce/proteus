@@ -56,7 +56,7 @@ coefficients = MyCoefficients(
     checkMass=checkMass,
     FCT=True,
     LUMPED_MASS_MATRIX=True,
-    forceStrongConditions=True,
+    forceStrongConditions=False,
     STABILIZATION_TYPE=5,  # ImplicitEV; the paper figure's deck used 2
     diagonal_conductivity= True,
     ENTROPY_TYPE='LOG',
@@ -112,3 +112,11 @@ fluxBoundaryConditions = {0:'setFlow'}
 
 advectiveFluxBoundaryConditions = {0: getZeroDiffusiveFlux}  # use 'setFlow' behavior
 diffusiveFluxBoundaryConditions  = {0: {0: getZeroDiffusiveFlux}}
+
+# Conservation, bounds and cost measures of the run (vdft_metrics.json in the run
+# directory); run.sh copies the helper next to the deck.  Changes nothing in the solution.
+try:
+    import vdft_metrics
+    vdft_metrics.install(coefficients)
+except ImportError:
+    pass

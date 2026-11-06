@@ -1624,6 +1624,16 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     // transport model can advect with it and conserve.  Theta part only
     // (Theta is hardwired to 1).
     xt::pyarray<double> &edgeFluxLow                   = args.array<double>("edgeFluxLow");
+    // OUT: per DOF, the part of the residual's row rate that is not an interior
+    // edge exchange, positive into the domain: minus the exterior-face integral
+    // of row i, plus ith_flux_term - sum_j edgeFluxLow_ij (the weak-Dirichlet
+    // block, the useBndDiff block and the nodal source).  With it,
+    // boundaryFluxDOF_i + sum_j edgeFluxLow_ij is the whole low-order rate of
+    // row i, so ML_i (m_i - mn_i)/dt minus that is the Newton residual of an
+    // unmasked row (the flow-balance measure of vdft_metrics.py; same quantity
+    // as cekees/proteus 07e15718, whose edgeFluxLow holds the whole row flux).
+    // Diagnostic only: nothing in the flow model reads it.
+    xt::pyarray<double> &boundaryFluxDOF               = args.array<double>("boundaryFluxDOF");
     // IN: nodal water source [mass/(volume time)], added to row i as ML_i*nodalSource_i
     // (lumped).  Zero unless the deck passes Coefficients(mms_source=...), e.g. the
     // flow source of a manufactured solution.
@@ -1659,6 +1669,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
     std::fill(velocity_couple.data(), velocity_couple.data() + velocity_couple.size(), 0.0);
     std::fill(ebqe_velocity_ext_couple.data(), ebqe_velocity_ext_couple.data() + ebqe_velocity_ext_couple.size(), 0.0);
     std::fill(consBoundaryFlux.data(), consBoundaryFlux.data() + consBoundaryFlux.size(), 0.0);
+    std::fill(boundaryFluxDOF.data(), boundaryFluxDOF.data() + boundaryFluxDOF.size(), 0.0);
     // rows that own at least one exterior-face quadrature point; only these get
     // the consBoundaryFlux accumulation in the DOF loop (it needs an extra
     // closure evaluation per edge, so it is not done on interior rows)
@@ -2204,6 +2215,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       for (int i = 0; i < nDOF_test_element; i++) {
           int eN_i = eN * nDOF_test_element + i;
           globalResidual.data()[offset_u + stride_u * u_l2g.data()[eN_i]] += elementResidual_u[i];
+          boundaryFluxDOF.data()[offset_u + stride_u * u_l2g.data()[eN_i]] -= elementResidual_u[i];
       }//i
     } //ebNE
     /////////////////////////////////////////////////////////////////
@@ -2321,6 +2333,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       double ith_dissipative_term           = 0;
       double ith_low_order_dissipative_term = 0;
       double ith_flux_term                  = 0;
+      double ith_interior_flux_term         = 0; // sum_j edgeFluxLow_ij
       double ith_consistent_flux_term       = 0;
       double dLii                           = 0.;
       double m, dm, f[nSpace], df[nSpace], a[nnz], da[nnz], as[nnz];
@@ -2444,6 +2457,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
           consBoundaryFlux.data()[i] += fL_int;
         }
         edgeFluxLow.data()[ij] = fL_int;
+        ith_interior_flux_term += fL_int;
         dt_times_fH_minus_fL.data()[ij] = dt * fA;
         //dt_times_fH_minus_fL.data()[ij] = dt * fA_CN;
         ij += 1;
@@ -2453,6 +2467,7 @@ inline void exteriorNumericalFlux2(const double &bc_flux, int rowptr[nSpace], in
       // exchange: it stays out of edgeFluxLow, and a coupled transport model finds
       // it in its nodal boundary flux B_i.
       ith_flux_term += MLi * nodalSource.data()[i];
+      boundaryFluxDOF.data()[i] += ith_flux_term - ith_interior_flux_term;
       mDotLow.data()[i] = ith_flux_term/MLi;
       cflux[i] = ith_consistent_flux_term;
       evaluateCoefficients(a_rowptr.data(), a_colind.data(), rho, rho_i, beta, gravity.data(),

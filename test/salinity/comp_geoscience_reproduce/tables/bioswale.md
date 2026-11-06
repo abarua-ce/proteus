@@ -2,7 +2,7 @@
 
 | run | steps | solute MB error | fluid mass drift | interior fluid residual | u min | u max | in [0, 1] |
 |---|---|---|---|---|---|---|---|
-| FCT | 432 | 2.1e-20 | 5.9e-06 | -- | 0.0e+00 | 1.000000 | yes |
+| FCT | 430 | 1.1e-20 | 2.2e-11 | -- | 0.0e+00 | 1.000000 | yes |
 
 - solute MB error: time-integrated solute created by the coupling / solute mass at T
 - fluid mass drift: max over steps of |sum ML (M - m_flow)| / sum ML m_flow
