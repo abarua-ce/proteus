@@ -94,7 +94,8 @@ def _paper_panel(case_name):
 
 
 def _lab_outline(case_name, minutes):
-    """(x, z, plume) of the digitised lab dye mask at this time, if present.
+    """(x, z, plume, xc, zc, core) of the digitised lab dye mask and its dark
+    finger core at this time, if present.
 
     Written by digitize_uhd_photos.py at data/fig8_<case>_lab_photo_t<T>_mask.npz.
     Drawn on the run panels as the lab plume's border line.  Not x-shifted:
@@ -105,7 +106,7 @@ def _lab_outline(case_name, minutes):
     if not p.exists():
         return None
     m = np.load(str(p))
-    return m["x"], m["z"], m["plume"]
+    return m["x"], m["z"], m["plume"], m["xc"], m["zc"], m["core"]
 
 
 def main(run_dirs, case_name=None, style=None):
@@ -116,8 +117,12 @@ def main(run_dirs, case_name=None, style=None):
     want = [m * 60.0 for m in FIG_TIMES[case_name]]
 
     loaded = [_load(r) for r in run_dirs]
-    paper = _paper_panel(case_name)
-    ncol = len(loaded) + (1 if paper else 0)
+    labs = [_lab_outline(case_name, m) for m in FIG_TIMES[case_name]]
+    # --colormap is the manuscript figure: its lab column is the digitised dye
+    # extent, not the published photograph (which is not ours to reprint).
+    lab_col = style == "colormap" and all(l is not None for l in labs)
+    paper = None if lab_col else _paper_panel(case_name)
+    ncol = len(loaded) + (1 if paper or lab_col else 0)
     nrow = len(want)
 
     fig, axes = plt.subplots(nrow, ncol, squeeze=False,
@@ -125,7 +130,37 @@ def main(run_dirs, case_name=None, style=None):
                              constrained_layout=True)
 
     col0 = 0
-    if paper:
+    if lab_col:
+        col0 = 1
+        framed = True
+        for i, lab in enumerate(labs):
+            ax = axes[i][0]
+            ax.set_facecolor(DYE_CMAP(0.0))
+            # outlines only: visible-dye envelope, and the dye core, which
+            # shows the fingers
+            ax.contour(lab[0], lab[1], lab[2].astype(float), levels=[0.5],
+                       colors=[DYE_CMAP(0.75)], linewidths=1.0)
+            ax.contour(lab[3], lab[4], lab[5].astype(float), levels=[0.5],
+                       colors=[DYE_CMAP(1.0)], linewidths=1.0)
+            if i == 0:
+                ax.plot([], [], color=DYE_CMAP(0.75), lw=1.0, label="visible dye")
+                ax.plot([], [], color=DYE_CMAP(1.0), lw=1.0, label="dye core")
+                ax.legend(loc="lower left", fontsize=7, frameon=False)
+            ax.plot([cases.SOURCE_X0, cases.SOURCE_X1], [cases.LZ, cases.LZ],
+                    color="k", lw=3, solid_capstyle="butt")
+            ax.set_xlim(0.0, cases.LX)
+            ax.set_ylim(0.0, cases.LZ)
+            ax.set_aspect("equal")
+            ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.18])
+            if i == nrow - 1:
+                ax.set_xlabel("x [m]")
+            if i == 0:
+                ax.set_title("Laboratory (digitised dye extent)", fontsize=9)
+            # deepest dyed pixel, the photo's analogue of the run's depth label
+            dyed = lab[2].any(axis=1)
+            ax.text(0.985, 0.04, "%.3f m" % (cases.LZ - lab[1][dyed].min()),
+                    transform=ax.transAxes, fontsize=8, ha="right", color="0.25")
+    elif paper:
         col0 = 1
         paper, framed = paper
         img = plt.imread(str(paper))
